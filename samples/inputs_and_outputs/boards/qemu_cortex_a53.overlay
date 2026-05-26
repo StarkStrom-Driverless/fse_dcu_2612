@@ -1,0 +1,8 @@
+
+
+/ {
+    ramfb0: ramfb {
+		width = <480>;
+		height = <320>;
+	};
+};
