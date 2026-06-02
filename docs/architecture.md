@@ -20,33 +20,35 @@ The DCU (Driver Control Unit) is the in-car driver display for a Formula Student
 
 ## Architecture Pattern: App as Dirigent
 
-The App Layer is the sole coordinator and the only writer of `app_state`. Modules are passive: they expose synchronous APIs and publish events upward via Zbus. The App Layer subscribes to module events, decides what to do, updates `app_state`, and calls module APIs.
+The App Layer is the sole coordinator and the only writer of `app_state`. All inter-module
+communication — both upward events and downward commands — uses Zbus channels.
+No module includes another module's header.
 
 ```
-                      ┌───────────────────┐
-                      │     App Layer     │
-                      │  (Dirigent +      │
-                      │  State Machine)   │
-                      └────────┬──────────┘
-          ┌──────────────────  │  ──────────────────────┐
-          │           ┌────────┴────────┐               │
-          ▼           ▼                 ▼               ▼
-     ┌─────────┐ ┌────────┐      ┌──────────┐   ┌──────────┐
-     │   CAN   │ │   UI   │      │ Lighting │   │  Audio   │
-     │ Module  │ │ Module │      │  Module  │   │  Module  │
-     └────┬────┘ └───┬────┘      └────┬─────┘   └─────┬────┘
-          │          │                │               │
-          └──────────┴────────────────┴───────────────┘
-                         Zbus channels (events up)
-                    App calls module APIs directly (commands down)
+                      ┌────────────────────────────────────┐
+                      │            App Layer               │
+                      │       (Dirigent + SMF)             │
+                      │  sub: can_status, can_data,        │
+                      │       ui_input, safety,            │
+                      │       settings, feedback           │
+                      │  pub: ui_cmd, lighting_cmd,        │
+                      │       audio_cmd, can_tx_cmd        │
+                      └────────────────────────────────────┘
+       ▲ upward events (Zbus)        ▼ downward commands (Zbus)
+  ┌────┴────┐  ┌───────┐  ┌──────────┐  ┌───────┐  ┌──────────┐
+  │   CAN   │  │  UI   │  │ Lighting │  │ Audio │  │ Settings │
+  └─────────┘  └───────┘  └──────────┘  └───────┘  └──────────┘
+       ▲                       ▲              ▲
+       └────── safety_chan direct subscriptions (safety fast-path) ─┘
 ```
 
 **Design rules:**
 
-1. Only `src/app/` writes to `app_state`. All other modules receive data via function arguments in API calls.
-2. Modules do not read `app_state`. They receive commands from the App Layer.
-3. Modules publish events upward via Zbus. The App thread subscribes and reacts.
-4. Module APIs are synchronous command functions. Zbus events are asynchronous signals.
+1. Only `src/app/` writes to `app_state`. Modules never read `app_state`.
+2. All communication between modules and App uses Zbus — no direct `#include` across module boundaries.
+3. Upward channels carry **events** (things that happened). Downward channels carry **commands** (things to do).
+4. **Exception — safety fast-path:** Lighting and Audio subscribe directly to `safety_chan` for immediate override activation. They must not write to `app_state` (read-only reaction).
+5. Settings uses a hybrid: synchronous direct-call API for reads, Zbus event on write.
 
 ---
 

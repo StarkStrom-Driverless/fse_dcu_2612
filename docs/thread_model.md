@@ -41,11 +41,17 @@ Calls `lv_timer_handler()` every 20 ms. LVGL is not thread-safe; all LVGL object
 
 ### `lighting_thread` (Priority 7)
 
-Drives animation frame updates at 20 ms. On each tick, computes the next animation frame and writes PWM duty cycles and APA102 SPI frames. Long SPI transfers must use DMA to avoid blocking this thread for the full transfer duration.
+Drives animation frame updates at 20 ms. Runs a Zbus subscriber loop on `lighting_cmd_chan`
+and `safety_chan` (non-blocking, `K_NO_WAIT`) at the start of each tick to apply any
+pending commands, then computes and outputs the next animation frame via PWM and APA102 SPI.
+Long SPI transfers must use DMA to avoid blocking this thread for the full transfer duration.
 
 ### `audio_thread` (Priority 6)
 
-Waits on a `k_sem`. When the App Layer triggers an audio effect via `audio_play_effect()`, it posts the semaphore. The thread plays the effect sequence by scheduling PWM register writes and sleeping between tones. On completion it publishes `FEEDBACK_AUDIO_DONE` to `feedback_chan`.
+Runs a Zbus subscriber loop on `audio_cmd_chan` and `safety_chan`. Blocks on
+`zbus_sub_wait()` until a command arrives, then plays the effect sequence via PWM register
+writes and `k_sleep` between tones. On completion publishes `FEEDBACK_AUDIO_DONE` to
+`feedback_chan`.
 
 ---
 
@@ -77,18 +83,23 @@ Waits on a `k_sem`. When the App Layer triggers an audio effect via `audio_play_
 
 ## Inter-Thread Communication Summary
 
+All inter-thread communication goes through Zbus channels. No direct API calls cross
+module boundaries at runtime.
+
 ```
 CAN ISR
-  └─[k_msgq]──► can_rx_thread ──[zbus]──► app_thread ──[k_sem]──► audio_thread
-                                                      ──[API]───► ui_update_buffer ──► lvgl_thread (on next tick)
-                                                      ──[API]───► lighting_thread (command via k_fifo or flag)
+  └─[k_msgq]──► can_rx_thread ──[safety_chan]──────────────────────► lighting_thread
+                              ──[safety_chan]──────────────────────► audio_thread
+                              ──[can_status_chan / can_data_chan]──► app_thread
 
-k_timer (10ms)
-  └──────────► can_tx_work
+app_thread ──[ui_cmd_chan]──────────────────────────────────────► lvgl_thread
+           ──[lighting_cmd_chan]──────────────────────────────────► lighting_thread
+           ──[audio_cmd_chan]────────────────────────────────────► audio_thread
+           ──[can_tx_cmd_chan]──────────────────────────────────► can_tx_work
 
-k_timer (20ms)
-  └──────────► lvgl_thread
-  └──────────► lighting_thread
+k_timer (10ms) ──► can_tx_work
+k_timer (20ms) ──► lvgl_thread (lv_timer_handler tick)
+               ──► lighting_thread (animation tick)
 ```
 
 ---
