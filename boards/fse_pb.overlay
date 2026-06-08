@@ -18,6 +18,21 @@
 		};
 	};
 
+    can_phy0: can_phy0 {
+        compatible = "can-transceiver-gpio";
+        /* TJA1048: STB LOW = Standby, STB HIGH = Normal → ACTIVE_LOW */
+        standby-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;
+        max-bitrate = <1000000>;
+        #phy-cells = <0>;
+    };
+    can_phy1: can_phy1 {
+        compatible = "can-transceiver-gpio";
+        /* TJA1048: STB LOW = Standby, STB HIGH = Normal → ACTIVE_LOW */
+        standby-gpios = <&gpiob 4 GPIO_ACTIVE_LOW>;
+        max-bitrate = <1000000>;
+        #phy-cells = <0>;
+    };
+
     qdec_input0: qdec-encoder0 {
         compatible = "gpio-qdec";
         gpios = <&gpioc 6 GPIO_ACTIVE_HIGH>,
@@ -91,4 +106,12 @@
 		pinctrl-0 = <&tim3_ch4_pb1>;
 		pinctrl-names = "default";
 	};
+};
+
+&can1 {
+    phys = <&can_phy0>;
+};
+
+&can2 {
+    phys = <&can_phy1>;
 };
