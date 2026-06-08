@@ -1,0 +1,281 @@
+/**
+ * @file        app_state.c
+ * @brief       Application state storage, accessors, and write setters
+ *
+ * @details     Owns the single static instance of the root application state.
+ *              All reads and writes go through the functions declared in
+ *              app_state.h; the root struct is opaque to all other translation
+ *              units.
+ *
+ *              Thread safety
+ *              ─────────────
+ *              A k_mutex serialises concurrent access. In the current design
+ *              only app_thread reads and writes the state, so contention is
+ *              negligible. The mutex is retained for forward compatibility
+ *              (e.g., a future diagnostics thread reading a snapshot).
+ *
+ * @author      Mario Wegmann <mario.wegmann@web.de>
+ * @date        Created: 2026-06-02
+ *
+ * @version     0.1.0
+ *
+ * @copyright   Copyright (c) 2026 Mario Wegmann
+ *              SPDX-License-Identifier: Apache-2.0
+ *
+ * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
+ *              UI Library  : LVGL (https://lvgl.io)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Revision History
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Version  Date        Author          Description
+ * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ */
+
+/* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
+
+#include "app/app_state.h"
+
+/* ── Zephyr Includes ─────────────────────────────────────────────────────────────────────────── */
+
+#include <zephyr/kernel.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
+
+/* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
+
+LOG_MODULE_REGISTER(app_state, CONFIG_LOG_DEFAULT_LEVEL);
+
+
+/* ── Private Type Definitions ────────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Root application state.
+ *
+ * This struct is intentionally not exposed in app_state.h. All external
+ * access must use the accessor and setter functions.
+ */
+struct app_state {
+    struct app_state_system     system;
+    struct app_state_mission    mission;
+    enum   screen_id            active_screen;
+    struct app_state_can_status can_status;
+    struct can_data_snapshot    can_data;
+    struct app_state_settings   settings;
+};
+
+
+/* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
+
+K_MUTEX_DEFINE(s_mutex);
+
+/**
+ * @brief Global application state instance with safe initial values.
+ *
+ * Operating mode starts as DEBUG. Safety flags default to false (unknown)
+ * until confirmed by incoming CAN frames. Display brightness defaults to 80 %.
+ */
+static struct app_state s_state = {
+    .system = {
+        .mode           = OPERATING_MODE_DEBUG,
+        .error_active   = false,
+        .warning_active = false,
+        .imd_ok         = false,
+        .ams_ok         = false,
+        .ts_active      = false,
+    },
+    .mission = {
+        .selected = MISSION_NONE,
+        .active   = false,
+        .locked   = false,
+    },
+    .active_screen = SCREEN_NONE,
+    .can_status = {
+        .connected = false,
+        .bus_off   = false,
+    },
+    .can_data    = { 0 },
+    .settings = {
+        .display_brightness = 80U,
+    },
+};
+
+
+/* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
+
+void app_state_init(void)
+{
+    /*
+     * The static initialiser above already sets the default values.
+     * This function exists as an explicit hook for future extensions,
+     * such as loading persisted values before the first thread starts.
+     */
+    LOG_INF("Application state initialised (mode=DEBUG)");
+}
+
+/* --- Atomic getters ------------------------------------------------------------------- */
+
+enum operating_mode app_state_get_mode(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    enum operating_mode mode = s_state.system.mode;
+    k_mutex_unlock(&s_mutex);
+    return mode;
+}
+
+enum screen_id app_state_get_active_screen(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    enum screen_id screen = s_state.active_screen;
+    k_mutex_unlock(&s_mutex);
+    return screen;
+}
+
+enum mission_id app_state_get_selected_mission(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    enum mission_id mission = s_state.mission.selected;
+    k_mutex_unlock(&s_mutex);
+    return mission;
+}
+
+bool app_state_is_mission_locked(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    bool locked = s_state.mission.locked;
+    k_mutex_unlock(&s_mutex);
+    return locked;
+}
+
+bool app_state_is_ts_active(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    bool ts_active = s_state.system.ts_active;
+    k_mutex_unlock(&s_mutex);
+    return ts_active;
+}
+
+bool app_state_is_error_active(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    bool error = s_state.system.error_active;
+    k_mutex_unlock(&s_mutex);
+    return error;
+}
+
+bool app_state_is_can_connected(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    bool connected = s_state.can_status.connected;
+    k_mutex_unlock(&s_mutex);
+    return connected;
+}
+
+/* --- Struct-level getters ------------------------------------------------------------- */
+
+void app_state_get_system(struct app_state_system *out)
+{
+    __ASSERT_NO_MSG(out != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    *out = s_state.system;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_get_mission(struct app_state_mission *out)
+{
+    __ASSERT_NO_MSG(out != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    *out = s_state.mission;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_get_can_status(struct app_state_can_status *out)
+{
+    __ASSERT_NO_MSG(out != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    *out = s_state.can_status;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_get_can_data(struct can_data_snapshot *out)
+{
+    __ASSERT_NO_MSG(out != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    *out = s_state.can_data;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_get_settings(struct app_state_settings *out)
+{
+    __ASSERT_NO_MSG(out != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    *out = s_state.settings;
+    k_mutex_unlock(&s_mutex);
+}
+
+/* --- Write setters (App Layer only) --------------------------------------------------- */
+
+void app_state_set_mode(enum operating_mode mode)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.system.mode = mode;
+    k_mutex_unlock(&s_mutex);
+    LOG_DBG("Operating mode → %d", (int)mode);
+}
+
+void app_state_set_active_screen(enum screen_id screen)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.active_screen = screen;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_mission(const struct app_state_mission *mission)
+{
+    __ASSERT_NO_MSG(mission != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.mission = *mission;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_system_flags(bool error_active, bool warning_active)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.system.error_active   = error_active;
+    s_state.system.warning_active = warning_active;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_safety_flags(bool imd_ok, bool ams_ok, bool ts_active)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.system.imd_ok    = imd_ok;
+    s_state.system.ams_ok    = ams_ok;
+    s_state.system.ts_active = ts_active;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_can_status(bool connected, bool bus_off)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.can_status.connected = connected;
+    s_state.can_status.bus_off   = bus_off;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_update_can_data(const struct can_data_snapshot *data)
+{
+    __ASSERT_NO_MSG(data != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.can_data = *data;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_settings(const struct app_state_settings *settings)
+{
+    __ASSERT_NO_MSG(settings != NULL);
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.settings = *settings;
+    k_mutex_unlock(&s_mutex);
+}
