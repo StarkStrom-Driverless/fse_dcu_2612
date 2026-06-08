@@ -396,27 +396,46 @@ static void app_thread_fn(void *p1, void *p2, void *p3)
             continue;
         }
 
+        /*
+         * Use K_MSEC(10) instead of K_NO_WAIT for all zbus_chan_read calls.
+         *
+         * Race condition with K_NO_WAIT:
+         *   zbus_chan_pub() holds the channel mutex while notifying observers
+         *   (calling k_msgq_put on the subscriber's queue).  If the publisher
+         *   thread has LOWER priority than this App thread (e.g., LVGL thread
+         *   pri 8 < App thread pri 5), the App thread preempts immediately
+         *   after k_msgq_put — before the publisher releases the mutex.
+         *   zbus_chan_read with K_NO_WAIT then returns -EAGAIN (mutex busy),
+         *   silently dropping the event.
+         *
+         *   K_MSEC(10) lets the App thread wait briefly for the publisher to
+         *   release the mutex.  This covers the LVGL → Zbus → App path and
+         *   any future low-priority publisher.
+         */
         if (chan == &ui_input_chan) {
             struct ui_input_event evt;
-            if (zbus_chan_read(&ui_input_chan, &evt, K_NO_WAIT) == 0) {
+            int rc2 = zbus_chan_read(&ui_input_chan, &evt, K_MSEC(10));
+            if (rc2 == 0) {
                 handle_ui_input(&evt);
+            } else {
+                LOG_ERR("ui_input_chan read failed: %d", rc2);
             }
 
         } else if (chan == &can_status_chan) {
             struct can_status_event evt;
-            if (zbus_chan_read(&can_status_chan, &evt, K_NO_WAIT) == 0) {
+            if (zbus_chan_read(&can_status_chan, &evt, K_MSEC(10)) == 0) {
                 handle_can_status(&evt);
             }
 
         } else if (chan == &can_data_chan) {
             struct can_data_snapshot snap;
-            if (zbus_chan_read(&can_data_chan, &snap, K_NO_WAIT) == 0) {
+            if (zbus_chan_read(&can_data_chan, &snap, K_MSEC(10)) == 0) {
                 handle_can_data(&snap);
             }
 
         } else if (chan == &safety_chan) {
             struct safety_event evt;
-            if (zbus_chan_read(&safety_chan, &evt, K_NO_WAIT) == 0) {
+            if (zbus_chan_read(&safety_chan, &evt, K_MSEC(10)) == 0) {
                 handle_safety(&evt);
             }
 

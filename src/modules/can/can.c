@@ -249,7 +249,7 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
         __ASSERT(chan == &can_tx_cmd_chan, "Unexpected channel");
 
         struct can_tx_cmd cmd;
-        rc = zbus_chan_read(&can_tx_cmd_chan, &cmd, K_NO_WAIT);
+        rc = zbus_chan_read(&can_tx_cmd_chan, &cmd, K_MSEC(10));
         if (rc != 0) {
             LOG_ERR("zbus_chan_read error: %d", rc);
             continue;
