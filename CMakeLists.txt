@@ -3,7 +3,13 @@
 cmake_minimum_required(VERSION 3.20.0)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(lvgl)
+project(fse_dcu_2612)
 
-FILE(GLOB app_sources src/*.c)
+# Collect all .c files recursively under src/
+FILE(GLOB_RECURSE app_sources src/*.c)
 target_sources(app PRIVATE ${app_sources})
+
+# Add src/ as include root so headers can be included as:
+#   #include "services/event_bus/event_bus.h"
+#   #include "modules/can/can.h"
+target_include_directories(app PRIVATE src)
