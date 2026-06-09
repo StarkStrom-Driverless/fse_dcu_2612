@@ -62,6 +62,7 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
@@ -124,11 +125,13 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Mission roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
 
+static lv_obj_t   *s_roller_lbl;
+
 /** @brief OK button — confirms the roller selection (sends mission over CAN). */
 static lv_obj_t   *s_btn_ok;
 
 /** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
-static lv_obj_t   *s_btn_rtd;
+// static lv_obj_t   *s_btn_esc;
 
 /** @brief LVGL input group for the right encoder. */
 static lv_group_t *s_right_encoder_group;
@@ -146,7 +149,7 @@ static void build_header(lv_obj_t *scr);
 static void build_roller(lv_obj_t *scr);
 static void build_buttons(lv_obj_t *scr);
 static void btn_ok_event_cb(lv_event_t *e);
-static void btn_rtd_event_cb(lv_event_t *e);
+// static void btn_esc_event_cb(lv_event_t *e);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
@@ -165,7 +168,7 @@ static void build_header(lv_obj_t *scr)
     lv_obj_add_style(title, &ui_style_label_title, 0);
     /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
     lv_obj_set_style_text_color(title, UI_C_WHITE, 0);
-    lv_label_set_text(title, "MISSION");
+    lv_label_set_text(title, "DV MISSION");
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);
 }
 
@@ -180,60 +183,69 @@ static void build_roller(lv_obj_t *scr)
     lv_obj_set_width(s_roller, ROLLER_WIDTH);
 
     /* ── Main part: all items ──────────────────────────────────────────── */
-    lv_obj_set_style_bg_color(s_roller,     UI_C_WHITE,                    LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_roller,       LV_OPA_COVER,                  LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_roller,     UI_C_WHITE,                     LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_roller,       LV_OPA_COVER,                   LV_PART_MAIN);
     lv_obj_set_style_text_font(s_roller,    &BarlowCondensed_BoldItalic_18, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_roller,   UI_C_DARK,                     LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_roller, 2,                             LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_roller, UI_C_DARK,                     LV_PART_MAIN);
-    lv_obj_set_style_radius(s_roller,       0,                             LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_roller,   UI_C_DARK,                      LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_roller, 2,                              LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_roller, UI_C_DARK,                      LV_PART_MAIN);
+    lv_obj_set_style_radius(s_roller,       0,                              LV_PART_MAIN);
 
     /* ── Selected part: centre row highlight ───────────────────────────── */
-    lv_obj_set_style_bg_color(s_roller,   UI_C_ACCENT,                    LV_PART_SELECTED);
-    lv_obj_set_style_bg_opa(s_roller,     LV_OPA_COVER,                   LV_PART_SELECTED);
+    lv_obj_set_style_bg_color(s_roller,   UI_C_ACCENT,                     LV_PART_SELECTED);
+    lv_obj_set_style_bg_opa(s_roller,     LV_OPA_COVER,                    LV_PART_SELECTED);
     lv_obj_set_style_text_font(s_roller,  &BarlowCondensed_BoldItalic_18,  LV_PART_SELECTED);
     lv_obj_set_style_text_color(s_roller, UI_C_DARK,                       LV_PART_SELECTED);
 
     /* Vertically centred in the content area below the 15 % header. */
     lv_obj_align(s_roller, LV_ALIGN_CENTER, 0, -30);
+
+    /* ── Curent selected item ───────────────────────────── */
+
+    char buf[32];
+    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
+
+    s_roller_lbl = lv_label_create(scr);
+    lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
+    lv_label_set_text_fmt(s_roller_lbl, "Current Mission %s", buf);
+    lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, 0, 35);
 }
 
 static void build_buttons(lv_obj_t *scr)
 {
     /* ── OK button ─────────────────────────────────────────────────────── */
 
-    // s_btn_ok = lv_button_create(scr);
-    // lv_obj_remove_style_all(s_btn_ok);
-    // lv_obj_add_style(s_btn_ok, &ui_style_btn_default, 0);
-    // lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_CHECKED);
-    // lv_obj_add_style(s_btn_ok, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    // lv_obj_set_size(s_btn_ok, BTN_WIDTH, BTN_HEIGHT);
-    // lv_obj_align(s_btn_ok, LV_ALIGN_BOTTOM_MID, -BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
+    s_btn_ok = lv_button_create(scr);
+    lv_obj_remove_style_all(s_btn_ok);
+    lv_obj_add_style(s_btn_ok, &ui_style_btn_default, 0);
+    lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_PRESSED);
+    lv_obj_set_size(s_btn_ok, BTN_WIDTH, BTN_HEIGHT);
+    lv_obj_align(s_btn_ok, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
 
-    // lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
-    // lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
-    // lv_label_set_text(lbl_ok, "OK");
-    // lv_obj_align(lbl_ok, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
+    lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_ok, "SET MISSION");
+    lv_obj_align(lbl_ok, LV_ALIGN_CENTER, 0, 0);
 
-    // lv_obj_add_event_cb(s_btn_ok, btn_ok_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_btn_ok, btn_ok_event_cb, LV_EVENT_CLICKED, NULL);
 
-    /* ── RTD button ────────────────────────────────────────────────────── */
+    /* ── ESC button ────────────────────────────────────────────────────── */
 
-    s_btn_rtd = lv_button_create(scr);
-    lv_obj_remove_style_all(s_btn_rtd);
-    lv_obj_add_style(s_btn_rtd, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_rtd, &ui_style_btn_checked, LV_STATE_CHECKED);
-    lv_obj_add_style(s_btn_rtd, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    lv_obj_set_size(s_btn_rtd, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_align(s_btn_rtd, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
+    // s_btn_esc = lv_button_create(scr);
+    // lv_obj_remove_style_all(s_btn_esc);
+    // lv_obj_add_style(s_btn_esc, &ui_style_btn_default, 0);
+    // lv_obj_add_style(s_btn_esc, &ui_style_btn_checked, LV_STATE_PRESSED);
+    // lv_obj_add_style(s_btn_esc, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
+    // lv_obj_set_size(s_btn_esc, BTN_WIDTH, BTN_HEIGHT);
+    // lv_obj_align(s_btn_esc, LV_ALIGN_BOTTOM_MID, -BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
 
-    lv_obj_t *lbl_rtd = lv_label_create(s_btn_rtd);
-    lv_obj_add_style(lbl_rtd, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_rtd, "SELECT");
-    lv_obj_align(lbl_rtd, LV_ALIGN_CENTER, 0, 0);
+    // lv_obj_t *lbl_esc = lv_label_create(s_btn_esc);
+    // lv_obj_add_style(lbl_esc, &ui_style_label_subtitle, 0);
+    // lv_label_set_text(lbl_esc, "UNSET MISSION");
+    // lv_obj_align(lbl_esc, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_add_flag(s_btn_rtd, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    // lv_obj_add_flag(s_btn_esc, LV_OBJ_FLAG_CHECKABLE);
+    // lv_obj_add_event_cb(s_btn_esc, btn_esc_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
 /**
@@ -247,9 +259,10 @@ static void build_buttons(lv_obj_t *scr)
  */
 static void btn_ok_event_cb(lv_event_t *e)
 {
-    ARG_UNUSED(e);
+    uint16_t  idx    = lv_roller_get_selected(s_roller);
+    char buf[32];
 
-    uint16_t idx = lv_roller_get_selected(s_roller);
+    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
 
     struct ui_input_event evt = {
         .type         = UI_INPUT_MISSION_SELECTED,
@@ -261,40 +274,41 @@ static void btn_ok_event_cb(lv_event_t *e)
         LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
                 (unsigned)idx, ret);
     } else {
+        lv_label_set_text_fmt(s_roller_lbl, "Current Mission %s", buf);
         LOG_DBG("Mission selected: %u", (unsigned)idx);
     }
 }
 
 /**
- * @brief RTD button click handler.
+ * @brief ESC button click handler.
  *
- * Publishes UI_INPUT_RTD_REQUEST.  The App Layer responds by sending
- * CAN_TX_CMD_SEND_RTD_REQUEST using the last-known drive mode.
+ * Publishes UI_INPUT_ESC_REQUEST.  The App Layer responds by sending
+ * CAN_TX_CMD_SEND_ESC_REQUEST using the last-known drive mode.
  *
  * Can be pressed without having first confirmed a mission; in that case the
  * CAN module uses drive mode 0 (MISSION_NONE).
  */
-static void btn_rtd_event_cb(lv_event_t *e)
-{
-    lv_obj_t * button = lv_event_get_target_obj(e);
-    uint16_t idx = lv_roller_get_selected(s_roller);
+// static void btn_esc_event_cb(lv_event_t *e)
+// {
+//     uint16_t  idx    = lv_roller_get_selected(s_roller);
+//     char buf[32];
 
-    struct ui_input_event evt = {
-        .type         = UI_INPUT_MISSION_SELECTED,
-        .data.mission = (enum mission_id)idx,
-    };
+//     lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
 
-    if (lv_obj_has_state(button, LV_STATE_CHECKED) == true) {
-        int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-        if (ret != 0) {
-            LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
-                    (unsigned)idx, ret);
-        } else {
-            LOG_DBG("Mission selected: %u", (unsigned)idx);
-            LOG_INF("Mission selected: %u", (unsigned)idx);
-        }
-    } 
-}
+//     struct ui_input_event evt = {
+//         .type         = UI_INPUT_MISSION_SELECTED,
+//         .data.mission = (enum mission_id)idx,
+//     };
+
+//     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
+//     if (ret != 0) {
+//         LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
+//                 (unsigned)idx, ret);
+//     } else {
+//         lv_label_set_text_fmt(s_roller_lbl, "Selected Mission %s", buf);
+//         LOG_DBG("Mission selected: %u", (unsigned)idx);
+//     }
+// }
 
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
@@ -329,7 +343,7 @@ lv_obj_t *screen_mission_select_create(void)
     lv_group_set_editing(s_right_encoder_group, true);
 
     s_right_button_group = lv_group_create();
-    lv_group_add_obj(s_right_button_group, s_btn_rtd);
+    lv_group_add_obj(s_right_button_group, s_btn_ok);
     lv_group_set_editing(s_right_button_group, true);
 
     return scr;

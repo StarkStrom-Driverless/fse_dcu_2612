@@ -6,30 +6,22 @@
  *              can_tx_cmd_chan commands from the App Layer by packing and
  *              transmitting CAN frames according to the vehicle DBC.
  *
- *              TX command handling
- *              ───────────────────
- *              CAN_TX_CMD_SEND_MISSION
- *                Updates the internal drive-mode state and transmits
- *                DCU_2_mABX (0x196) with RTD_Button = 0.
+ *              Periodic TX
+ *              ───────────
+ *              A dedicated worker thread (priority 3, stack 1024 B) sends
+ *              DCU_2_mABX (0x196) every 100 ms.  On each cycle the thread
+ *              reads the current mission and operating mode directly from
+ *              app_state (the single source of truth) and packs them into
+ *              the outgoing frame.  No local state copy is maintained.
  *
- *              CAN_TX_CMD_SEND_RTD_REQUEST
- *                Transmits DCU_2_mABX with the last known drive-mode
- *                and RTD_Button = 1. Mission selection is optional —
- *                SEND_RTD_REQUEST may be issued without a prior
- *                SEND_MISSION; the drive mode will be MISSION_NONE (0).
+ *                drive_mode = mission_to_drive_mode(app_state_get_selected_mission())
+ *                rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD)
  *
  *              Bus status
  *              ──────────
  *              can_module_init() publishes CAN_STATUS_CONNECTED after the
  *              controller is started successfully.  A future RX watchdog
  *              will publish CAN_STATUS_TIMEOUT when frames stop arriving.
- *
- *              Thread model
- *              ────────────
- *              A dedicated worker thread (priority 3, stack 1024 B) blocks
- *              on the Zbus subscriber message queue.  The thread is spawned
- *              inside can_module_init() so that hardware initialisation is
- *              guaranteed to happen before the first Zbus message can arrive.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
@@ -67,6 +59,7 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "modules/can/can_signals.h"
+#include "app/app_state.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 
@@ -101,16 +94,6 @@ LOG_MODULE_REGISTER(can_module, CONFIG_LOG_DEFAULT_LEVEL);
 static const struct device *const s_can_dev =
     DEVICE_DT_GET(DT_CHOSEN(zephyr_canbus));
 
-/**
- * @brief Last drive mode transmitted (or pending transmission).
- *
- * Updated whenever CAN_TX_CMD_SEND_MISSION is received.  Used as the
- * DV_Drive_Mode_SETTING field in all subsequent DCU_2_mABX frames.
- * Defaults to 0 (MISSION_NONE) so that RTD can be sent without a prior
- * mission selection.
- */
-static uint8_t s_current_drive_mode;
-
 /** @brief Thread stack storage for the CAN worker thread. */
 static K_THREAD_STACK_DEFINE(s_can_stack, CAN_THREAD_STACK_SIZE);
 
@@ -121,29 +104,10 @@ static struct k_thread s_can_thread;
 static bool s_hw_ready;
 
 
-/* ── Zbus Subscriber ─────────────────────────────────────────────────────────────────────────── */
-
-/**
- * @brief Subscriber for can_tx_cmd_chan.
- *
- * Message queue depth of 4 provides a small buffer for burst commands
- * while keeping memory usage minimal on a constrained target.
- */
-ZBUS_SUBSCRIBER_DEFINE(can_tx_sub, 4);
-
-/**
- * @brief Register can_tx_sub as an observer of can_tx_cmd_chan.
- *
- * Priority 0 means this module is notified before any lower-priority
- * observers on the same channel.
- */
-ZBUS_CHAN_ADD_OBS(can_tx_cmd_chan, can_tx_sub, 0);
-
-
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static int  can_hw_init(void);
-static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd);
+static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, uint8_t debug);
 static void can_thread_fn(void *p1, void *p2, void *p3);
 
 
@@ -196,7 +160,7 @@ static int can_hw_init(void)
  * @param drive_mode  DV_Drive_Mode_SETTING raw value (0–7).
  * @param rtd         true → RTD_Button = 1 (Ready-to-Drive request).
  */
-static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd)
+static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, uint8_t debug)
 {
     struct can_frame frame = {
         .id    = DCU2_MABX_CAN_ID,
@@ -204,23 +168,34 @@ static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd)
         .flags = 0,   /* standard (11-bit) frame, no CAN-FD */
     };
 
-    DCU2_MABX_PACK(frame.data, drive_mode, rtd);
+    DCU2_MABX_PACK(frame.data, drive_mode, rtd, debug);
 
     int ret = can_send(s_can_dev, &frame, CAN_TX_TIMEOUT, NULL, NULL);
     if (ret != 0) {
-        LOG_ERR("TX 0x%03X failed: %d (drive_mode=%u rtd=%d)",
-                DCU2_MABX_CAN_ID, ret, drive_mode, (int)rtd);
+        LOG_ERR("TX 0x%03X failed: %d (drive_mode=%u rtd=%d debug=%u)",
+                DCU2_MABX_CAN_ID, ret, drive_mode, (int)rtd, debug);
     } else {
-        LOG_INF("TX 0x%03X  drive_mode=%u  rtd=%d",
-                DCU2_MABX_CAN_ID, drive_mode, (int)rtd);
+        LOG_DBG("TX 0x%03X  drive_mode=%u  rtd=%d  debug=%u",
+                DCU2_MABX_CAN_ID, drive_mode, (int)rtd, debug);
     }
 }
+
+/** @brief TX period: DCU_2_mABX is sent cyclically at this interval. */
+#define CAN_TX_PERIOD_MS    100U
 
 /**
  * @brief CAN worker thread entry point.
  *
- * Blocks on the Zbus subscriber queue and dispatches incoming
- * can_tx_cmd_chan commands to the appropriate TX helper.
+ * Runs a fixed 100 ms send cycle:
+ *
+ *   1. Read drive_mode and RTD flag directly from app_state — the single
+ *      source of truth.  No local copy is kept; every cycle reflects the
+ *      latest state set by the App Layer.
+ *   2. Transmit DCU_2_mABX with the current values.
+ *   3. Sleep for the remainder of the 100 ms period.
+ *
+ * app_state_get_selected_mission() and app_state_get_mode() are thread-safe
+ * (mutex-protected inside app_state.c) so they are safe to call here.
  *
  * The thread exits silently if hardware initialisation failed so that the
  * rest of the firmware continues to function without CAN.
@@ -236,41 +211,17 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
         return;
     }
 
-    const struct zbus_channel *chan;
-
     while (true) {
-        int rc = zbus_sub_wait(&can_tx_sub, &chan, K_FOREVER);
-        if (rc != 0) {
-            LOG_ERR("zbus_sub_wait error: %d", rc);
-            continue;
-        }
+        /* ── 1. Read current state from the App Layer ────────────────── */
+        uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
+        bool    rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD);
+        uint8_t debug      = app_state_get_debug_bits();
 
-        /* Only one channel is watched — assert for safety in debug builds. */
-        __ASSERT(chan == &can_tx_cmd_chan, "Unexpected channel");
+        /* ── 2. Transmit ─────────────────────────────────────────────── */
+        can_send_dcu2_mabx(drive_mode, rtd_active, debug);
 
-        struct can_tx_cmd cmd;
-        rc = zbus_chan_read(&can_tx_cmd_chan, &cmd, K_MSEC(10));
-        if (rc != 0) {
-            LOG_ERR("zbus_chan_read error: %d", rc);
-            continue;
-        }
-
-        switch (cmd.type) {
-        case CAN_TX_CMD_SEND_MISSION:
-            s_current_drive_mode = mission_to_drive_mode(cmd.data.mission);
-            LOG_INF("Mission set → drive_mode=%u", s_current_drive_mode);
-            can_send_dcu2_mabx(s_current_drive_mode, false);
-            break;
-
-        case CAN_TX_CMD_SEND_RTD_REQUEST:
-            LOG_INF("RTD request → drive_mode=%u", s_current_drive_mode);
-            can_send_dcu2_mabx(s_current_drive_mode, true);
-            break;
-
-        default:
-            LOG_WRN("Unknown can_tx_cmd type: %d", (int)cmd.type);
-            break;
-        }
+        /* ── 3. Wait for next 100 ms slot ────────────────────────────── */
+        k_msleep(CAN_TX_PERIOD_MS);
     }
 }
 

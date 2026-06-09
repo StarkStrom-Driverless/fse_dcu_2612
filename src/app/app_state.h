@@ -85,6 +85,12 @@ struct app_state_system {
     bool                imd_ok;
     bool                ams_ok;
     bool                ts_active;
+    /**
+     * Raw 3-bit value (0–7) for the Debug_SETTING CAN signal.
+     * Set by the engineer via the debug UI screen.  Sent in every
+     * DCU_2_mABX frame alongside drive_mode and RTD_Button.
+     */
+    uint8_t             debug_bits;
 };
 
 /**
@@ -158,6 +164,9 @@ bool                app_state_is_error_active(void);
 
 /** @brief Return true if the CAN bus is connected and receiving frames. */
 bool                app_state_is_can_connected(void);
+
+/** @brief Return the current Debug_SETTING raw value (0–7). */
+uint8_t             app_state_get_debug_bits(void);
 
 /* --- Struct-level getters (copy to caller buffer) ------------------------------------- */
 
@@ -237,6 +246,12 @@ void app_state_set_can_status(bool connected, bool bus_off);
  * @param data  Non-null pointer to the snapshot to copy in.
  */
 void app_state_update_can_data(const struct can_data_snapshot *data);
+
+/**
+ * @brief Set the Debug_SETTING raw value.
+ * @param bits  3-bit debug value (0–7); values > 7 are clamped to 7.
+ */
+void app_state_set_debug_bits(uint8_t bits);
 
 /**
  * @brief Replace the cached settings sub-state atomically.

@@ -79,6 +79,7 @@
 #include "modules/ui/screen_boot.h"
 #include "modules/ui/screen_mission_select.h"
 #include "modules/ui/screen_checklist.h"
+#include "modules/ui/screen_debug_write.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 
@@ -117,9 +118,10 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * The starting position is SCREEN_BOOT (index 1).
  */
 static const enum screen_id k_carousel[] = {
-    SCREEN_BOOT,            /* index 0 — initial screen  */
-    SCREEN_MISSION_SELECT,  /* index 1 — CW from boot    */
-    SCREEN_PRE_RTD,         /* index 2 — CW from Mission */
+    SCREEN_DEBUG_WRITE,     /* index 0 — CCW from boot   */
+    SCREEN_BOOT,            /* index 1 — initial screen  */
+    SCREEN_MISSION_SELECT,  /* index 2 — CW from boot    */
+    SCREEN_PRE_RTD,         /* index 3 — CW from Mission */
 };
 
 #define CAROUSEL_LEN    ARRAY_SIZE(k_carousel)
@@ -285,6 +287,11 @@ static void set_encoder_group(enum screen_id id)
         right_encoder_group = screen_checklist_get_right_encoder_group();
         left_button_group = screen_checklist_get_left_button_group();
         right_button_group = screen_checklist_get_right_button_group();
+        break;
+    case SCREEN_DEBUG_WRITE:
+        right_encoder_group = screen_debug_write_get_right_encoder_group();
+        left_button_group = screen_debug_write_get_left_button_group();
+        right_button_group = screen_debug_write_get_right_button_group();
         break;
     default:
         right_encoder_group = NULL;
@@ -487,6 +494,7 @@ void ui_module_init(void)
     ui_styles_init();
 
     /* ── 2. Create all MVP screen objects ───────────────────────────────── */
+    s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create();
     s_screens[SCREEN_BOOT]           = screen_boot_create();
     s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create();
     s_screens[SCREEN_PRE_RTD]        = screen_checklist_create();
@@ -502,7 +510,7 @@ void ui_module_init(void)
 
     /* ── 4. Load the boot screen (no animation on cold start) ───────────── */
     s_active_screen = SCREEN_BOOT;
-    s_carousel_pos  = 0U;
+    s_carousel_pos  = 1U;
     lv_screen_load(s_screens[SCREEN_BOOT]);
 
     /*

@@ -11,10 +11,12 @@
  *
  *              Byte  Bit 7        Bit 6        Bit 5        Bit 4        Bit 3-0
  *              ────  ───────────  ───────────  ───────────  ───────────  ───────
- *               0    (reserved)   (reserved)   (reserved)   (reserved)   ...
+ *               0    ←──── Debug_SETTING (3 bits) ────►    (reserved)   ...
  *               1    RTD_Button   ← DV_Drive_Mode_SETTING (3 bits) →    ...
  *               2    (reserved)   (reserved)   (reserved)   (reserved)   ...
  *
+ *              Debug_SETTING         :  5|3@1+   start-bit=5,  len=3, Intel LE
+ *                                                byte[0], bits [7:5], mask=0xE0
  *              DV_Drive_Mode_SETTING : 12|3@1+   start-bit=12, len=3, Intel LE
  *                                                byte[1], bits [6:4], mask=0x70
  *              RTD_Button            : 15|1@1+   start-bit=15, len=1, Intel LE
@@ -60,6 +62,25 @@
 #define DCU2_MABX_DLC       3U
 
 
+/* ── Signal Constants: Debug_SETTING ────────────────────────────────────────────────────────── */
+
+/*
+ * DBC definition:  Debug_SETTING : 5|3@1+  (1,0) [0|7] "" Hauptsteuereinheit
+ *
+ * Intel LE → LSB at bit 5  (byte 0, bit-offset 5)
+ *           → 3 bits → occupies byte[0] bits [7:5]
+ */
+
+/** @brief Payload byte index of Debug_SETTING. */
+#define SIG_DEBUG_BYTE          0U
+
+/** @brief Bitmask for Debug_SETTING within its byte (bits [7:5]). */
+#define SIG_DEBUG_MASK          0xE0U
+
+/** @brief Left-shift applied to the raw value before masking to place it in bits [7:5]. */
+#define SIG_DEBUG_SHIFT         5U
+
+
 /* ── Signal Constants: DV_Drive_Mode_SETTING ─────────────────────────────────────────────────── */
 
 /*
@@ -103,24 +124,25 @@
 /**
  * @brief Pack a full DCU_2_mABX payload into @p buf.
  *
- * Writes exactly DCU2_MABX_DLC bytes. Bytes not occupied by the two MVP
- * signals are zeroed. All other bits within the signal byte are preserved
- * as zero.
+ * Writes exactly DCU2_MABX_DLC bytes. All bits not belonging to a signal
+ * are zeroed.
  *
  * @param buf         Pointer to a uint8_t array of length DCU2_MABX_DLC.
  * @param drive_mode  DV_Drive_Mode_SETTING raw value (0–7, 3-bit unsigned).
  *                    Use mission_to_drive_mode() to convert from enum mission_id.
  * @param rtd         RTD_Button: true = 1 (request Ready-to-Drive), false = 0.
+ * @param debug       Debug_SETTING raw value (0–7, 3-bit unsigned).
  *
  * Example:
  * @code
  *   uint8_t payload[DCU2_MABX_DLC];
- *   DCU2_MABX_PACK(payload, mission_to_drive_mode(MISSION_AUTOCROSS), false);
+ *   DCU2_MABX_PACK(payload, mission_to_drive_mode(MISSION_AUTOCROSS), false, 0U);
  * @endcode
  */
-#define DCU2_MABX_PACK(buf, drive_mode, rtd)                                        \
+#define DCU2_MABX_PACK(buf, drive_mode, rtd, debug)                                 \
     do {                                                                             \
-        (buf)[0] = 0U;                                                               \
+        (buf)[0] = (uint8_t)(((uint8_t)(debug) << SIG_DEBUG_SHIFT)                  \
+                             & SIG_DEBUG_MASK);                                      \
         (buf)[1] = (uint8_t)(((uint8_t)(drive_mode) << SIG_DRIVE_MODE_SHIFT)        \
                              & SIG_DRIVE_MODE_MASK)                                  \
                  | (uint8_t)((rtd) ? SIG_RTD_BUTTON_MASK : 0U);                     \

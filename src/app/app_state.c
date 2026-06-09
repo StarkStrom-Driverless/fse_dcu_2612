@@ -84,6 +84,7 @@ static struct app_state s_state = {
         .imd_ok         = false,
         .ams_ok         = false,
         .ts_active      = false,
+        .debug_bits     = 0U,
     },
     .mission = {
         .selected = MISSION_NONE,
@@ -170,6 +171,14 @@ bool app_state_is_can_connected(void)
     bool connected = s_state.can_status.connected;
     k_mutex_unlock(&s_mutex);
     return connected;
+}
+
+uint8_t app_state_get_debug_bits(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    uint8_t bits = s_state.system.debug_bits;
+    k_mutex_unlock(&s_mutex);
+    return bits;
 }
 
 /* --- Struct-level getters ------------------------------------------------------------- */
@@ -270,6 +279,16 @@ void app_state_update_can_data(const struct can_data_snapshot *data)
     k_mutex_lock(&s_mutex, K_FOREVER);
     s_state.can_data = *data;
     k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_debug_bits(uint8_t bits)
+{
+    /* Clamp to 3-bit range (0–7) */
+    uint8_t clamped = (bits > 7U) ? 7U : bits;
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.system.debug_bits = clamped;
+    k_mutex_unlock(&s_mutex);
+    LOG_DBG("Debug bits → %u", (unsigned)clamped);
 }
 
 void app_state_set_settings(const struct app_state_settings *settings)

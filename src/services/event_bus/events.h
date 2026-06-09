@@ -68,7 +68,7 @@ enum screen_id {
     SCREEN_NONE          = 0,
     SCREEN_BOOT,              /**< Initial splash; starting position in carousel.  */
     SCREEN_MISSION_SELECT,    /**< Mission roller + OK + RTD buttons.              */
-    SCREEN_DEBUG,             /**< CAN signal monitor (future).                    */
+    SCREEN_DEBUG_WRITE,       /**< Send generic debug Bits.                        */
     SCREEN_PRE_RTD,           /**< Pre-drive checklist (future).                   */
     SCREEN_RTD,               /**< Live telemetry during mission.                  */
     SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
@@ -151,6 +151,7 @@ enum ui_input_type {
     UI_INPUT_ENCODER_CLICK,        /**< Right encoder button press.                */
     UI_INPUT_MISSION_SELECTED,     /**< Driver confirmed a mission via OK button.  */
     UI_INPUT_RTD_REQUEST,          /**< RTD button pressed: request Ready-to-Drive.*/
+    UI_INPUT_DEBUG_BITS_SELECTED,  /**< Engineer set debug bits via OK button.     */
     UI_INPUT_TIMESTAMP,            /**< Timestamp button pressed: log event marker.*/
 };
 
@@ -160,6 +161,11 @@ struct ui_input_event {
     union {
         /** Valid when type == UI_INPUT_MISSION_SELECTED. */
         enum mission_id mission;
+        /**
+         * Valid when type == UI_INPUT_DEBUG_BITS_SELECTED.
+         * Raw 3-bit value (0–7) for the Debug_SETTING CAN signal.
+         */
+        uint8_t debug_bits;
     } data;
 };
 

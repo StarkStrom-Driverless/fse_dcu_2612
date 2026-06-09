@@ -111,7 +111,6 @@ ZBUS_CHAN_ADD_OBS(feedback_chan,   app_sub, 0);
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static void pub_can_tx(const struct can_tx_cmd *cmd);
 static void pub_ui_cmd(const struct ui_cmd *cmd);
 static void handle_ui_input(const struct ui_input_event *evt);
 static void handle_can_status(const struct can_status_event *evt);
@@ -121,18 +120,6 @@ static void app_thread_fn(void *p1, void *p2, void *p3);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
-
-/**
- * @brief Publish a command to can_tx_cmd_chan.
- * Logs an error if the channel is full (should not occur under normal load).
- */
-static void pub_can_tx(const struct can_tx_cmd *cmd)
-{
-    int ret = zbus_chan_pub(&can_tx_cmd_chan, cmd, K_NO_WAIT);
-    if (ret != 0) {
-        LOG_ERR("can_tx_cmd_chan publish failed: %d", ret);
-    }
-}
 
 /**
  * @brief Publish a command to ui_cmd_chan.
@@ -187,12 +174,10 @@ static void handle_ui_input(const struct ui_input_event *evt)
         };
         app_state_set_mission(&state);
 
-        struct can_tx_cmd cmd = {
-            .type         = CAN_TX_CMD_SEND_MISSION,
-            .data.mission = mission,
-        };
-        pub_can_tx(&cmd);
-
+        /*
+         * No explicit CAN command needed: the CAN module reads
+         * app_state_get_selected_mission() directly on every 100 ms cycle.
+         */
         LOG_INF("Mission selected: %d", (int)mission);
         break;
     }
@@ -205,13 +190,12 @@ static void handle_ui_input(const struct ui_input_event *evt)
         mission.locked = true;
         app_state_set_mission(&mission);
 
+        /*
+         * Setting the mode to RTD is sufficient: the CAN module checks
+         * app_state_get_mode() == OPERATING_MODE_RTD each cycle and sets
+         * RTD_Button = 1 automatically.
+         */
         app_state_set_mode(OPERATING_MODE_RTD);
-
-        /* Transmit RTD CAN frame (drive mode from last SEND_MISSION) */
-        struct can_tx_cmd rtd_cmd = {
-            .type = CAN_TX_CMD_SEND_RTD_REQUEST,
-        };
-        pub_can_tx(&rtd_cmd);
 
         /* Navigate to the RTD screen — ui.c logs a warning if not yet built */
         struct ui_cmd ui_nav = {
@@ -234,6 +218,13 @@ static void handle_ui_input(const struct ui_input_event *evt)
         pub_ui_cmd(&cmd);
 
         LOG_DBG("Back → SCREEN_BOOT");
+        break;
+    }
+
+    case UI_INPUT_DEBUG_BITS_SELECTED: {
+        uint8_t bits = evt->data.debug_bits;
+        app_state_set_debug_bits(bits);
+        LOG_INF("Debug bits set: %u (0x%02X)", (unsigned)bits, (unsigned)bits);
         break;
     }
 
