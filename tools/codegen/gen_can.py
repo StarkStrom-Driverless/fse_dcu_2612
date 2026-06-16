@@ -52,6 +52,14 @@ DATABASE_NAME = "dcu_can_gen"
 # Order defines the monotonicity requirement.
 LIMIT_KEYS = ("critical_low", "warning_low", "warning_high", "critical_high")
 
+# Maps YAML limit key → #define suffix (signal-name-first naming convention).
+LIMIT_DEFINE_SUFFIX = {
+    "warning_low":   "WARN_LOW",
+    "warning_high":  "WARN_HIGH",
+    "critical_low":  "CRIT_LOW",
+    "critical_high": "CRIT_HIGH",
+}
+
 VALID_DIRECTIONS = {"rx", "tx"}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -383,18 +391,21 @@ def emit_subjects_header(rx_messages: list[dict]) -> str:
     lines.append("""\
 /*
  * One value subject ui_subj_<x> per RX signal (app_name from dcu_app.yaml).
- * For signals with limits a level-binding helper ui_bind_level_<x>(lv_obj_t*)
- * wires LV_STATE_USER_1 (warning) and LV_STATE_USER_2 (critical) directly
- * against the value subject using lv_obj_bind_state_if_lt/gt.
- * LV_STATE_USER_2 has higher priority and overrides USER_1 when both fire.
+ *
+ * For signals with limits, threshold #defines are generated so screens can
+ * wire lv_obj_bind_state_if_lt/gt directly, choosing UI_STATE_WARN /
+ * UI_STATE_CRIT (defined in ui_styles.h) and the appropriate LV_PART_*.
+ *
+ * Example — label text colour:
+ *   lv_obj_add_style(lbl, &ui_style_level_warn, UI_STATE_WARN);
+ *   lv_obj_add_style(lbl, &ui_style_level_crit, UI_STATE_CRIT);
+ *   lv_obj_bind_state_if_lt(lbl, &ui_subj_voltage_accu_hv,
+ *                            UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
+ *   lv_obj_bind_state_if_lt(lbl, &ui_subj_voltage_accu_hv,
+ *                            UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
  *
  * Threading: ui_subjects_gen_init() and ui_subjects_gen_update() must ONLY
- * be called from the LVGL thread — observers fire synchronously inside
- * lv_subject_set_*().
- *
- * Widget binding in screens:
- *   lv_label_bind_text(label, &ui_subj_voltage_tractive_system, "%d V");
- *   ui_bind_level_voltage_accu_hv(label);   // adds styles + state observers
+ * be called from the LVGL thread.
  */
 """)
     for entry in rx_messages:
@@ -404,9 +415,11 @@ def emit_subjects_header(rx_messages: list[dict]) -> str:
             lines.append(f"extern lv_subject_t ui_subj_{app_name};{'':<4}"
                          f"/**< {sig.name} ({subject_kind(c_type)}) */")
             if limits:
-                lines.append(
-                    f"void ui_bind_level_{app_name}(lv_obj_t *obj);"
-                    f"  /**< LV_STATE_USER_1=warn, USER_2=crit via {sig.name} */")
+                prefix = f"UI_{app_name.upper()}"
+                for key, suffix in LIMIT_DEFINE_SUFFIX.items():
+                    if key in limits:
+                        define_name = f"{prefix}_{suffix}"
+                        lines.append(f"#define {define_name:<44} {c_float(limits[key])}")
         lines.append("")
     lines.append("""\
 /**
@@ -434,8 +447,7 @@ def emit_subjects_source(rx_messages: list[dict]) -> str:
     ]
 
     lines = [GENERATED_BANNER]
-    lines.append('#include "ui_subjects_gen.h"')
-    lines.append('#include "modules/ui/ui_styles.h"\n')
+    lines.append('#include "ui_subjects_gen.h"\n')
 
     for _sig, app_name, _c_type, _limits in all_signals:
         lines.append(f"lv_subject_t ui_subj_{app_name};")
@@ -454,28 +466,7 @@ def emit_subjects_source(rx_messages: list[dict]) -> str:
             lines.append(f"    lv_subject_set_float(&ui_subj_{app_name}, snap->{app_name});")
         else:
             lines.append(f"    lv_subject_set_int(&ui_subj_{app_name}, (int32_t)snap->{app_name});")
-    lines.append("}\n")
-
-    for _sig, app_name, _c_type, limits in all_signals:
-        if not limits:
-            continue
-        lines.append(f"void ui_bind_level_{app_name}(lv_obj_t *obj)")
-        lines.append("{")
-        lines.append( "    lv_obj_add_style(obj, &ui_style_level_warn, LV_STATE_USER_1);")
-        lines.append( "    lv_obj_add_style(obj, &ui_style_level_crit, LV_STATE_USER_2);")
-        if "warning_high" in limits:
-            lines.append(f"    lv_obj_bind_state_if_gt(obj, &ui_subj_{app_name}, "
-                         f"LV_STATE_USER_1, {c_float(limits['warning_high'])});")
-        if "warning_low" in limits:
-            lines.append(f"    lv_obj_bind_state_if_lt(obj, &ui_subj_{app_name}, "
-                         f"LV_STATE_USER_1, {c_float(limits['warning_low'])});")
-        if "critical_high" in limits:
-            lines.append(f"    lv_obj_bind_state_if_gt(obj, &ui_subj_{app_name}, "
-                         f"LV_STATE_USER_2, {c_float(limits['critical_high'])});")
-        if "critical_low" in limits:
-            lines.append(f"    lv_obj_bind_state_if_lt(obj, &ui_subj_{app_name}, "
-                         f"LV_STATE_USER_2, {c_float(limits['critical_low'])});")
-        lines.append("}\n")
+    lines.append("}")
 
     return "\n".join(lines) + "\n"
 
