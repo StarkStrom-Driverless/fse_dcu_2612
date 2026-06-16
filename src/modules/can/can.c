@@ -2,20 +2,30 @@
  * @file        can.c
  * @brief       CAN module — frame TX, bus management, and status reporting
  *
- * @details     Owns the CAN controller hardware instance. Responds to
- *              can_tx_cmd_chan commands from the App Layer by packing and
- *              transmitting CAN frames according to the vehicle DBC.
+ * @details     Owns the CAN controller hardware instance.  All frame layouts
+ *              (pack/unpack/dispatch) come from the code generator — this
+ *              file contains no hand-written bit manipulation.  To add a CAN
+ *              message, edit dbc/dcu_app.yaml and run
+ *              `python3 tools/codegen/gen_can.py`; no change here is needed.
  *
  *              Periodic TX
  *              ───────────
- *              A dedicated worker thread (priority 3, stack 1024 B) sends
- *              DCU_2_mABX (0x196) every 100 ms.  On each cycle the thread
- *              reads the current mission and operating mode directly from
- *              app_state (the single source of truth) and packs them into
- *              the outgoing frame.  No local state copy is maintained.
+ *              A dedicated worker thread (priority 3) sends DCU_2_mABX
+ *              (0x196) every 100 ms.  On each cycle the thread reads the
+ *              current mission and operating mode directly from app_state
+ *              (the single source of truth) and packs them via the generated
+ *              dcu_can_gen_dcu_2_m_abx_pack().  No local state copy is kept.
  *
  *                drive_mode = mission_to_drive_mode(app_state_get_selected_mission())
  *                rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD)
+ *
+ *              Periodic RX
+ *              ───────────
+ *              Hardware RX filters (one per ID in can_rx_gen_frame_ids[])
+ *              route all generated RX frames into a message queue.  The
+ *              worker thread drains the queue each cycle, decodes via
+ *              can_rx_gen_dispatch() into a can_data_snapshot, and publishes
+ *              it to can_data_chan.  The App Layer stores it in app_state.
  *
  *              Bus status
  *              ──────────
@@ -58,8 +68,9 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
-#include "modules/can/can_signals.h"
 #include "app/app_state.h"
+#include "generated/dcu_can_gen.h"
+#include "generated/can_rx_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 
@@ -77,10 +88,13 @@ LOG_MODULE_REGISTER(can_module, CONFIG_LOG_DEFAULT_LEVEL);
 #define CAN_TX_TIMEOUT          K_MSEC(100)
 
 /** @brief Thread stack size for the CAN worker thread. */
-#define CAN_THREAD_STACK_SIZE   1024U
+#define CAN_THREAD_STACK_SIZE   2048U
 
 /** @brief Thread scheduling priority for the CAN worker (higher = more urgent). */
 #define CAN_THREAD_PRIORITY     3
+
+/** @brief Capacity of the RX frame message queue (frames buffered between cycles). */
+#define CAN_RX_MSGQ_DEPTH       16U
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -103,11 +117,29 @@ static struct k_thread s_can_thread;
 /** @brief Flag set after hardware initialisation completes successfully. */
 static bool s_hw_ready;
 
+/**
+ * @brief RX message queue, filled by the CAN driver ISR for matching frames.
+ *
+ * Drained by the CAN worker thread once per 100 ms cycle.  Depth 16 buffers
+ * more than one full period of both mABX frames at their expected rates.
+ */
+CAN_MSGQ_DEFINE(s_can_rx_msgq, CAN_RX_MSGQ_DEPTH);
+
+/**
+ * @brief Accumulator for decoded RX signal values.
+ *
+ * Only touched by the CAN worker thread.  Holds the latest decoded value of
+ * every signal; published as a whole to can_data_chan after each RX drain so
+ * partial updates (only one of the two frames received) keep earlier values.
+ */
+static struct can_data_snapshot s_rx_snapshot;
+
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static int  can_hw_init(void);
 static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, uint8_t debug);
+static bool can_drain_rx(void);
 static void can_thread_fn(void *p1, void *p2, void *p3);
 
 
@@ -145,6 +177,27 @@ static int can_hw_init(void)
         return ret;
     }
 
+    /*
+     * ── RX filters: route all generated RX frame IDs into the msgq ──────
+     *
+     * The ID list comes from the code generator (dcu_app.yaml, direction:
+     * rx).  Adding a message there automatically registers its filter here
+     * — no manual edit required.
+     */
+    for (size_t i = 0U; i < CAN_RX_GEN_NUM_FRAMES; i++) {
+        const struct can_filter filter = {
+            .id    = can_rx_gen_frame_ids[i],
+            .mask  = CAN_STD_ID_MASK,
+            .flags = 0U,
+        };
+
+        ret = can_add_rx_filter_msgq(s_can_dev, &s_can_rx_msgq, &filter);
+        if (ret < 0) {
+            LOG_ERR("RX filter 0x%03X failed: %d", filter.id, ret);
+            return ret;
+        }
+    }
+
     LOG_INF("CAN controller ready (%s, %u bps)", s_can_dev->name, CAN_BITRATE_BPS);
     return 0;
 }
@@ -152,50 +205,100 @@ static int can_hw_init(void)
 /**
  * @brief Build and transmit a DCU_2_mABX frame.
  *
- * Packs @p drive_mode and @p rtd into the 3-byte payload according to the
- * DBC signal layout defined in can_signals.h, then calls can_send().
+ * Uses the generated pack function (dcu_can_gen.h) — the bit layout comes
+ * straight from the DBC via the code generator.
  *
  * Logs an error if the frame cannot be delivered within CAN_TX_TIMEOUT.
  *
  * @param drive_mode  DV_Drive_Mode_SETTING raw value (0–7).
  * @param rtd         true → RTD_Button = 1 (Ready-to-Drive request).
+ * @param debug       Debug_SETTING raw value (0–7).
  */
 static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, uint8_t debug)
 {
     struct can_frame frame = {
-        .id    = DCU2_MABX_CAN_ID,
-        .dlc   = DCU2_MABX_DLC,
+        .id    = DCU_CAN_GEN_DCU_2_M_ABX_FRAME_ID,
+        .dlc   = DCU_CAN_GEN_DCU_2_M_ABX_LENGTH,
         .flags = 0,   /* standard (11-bit) frame, no CAN-FD */
     };
 
-    DCU2_MABX_PACK(frame.data, drive_mode, rtd, debug);
+    const struct dcu_can_gen_dcu_2_m_abx_t msg = {
+        .debug_setting         = debug,
+        .dv_drive_mode_setting = drive_mode,
+        .rtd_button            = rtd ? 1U : 0U,
+    };
+
+    if (dcu_can_gen_dcu_2_m_abx_pack(frame.data, &msg, sizeof(frame.data)) < 0) {
+        LOG_ERR("TX 0x%03X pack failed", frame.id);
+        return;
+    }
 
     int ret = can_send(s_can_dev, &frame, CAN_TX_TIMEOUT, NULL, NULL);
     if (ret != 0) {
         LOG_ERR("TX 0x%03X failed: %d (drive_mode=%u rtd=%d debug=%u)",
-                DCU2_MABX_CAN_ID, ret, drive_mode, (int)rtd, debug);
+                frame.id, ret, drive_mode, (int)rtd, debug);
     } else {
         LOG_DBG("TX 0x%03X  drive_mode=%u  rtd=%d  debug=%u",
-                DCU2_MABX_CAN_ID, drive_mode, (int)rtd, debug);
+                frame.id, drive_mode, (int)rtd, debug);
     }
+}
+
+/**
+ * @brief Drain all queued RX frames and decode them into the snapshot.
+ *
+ * Decoding is fully generated: can_rx_gen_dispatch() knows every
+ * direction:rx message from dcu_app.yaml.  Adding a message there requires
+ * no change in this file.
+ *
+ * @return true if at least one frame was decoded (snapshot changed).
+ */
+static bool can_drain_rx(void)
+{
+    struct can_frame frame;
+    bool updated = false;
+
+    while (k_msgq_get(&s_can_rx_msgq, &frame, K_NO_WAIT) == 0) {
+        if (can_rx_gen_dispatch(frame.id, frame.data, can_dlc_to_bytes(frame.dlc),
+                                &s_rx_snapshot)) {
+            updated = true;
+        } else {
+            /* Filters only match generated IDs — should not happen. */
+            LOG_WRN("Unexpected RX frame id 0x%03X", frame.id);
+        }
+    }
+
+    return updated;
 }
 
 /** @brief TX period: DCU_2_mABX is sent cyclically at this interval. */
 #define CAN_TX_PERIOD_MS    100U
 
 /**
+ * @brief Convert a mission_id to the DV_Drive_Mode_SETTING raw value.
+ *
+ * The numeric values of enum mission_id are defined to match the DBC
+ * encoding directly (MISSION_NONE = 0 … MISSION_MANUAL_DRIVING = 6).
+ */
+static inline uint8_t mission_to_drive_mode(enum mission_id mission)
+{
+    return (uint8_t)mission;
+}
+
+/**
  * @brief CAN worker thread entry point.
  *
- * Runs a fixed 100 ms send cycle:
+ * Runs a fixed 100 ms cycle:
  *
- *   1. Read drive_mode and RTD flag directly from app_state — the single
- *      source of truth.  No local copy is kept; every cycle reflects the
- *      latest state set by the App Layer.
- *   2. Transmit DCU_2_mABX with the current values.
- *   3. Sleep for the remainder of the 100 ms period.
+ *   1. Drain the RX message queue — decode every received mABX frame into
+ *      the snapshot accumulator.  If anything arrived, publish the full
+ *      snapshot to can_data_chan (the App Layer stores it in app_state).
+ *   2. Read drive_mode, RTD flag, and debug bits directly from app_state —
+ *      the single source of truth.  No local TX state is kept.
+ *   3. Transmit DCU_2_mABX with the current values.
+ *   4. Sleep for the remainder of the 100 ms period.
  *
- * app_state_get_selected_mission() and app_state_get_mode() are thread-safe
- * (mutex-protected inside app_state.c) so they are safe to call here.
+ * app_state getters are thread-safe (mutex-protected inside app_state.c)
+ * so they are safe to call here.
  *
  * The thread exits silently if hardware initialisation failed so that the
  * rest of the firmware continues to function without CAN.
@@ -212,15 +315,25 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
     }
 
     while (true) {
-        /* ── 1. Read current state from the App Layer ────────────────── */
+        /* ── 1. Drain RX queue and publish decoded snapshot ──────────── */
+        if (can_drain_rx()) {
+            s_rx_snapshot.timestamp_ms = k_uptime_get();
+
+            int rc = zbus_chan_pub(&can_data_chan, &s_rx_snapshot, K_NO_WAIT);
+            if (rc != 0) {
+                LOG_WRN("can_data_chan publish failed: %d", rc);
+            }
+        }
+
+        /* ── 2. Read current TX state from the App Layer ─────────────── */
         uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
         bool    rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD);
         uint8_t debug      = app_state_get_debug_bits();
 
-        /* ── 2. Transmit ─────────────────────────────────────────────── */
+        /* ── 3. Transmit ─────────────────────────────────────────────── */
         can_send_dcu2_mabx(drive_mode, rtd_active, debug);
 
-        /* ── 3. Wait for next 100 ms slot ────────────────────────────── */
+        /* ── 4. Wait for next 100 ms slot ────────────────────────────── */
         k_msleep(CAN_TX_PERIOD_MS);
     }
 }
