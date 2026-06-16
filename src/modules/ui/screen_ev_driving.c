@@ -147,24 +147,6 @@ static void build_header(lv_obj_t *scr)
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);
 }
 
-static void build_unit(lv_obj_t *scr, lv_obj_t *parent, lv_style_t *value_style, lv_style_t *unit_style)
-{
-    sliderLeftSpan = lv_spangroup_create(scr);
-
-    lv_obj_set_width(sliderLeftSpan, 60);
-    lv_obj_set_height(sliderLeftSpan, 60);
-    lv_obj_set_style_text_align(sliderLeftSpan, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-
-    lv_obj_align_to(sliderLeftSpan, sliderLeft, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
-
-    lv_span_t * spanL1 = lv_spangroup_new_span(sliderLeftSpan);
-    lv_style_set_text_font(lv_span_get_style(spanL1), &BarlowCondensed_BoldItalic_32);
-    lv_span_set_text(spanL1, "0");
-
-    lv_span_t * spanL2 = lv_spangroup_new_span(sliderLeftSpan);
-    lv_style_set_text_font(lv_span_get_style(spanL2), &BarlowCondensed_Italic_20);
-    lv_span_set_text(spanL2, "%");
-}
 
 static void build_sliders(lv_obj_t *scr)
 {
@@ -175,10 +157,10 @@ static void build_sliders(lv_obj_t *scr)
     lv_obj_set_size(s_sldr_left, 40, 200);
     lv_obj_set_pos(s_sldr_left, 10, 70);
 
-    lv_obj_t * s_lbl_sldr_left_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
-    lv_label_set_text(sliderLeft_Titlelabel, "TQG F");
-    lv_obj_align_to(sliderLeft_Titlelabel, sliderLeft, LV_ALIGN_OUT_TOP_MID, 0, 0);
+    lv_obj_t *s_lbl_sldr_left_title = lv_label_create(scr);
+    lv_obj_add_style(s_lbl_sldr_left_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(s_lbl_sldr_left_title, "TQG F");
+    lv_obj_align_to(s_lbl_sldr_left_title, s_sldr_left, LV_ALIGN_OUT_TOP_MID, 0, 0);
 
     
 }
@@ -187,21 +169,18 @@ static void build_labels(lv_obj_t *scr)
 {
     lv_obj_t *lbl_mean_power = lv_label_create(scr);
     lv_obj_add_style(lbl_mean_power, &ui_style_label_value_lg, 0);
-    /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
-    lv_obj_set_style_text_color(lbl_mean_power, UI_C_DARK, 0);
     lv_label_bind_text(lbl_mean_power, &ui_subj_power_average, "%d");
+    ui_bind_level_power_average(lbl_mean_power);
     lv_obj_align(lbl_mean_power, LV_ALIGN_LEFT_MID, 10, 0);
 
     lv_obj_t *lbl_hv_volt_akku = lv_label_create(scr);
     lv_obj_add_style(lbl_hv_volt_akku, &ui_style_label_value_lg, 0);
-    /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
-    lv_obj_set_style_text_color(lbl_hv_volt_akku, UI_C_DARK, 0);
     lv_label_bind_text(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, "%d");
+    ui_bind_level_voltage_accu_hv(lbl_hv_volt_akku);
     lv_obj_align(lbl_hv_volt_akku, LV_ALIGN_LEFT_MID, 150, 0);
 
     lv_obj_t *lbl_hv_volt_ts = lv_label_create(scr);
     lv_obj_add_style(lbl_hv_volt_ts, &ui_style_label_value_lg, 0);
-    /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
     lv_obj_set_style_text_color(lbl_hv_volt_ts, UI_C_DARK, 0);
     lv_label_bind_text(lbl_hv_volt_ts, &ui_subj_voltage_tractive_system, "%d");
     lv_obj_align(lbl_hv_volt_ts, LV_ALIGN_LEFT_MID, 300, 0);

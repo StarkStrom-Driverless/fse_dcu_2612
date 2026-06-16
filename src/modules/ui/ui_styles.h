@@ -247,6 +247,25 @@ extern lv_style_t ui_style_status_warn;
  */
 extern lv_style_t ui_style_status_fault;
 
+/* --- Level indicators (LV_STATE_USER_1 / USER_2) ---------------------------------- */
+
+/**
+ * @brief Text colour for WARNING level (applied at LV_STATE_USER_1).
+ *
+ * Used by the generated ui_bind_level_<x>() helpers.
+ * Sets text colour to UI_C_ACCENT (gold).
+ */
+extern lv_style_t ui_style_level_warn;
+
+/**
+ * @brief Text colour for CRITICAL level (applied at LV_STATE_USER_2).
+ *
+ * Used by the generated ui_bind_level_<x>() helpers.
+ * LV_STATE_USER_2 has higher priority than USER_1 — overrides warning gold.
+ * Sets text colour to UI_C_RED.
+ */
+extern lv_style_t ui_style_level_crit;
+
 
 /* ── Initialisation ──────────────────────────────────────────────────────────────────────────── */
 

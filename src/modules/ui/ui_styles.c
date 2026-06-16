@@ -63,6 +63,9 @@ lv_style_t ui_style_status_ok;
 lv_style_t ui_style_status_warn;
 lv_style_t ui_style_status_fault;
 
+lv_style_t ui_style_level_warn;
+lv_style_t ui_style_level_crit;
+
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
@@ -84,6 +87,7 @@ static void init_label_styles(void);
 static void init_button_styles(void);
 static void init_slider_styles(void);
 static void init_status_styles(void);
+static void init_level_styles(void);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
@@ -242,6 +246,17 @@ static void init_status_styles(void)
     lv_style_set_radius(&ui_style_status_fault,   LV_RADIUS_CIRCLE);
 }
 
+static void init_level_styles(void)
+{
+    /* Warning — gold/accent text colour (LV_STATE_USER_1) */
+    lv_style_init(&ui_style_level_warn);
+    lv_style_set_text_color(&ui_style_level_warn, UI_C_ACCENT);
+
+    /* Critical — red text colour (LV_STATE_USER_2, higher priority) */
+    lv_style_init(&ui_style_level_crit);
+    lv_style_set_text_color(&ui_style_level_crit, UI_C_RED);
+}
+
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
@@ -254,4 +269,5 @@ void ui_styles_init(void)
     init_button_styles();
     init_slider_styles();
     init_status_styles();
+    init_level_styles();
 }

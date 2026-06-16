@@ -12,16 +12,19 @@ application YAML (message whitelist + UI intent) and generates:
   src/generated/can_rx_gen.[ch]     RX dispatch: frame ID → unpack → snapshot,
                                     plus frame ID table for filter setup
   src/generated/ui_subjects_gen.[ch] LVGL subjects (observer pattern): one
-                                    lv_subject_t per RX signal + init/update
-  src/generated/ui_levels_gen.[ch]  OK/WARNING/CRITICAL threshold tables
-                                    + generic ui_classify() function
+                                    lv_subject_t per RX signal + init/update;
+                                    for signals with limits also a
+                                    ui_bind_level_<x>(lv_obj_t*) helper that
+                                    wires LV_STATE_USER_1/USER_2 state bindings
+                                    directly against the value subject using
+                                    lv_obj_bind_state_if_lt/gt.
 
 Pipeline:
   1. Validate YAML against DBC (names, app_name uniqueness, limit monotonicity)
   2. Filter DBC to the YAML whitelist → temporary filtered DBC
   3. Run cantools generate_c_source on the filtered DBC
   4. Emit snapshot struct + RX dispatch from the app_name mappings
-  5. Emit threshold tables from the YAML limits
+  5. Emit LVGL subjects + level-binding helpers from the app_name/limits mappings
 
 Usage (from project root with west venv active):
   python3 tools/codegen/gen_can.py
@@ -46,9 +49,8 @@ from cantools.database.can.database import Database
 # Must match the --database-name argument of the cantools call.
 DATABASE_NAME = "dcu_can_gen"
 
-# Order defines the monotonicity requirement and the bits of the present mask.
+# Order defines the monotonicity requirement.
 LIMIT_KEYS = ("critical_low", "warning_low", "warning_high", "critical_high")
-LIMIT_BIT = {key: 1 << i for i, key in enumerate(LIMIT_KEYS)}
 
 VALID_DIRECTIONS = {"rx", "tx"}
 
@@ -236,7 +238,7 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
             app_name = sig_cfg.get("app_name")
             if app_name:
                 sig = dbc_signals[sig_name]
-                mapped.append((sig, app_name, snapshot_c_type(sig)))
+                mapped.append((sig, app_name, snapshot_c_type(sig), sig_cfg.get("limits")))
 
         if mapped:
             result.append({
@@ -265,7 +267,7 @@ struct can_data_snapshot {""")
     for entry in rx_messages:
         msg = entry["msg"]
         lines.append(f"\n    /* ── {msg.name} (0x{msg.frame_id:03X}) ── */\n")
-        for sig, app_name, c_type in entry["signals"]:
+        for sig, app_name, c_type, _limits in entry["signals"]:
             lines.append(f"    {c_type:<8} {app_name};{'':<4}/**< {sig.name} */")
     lines.append("""
     /**
@@ -326,7 +328,7 @@ def emit_rx_dispatch_source(rx_messages: list[dict]) -> str:
         lines.append(f"    if ({fn}_unpack(&msg, data, dlc) != 0) {{")
         lines.append("        return false;")
         lines.append("    }\n")
-        for sig, app_name, c_type in entry["signals"]:
+        for sig, app_name, c_type, _limits in entry["signals"]:
             field = camel_to_snake_case(sig.name)
             if c_type == "bool":
                 rhs = f"(msg.{field} != 0u)"
@@ -369,7 +371,11 @@ def subject_kind(c_type: str) -> str:
     return "float" if c_type == "float" else "int"
 
 
-def emit_subjects_header(rx_messages: list[dict], limited: set[str]) -> str:
+def c_float(value: float | int) -> str:
+    return f"{float(value)}f"
+
+
+def emit_subjects_header(rx_messages: list[dict]) -> str:
     lines = [GENERATED_BANNER]
     lines.append("#pragma once\n")
     lines.append("#include <lvgl.h>\n")
@@ -377,42 +383,42 @@ def emit_subjects_header(rx_messages: list[dict], limited: set[str]) -> str:
     lines.append("""\
 /*
  * One value subject ui_subj_<x> per RX signal (app_name from dcu_app.yaml).
- * For signals with limits, an additional level subject ui_level_<x> holding
- * UI_LEVEL_OK/WARNING/CRITICAL (updated via ui_classify in the update function).
+ * For signals with limits a level-binding helper ui_bind_level_<x>(lv_obj_t*)
+ * wires LV_STATE_USER_1 (warning) and LV_STATE_USER_2 (critical) directly
+ * against the value subject using lv_obj_bind_state_if_lt/gt.
+ * LV_STATE_USER_2 has higher priority and overrides USER_1 when both fire.
  *
  * Threading: ui_subjects_gen_init() and ui_subjects_gen_update() must ONLY
  * be called from the LVGL thread — observers fire synchronously inside
  * lv_subject_set_*().
  *
- * Widget binding in screens (examples):
+ * Widget binding in screens:
  *   lv_label_bind_text(label, &ui_subj_voltage_tractive_system, "%d V");
- *   ui_level_bind_text_color(label, &ui_level_temperature_motor);
+ *   ui_bind_level_voltage_accu_hv(label);   // adds styles + state observers
  */
 """)
     for entry in rx_messages:
         msg = entry["msg"]
         lines.append(f"/* ── {msg.name} (0x{msg.frame_id:03X}) ── */\n")
-        for sig, app_name, c_type in entry["signals"]:
+        for sig, app_name, c_type, limits in entry["signals"]:
             lines.append(f"extern lv_subject_t ui_subj_{app_name};{'':<4}"
                          f"/**< {sig.name} ({subject_kind(c_type)}) */")
-            if app_name in limited:
-                lines.append(f"extern lv_subject_t ui_level_{app_name};{'':<3}"
-                             f"/**< {sig.name} OK/WARNING/CRITICAL */")
+            if limits:
+                lines.append(
+                    f"void ui_bind_level_{app_name}(lv_obj_t *obj);"
+                    f"  /**< LV_STATE_USER_1=warn, USER_2=crit via {sig.name} */")
         lines.append("")
     lines.append("""\
 /**
- * @brief Initializes all subjects to 0 (level subjects to UI_LEVEL_OK).
- * Call before screen creation (ui_module_init, before the LVGL thread
- * starts) so that screens can bind their widgets during construction.
+ * @brief Initializes all subjects to 0.
+ * Call before screen creation so screens can bind widgets during construction.
  */
 void ui_subjects_gen_init(void);
 
 /**
  * @brief Transfers a CAN snapshot into all subjects.
  *
- * Sets value subjects and (for signals with limits) level subjects.
- * lv_subject_set_*() only notifies observers on value change —
- * level observers therefore only fire on level transitions.
+ * lv_subject_set_*() only notifies observers on value change.
  *
  * @param snap  Snapshot from UI_CMD_UPDATE_DATA (app layer → UI).
  */
@@ -420,146 +426,58 @@ void ui_subjects_gen_update(const struct can_data_snapshot *snap);""")
     return "\n".join(lines) + "\n"
 
 
-def emit_subjects_source(rx_messages: list[dict], limited: set[str]) -> str:
+def emit_subjects_source(rx_messages: list[dict]) -> str:
     all_signals = [
-        (sig, app_name, c_type)
+        (sig, app_name, c_type, limits)
         for entry in rx_messages
-        for sig, app_name, c_type in entry["signals"]
+        for sig, app_name, c_type, limits in entry["signals"]
     ]
 
     lines = [GENERATED_BANNER]
     lines.append('#include "ui_subjects_gen.h"')
-    lines.append('#include "ui_levels_gen.h"   /* ui_classify, ui_limits_*, enum ui_level */\n')
+    lines.append('#include "modules/ui/ui_styles.h"\n')
 
-    for _sig, app_name, _c_type in all_signals:
+    for _sig, app_name, _c_type, _limits in all_signals:
         lines.append(f"lv_subject_t ui_subj_{app_name};")
-        if app_name in limited:
-            lines.append(f"lv_subject_t ui_level_{app_name};")
 
     lines.append("\nvoid ui_subjects_gen_init(void)\n{")
-    for _sig, app_name, c_type in all_signals:
+    for _sig, app_name, c_type, _limits in all_signals:
         if subject_kind(c_type) == "float":
             lines.append(f"    lv_subject_init_float(&ui_subj_{app_name}, 0.0f);")
         else:
             lines.append(f"    lv_subject_init_int(&ui_subj_{app_name}, 0);")
-        if app_name in limited:
-            lines.append(f"    lv_subject_init_int(&ui_level_{app_name}, (int32_t)UI_LEVEL_OK);")
     lines.append("}\n")
 
     lines.append("void ui_subjects_gen_update(const struct can_data_snapshot *snap)\n{")
-    for _sig, app_name, c_type in all_signals:
+    for _sig, app_name, c_type, _limits in all_signals:
         if subject_kind(c_type) == "float":
             lines.append(f"    lv_subject_set_float(&ui_subj_{app_name}, snap->{app_name});")
         else:
             lines.append(f"    lv_subject_set_int(&ui_subj_{app_name}, (int32_t)snap->{app_name});")
-        if app_name in limited:
-            lines.append(
-                f"    lv_subject_set_int(&ui_level_{app_name}, "
-                f"(int32_t)ui_classify(&ui_limits_{app_name}, (float)snap->{app_name}));"
-            )
-    lines.append("}")
+    lines.append("}\n")
+
+    for _sig, app_name, _c_type, limits in all_signals:
+        if not limits:
+            continue
+        lines.append(f"void ui_bind_level_{app_name}(lv_obj_t *obj)")
+        lines.append("{")
+        lines.append( "    lv_obj_add_style(obj, &ui_style_level_warn, LV_STATE_USER_1);")
+        lines.append( "    lv_obj_add_style(obj, &ui_style_level_crit, LV_STATE_USER_2);")
+        if "warning_high" in limits:
+            lines.append(f"    lv_obj_bind_state_if_gt(obj, &ui_subj_{app_name}, "
+                         f"LV_STATE_USER_1, {c_float(limits['warning_high'])});")
+        if "warning_low" in limits:
+            lines.append(f"    lv_obj_bind_state_if_lt(obj, &ui_subj_{app_name}, "
+                         f"LV_STATE_USER_1, {c_float(limits['warning_low'])});")
+        if "critical_high" in limits:
+            lines.append(f"    lv_obj_bind_state_if_gt(obj, &ui_subj_{app_name}, "
+                         f"LV_STATE_USER_2, {c_float(limits['critical_high'])});")
+        if "critical_low" in limits:
+            lines.append(f"    lv_obj_bind_state_if_lt(obj, &ui_subj_{app_name}, "
+                         f"LV_STATE_USER_2, {c_float(limits['critical_low'])});")
+        lines.append("}\n")
+
     return "\n".join(lines) + "\n"
-
-
-# ── Level Table Generation ────────────────────────────────────────────────────
-
-
-def collect_limit_entries(cfg: dict) -> list[tuple[str, dict, str]]:
-    """Return sorted (app_name, limits, 'Message.Signal') for signals with limits."""
-    entries = []
-    for msg_name, msg_cfg in cfg["messages"].items():
-        for sig_name, sig_cfg in ((msg_cfg or {}).get("signals") or {}).items():
-            sig_cfg = sig_cfg or {}
-            if sig_cfg.get("limits"):
-                entries.append(
-                    (sig_cfg["app_name"], sig_cfg["limits"], f"{msg_name}.{sig_name}")
-                )
-    return sorted(entries)
-
-
-def c_float(value: float | int) -> str:
-    return f"{float(value)}f"
-
-
-def emit_levels_header(entries: list[tuple[str, dict, str]]) -> str:
-    lines = [GENERATED_BANNER]
-    lines.append("#pragma once\n")
-    lines.append("#include <stdint.h>\n")
-    lines.append("""\
-/** @brief Classification levels for UI display and warning logic. */
-enum ui_level {
-    UI_LEVEL_OK = 0,
-    UI_LEVEL_WARNING,
-    UI_LEVEL_CRITICAL,
-};
-
-/* Bits of the ui_limits.present mask — which thresholds are set. */
-""")
-    for key in LIMIT_KEYS:
-        lines.append(f"#define UI_LIMIT_{key.upper():<14} (1U << {LIMIT_KEYS.index(key)})")
-    lines.append("""
-/**
- * @brief Threshold set for a signal (physical units).
- *
- * Unset thresholds are 0.0f and masked out via the present field.
- */
-struct ui_limits {
-    float   critical_low;
-    float   warning_low;
-    float   warning_high;
-    float   critical_high;
-    uint8_t present;
-};
-
-/**
- * @brief Classifies a physical value against a threshold set.
- *
- * @param lim    Threshold set (one of the ui_limits_* tables).
- * @param value  Physical signal value (after DBC scale/offset).
- * @return       UI_LEVEL_OK, UI_LEVEL_WARNING, or UI_LEVEL_CRITICAL.
- */
-enum ui_level ui_classify(const struct ui_limits *lim, float value);
-
-/* ── Threshold tables (one per signal with limits in dcu_app.yaml) ── */
-""")
-    for app_name, _limits, origin in entries:
-        lines.append(f"/** @brief Limits for {origin}. */")
-        lines.append(f"extern const struct ui_limits ui_limits_{app_name};")
-        lines.append("")
-    return "\n".join(lines)
-
-
-def emit_levels_source(entries: list[tuple[str, dict, str]]) -> str:
-    lines = [GENERATED_BANNER]
-    lines.append('#include "ui_levels_gen.h"\n')
-    lines.append("""\
-enum ui_level ui_classify(const struct ui_limits *lim, float value)
-{
-    if (((lim->present & UI_LIMIT_CRITICAL_LOW)  && (value < lim->critical_low)) ||
-        ((lim->present & UI_LIMIT_CRITICAL_HIGH) && (value > lim->critical_high))) {
-        return UI_LEVEL_CRITICAL;
-    }
-
-    if (((lim->present & UI_LIMIT_WARNING_LOW)  && (value < lim->warning_low)) ||
-        ((lim->present & UI_LIMIT_WARNING_HIGH) && (value > lim->warning_high))) {
-        return UI_LEVEL_WARNING;
-    }
-
-    return UI_LEVEL_OK;
-}
-""")
-    for app_name, limits, origin in entries:
-        present = " | ".join(
-            f"UI_LIMIT_{key.upper()}" for key in LIMIT_KEYS if key in limits
-        )
-        lines.append(f"/* {origin} */")
-        lines.append(f"const struct ui_limits ui_limits_{app_name} = {{")
-        for key in LIMIT_KEYS:
-            lines.append(f"    .{key:<14} = {c_float(limits.get(key, 0.0))},")
-        lines.append(f"    .present        = {present},")
-        lines.append("};")
-        lines.append("")
-    return "\n".join(lines)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -596,33 +514,28 @@ def main() -> None:
     (args.out / "can_rx_gen.h").write_text(emit_rx_dispatch_header(rx_messages), encoding="utf-8")
     (args.out / "can_rx_gen.c").write_text(emit_rx_dispatch_source(rx_messages), encoding="utf-8")
 
-    # Collect limit entries first — provides the set of limited app_names
-    # needed for the level subjects in stage 3.
-    entries = collect_limit_entries(cfg)
-    limited = {app_name for app_name, _limits, _origin in entries}
-
-    # Stage 3: LVGL subjects (value + level subjects)
+    # Stage 3: LVGL subjects + level-binding helpers
     (args.out / "ui_subjects_gen.h").write_text(
-        emit_subjects_header(rx_messages, limited), encoding="utf-8")
+        emit_subjects_header(rx_messages), encoding="utf-8")
     (args.out / "ui_subjects_gen.c").write_text(
-        emit_subjects_source(rx_messages, limited), encoding="utf-8")
-
-    # Stage 4: threshold tables (LVGL-free)
-    (args.out / "ui_levels_gen.h").write_text(emit_levels_header(entries), encoding="utf-8")
-    (args.out / "ui_levels_gen.c").write_text(emit_levels_source(entries), encoding="utf-8")
+        emit_subjects_source(rx_messages), encoding="utf-8")
 
     total_signals = sum(
         len((m or {}).get("signals") or {}) for m in cfg["messages"].values()
     )
     rx_signal_count = sum(len(e["signals"]) for e in rx_messages)
+    limited_count = sum(
+        1 for e in rx_messages
+        for _sig, _app_name, _c_type, limits in e["signals"]
+        if limits
+    )
     print(f"OK: {len(selected)} messages ({len(db.messages)} in DBC), "
-          f"{total_signals} signals mapped, {len(entries)} with limits")
+          f"{total_signals} signals mapped, {limited_count} with level bindings")
     print(f"    RX dispatch: {len(rx_messages)} messages, "
           f"{rx_signal_count} snapshot fields")
     for name in ("dcu_can_gen.c", "dcu_can_gen.h", "can_data_gen.h",
                  "can_rx_gen.c", "can_rx_gen.h",
-                 "ui_subjects_gen.c", "ui_subjects_gen.h",
-                 "ui_levels_gen.c", "ui_levels_gen.h"):
+                 "ui_subjects_gen.c", "ui_subjects_gen.h"):
         print(f"  → {args.out / name}")
 
 
