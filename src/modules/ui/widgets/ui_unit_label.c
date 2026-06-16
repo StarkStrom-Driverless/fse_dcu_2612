@@ -23,7 +23,7 @@
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
 
-#include "modules/ui/ui_unit_label.h"
+#include "modules/ui/widgets/ui_unit_label.h"
 
 
 /* ── Private Constants ───────────────────────────────────────────────────────────────────────── */

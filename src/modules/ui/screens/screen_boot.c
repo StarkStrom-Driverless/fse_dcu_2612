@@ -30,7 +30,7 @@
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
 
-#include "modules/ui/screen_boot.h"
+#include "modules/ui/screens/screen_boot.h"
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 

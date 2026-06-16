@@ -76,11 +76,11 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "modules/ui/ui_styles.h"
-#include "modules/ui/screen_boot.h"
-#include "modules/ui/screen_mission_select.h"
-#include "modules/ui/screen_checklist.h"
-#include "modules/ui/screen_debug_write.h"
-#include "modules/ui/screen_ev_driving.h"
+#include "modules/ui/screens/screen_boot.h"
+#include "modules/ui/screens/screen_mission_select.h"
+#include "modules/ui/screens/screen_checklist.h"
+#include "modules/ui/screens/screen_debug_write.h"
+#include "modules/ui/screens/screen_ev_driving.h"
 #include "generated/ui_subjects_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
