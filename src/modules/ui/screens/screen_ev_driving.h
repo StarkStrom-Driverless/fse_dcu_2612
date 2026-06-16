@@ -68,7 +68,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H
+#define MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -106,3 +107,5 @@ lv_obj_t *screen_ev_driving_create(void);
 lv_group_t *screen_ev_driving_get_right_encoder_group(void);
 lv_group_t *screen_ev_driving_get_left_button_group(void);
 lv_group_t *screen_ev_driving_get_right_button_group(void);
+
+#endif /* MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H */

@@ -69,7 +69,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_SCREENS_SCREEN_MISSION_SELECT_H
+#define MODULES_UI_SCREENS_SCREEN_MISSION_SELECT_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -107,3 +108,5 @@ lv_obj_t *screen_mission_select_create(void);
 lv_group_t *screen_mission_select_get_right_encoder_group(void);
 lv_group_t *screen_mission_select_get_left_button_group(void);
 lv_group_t *screen_mission_select_get_right_button_group(void);
+
+#endif /* MODULES_UI_SCREENS_SCREEN_MISSION_SELECT_H */

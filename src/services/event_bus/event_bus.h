@@ -36,7 +36,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef SERVICES_EVENT_BUS_EVENT_BUS_H
+#define SERVICES_EVENT_BUS_EVENT_BUS_H
 
 /* ── Zephyr Includes ─────────────────────────────────────────────────────────────────────────── */
 
@@ -87,3 +88,5 @@ ZBUS_CHAN_DECLARE(audio_cmd_chan);
 
 /** CAN frame transmit requests (published by App, consumed by CAN module). */
 ZBUS_CHAN_DECLARE(can_tx_cmd_chan);
+
+#endif /* SERVICES_EVENT_BUS_EVENT_BUS_H */

@@ -30,7 +30,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef SERVICES_EVENT_BUS_EVENTS_H
+#define SERVICES_EVENT_BUS_EVENTS_H
 
 /* ── Standard Includes ───────────────────────────────────────────────────────────────────────── */
 
@@ -346,3 +347,5 @@ struct can_tx_cmd {
         enum mission_id mission; /**< Valid for CAN_TX_CMD_SEND_MISSION. */
     } data;
 };
+
+#endif /* SERVICES_EVENT_BUS_EVENTS_H */

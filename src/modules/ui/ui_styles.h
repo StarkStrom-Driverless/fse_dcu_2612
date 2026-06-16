@@ -55,7 +55,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_UI_STYLES_H
+#define MODULES_UI_UI_STYLES_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -308,3 +309,5 @@ extern lv_style_t ui_style_level_crit_indicator;
  * registered.
  */
 void ui_styles_init(void);
+
+#endif /* MODULES_UI_UI_STYLES_H */

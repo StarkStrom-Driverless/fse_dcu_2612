@@ -48,7 +48,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_WIDGETS_UI_UNIT_LABEL_H
+#define MODULES_UI_WIDGETS_UI_UNIT_LABEL_H
 
 #include <lvgl.h>
 
@@ -81,3 +82,5 @@ lv_obj_t *ui_unit_label_create(lv_obj_t *parent,
  * @param fmt      printf format string for the value.
  */
 void ui_unit_label_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fmt);
+
+#endif /* MODULES_UI_WIDGETS_UI_UNIT_LABEL_H */

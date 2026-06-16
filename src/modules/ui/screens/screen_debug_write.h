@@ -69,7 +69,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_SCREENS_SCREEN_DEBUG_WRITE_H
+#define MODULES_UI_SCREENS_SCREEN_DEBUG_WRITE_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -107,3 +108,5 @@ lv_obj_t *screen_debug_write_create(void);
 lv_group_t *screen_debug_write_get_right_encoder_group(void);
 lv_group_t *screen_debug_write_get_left_button_group(void);
 lv_group_t *screen_debug_write_get_right_button_group(void);
+
+#endif /* MODULES_UI_SCREENS_SCREEN_DEBUG_WRITE_H */

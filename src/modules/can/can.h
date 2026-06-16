@@ -35,7 +35,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_CAN_CAN_H
+#define MODULES_CAN_CAN_H
 
 
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
@@ -55,3 +56,5 @@
  *       The firmware continues; only CAN functionality is unavailable.
  */
 void can_module_init(void);
+
+#endif /* MODULES_CAN_CAN_H */

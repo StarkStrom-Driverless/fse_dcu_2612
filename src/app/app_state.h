@@ -37,7 +37,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef APP_APP_STATE_H
+#define APP_APP_STATE_H
 
 /* ── Standard Includes ───────────────────────────────────────────────────────────────────────── */
 
@@ -258,3 +259,5 @@ void app_state_set_debug_bits(uint8_t bits);
  * @param settings  Non-null pointer to the settings to copy in.
  */
 void app_state_set_settings(const struct app_state_settings *settings);
+
+#endif /* APP_APP_STATE_H */

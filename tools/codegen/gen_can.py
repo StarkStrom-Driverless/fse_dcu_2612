@@ -260,7 +260,7 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
 
 def emit_data_header(rx_messages: list[dict]) -> str:
     lines = [GENERATED_BANNER]
-    lines.append("#pragma once\n")
+    lines.append("#ifndef GENERATED_CAN_DATA_GEN_H\n#define GENERATED_CAN_DATA_GEN_H\n")
     lines.append("#include <stdint.h>")
     lines.append("#include <stdbool.h>\n")
     lines.append("""\
@@ -284,12 +284,13 @@ struct can_data_snapshot {""")
      */
     int64_t  timestamp_ms;
 };""")
+    lines.append("\n#endif /* GENERATED_CAN_DATA_GEN_H */")
     return "\n".join(lines) + "\n"
 
 
 def emit_rx_dispatch_header(rx_messages: list[dict]) -> str:
     lines = [GENERATED_BANNER]
-    lines.append("#pragma once\n")
+    lines.append("#ifndef GENERATED_CAN_RX_GEN_H\n#define GENERATED_CAN_RX_GEN_H\n")
     lines.append("#include <stdint.h>")
     lines.append("#include <stdbool.h>\n")
     lines.append('#include "can_data_gen.h"\n')
@@ -317,6 +318,7 @@ extern const uint32_t can_rx_gen_frame_ids[CAN_RX_GEN_NUM_FRAMES];
  */
 bool can_rx_gen_dispatch(uint32_t frame_id, const uint8_t *data, uint8_t dlc,
                          struct can_data_snapshot *snap);""")
+    lines.append("\n#endif /* GENERATED_CAN_RX_GEN_H */")
     return "\n".join(lines) + "\n"
 
 
@@ -385,7 +387,7 @@ def c_float(value: float | int) -> str:
 
 def emit_subjects_header(rx_messages: list[dict]) -> str:
     lines = [GENERATED_BANNER]
-    lines.append("#pragma once\n")
+    lines.append("#ifndef GENERATED_UI_SUBJECTS_GEN_H\n#define GENERATED_UI_SUBJECTS_GEN_H\n")
     lines.append("#include <lvgl.h>\n")
     lines.append('#include "can_data_gen.h"\n')
     lines.append("""\
@@ -436,6 +438,7 @@ void ui_subjects_gen_init(void);
  * @param snap  Snapshot from UI_CMD_UPDATE_DATA (app layer → UI).
  */
 void ui_subjects_gen_update(const struct can_data_snapshot *snap);""")
+    lines.append("\n#endif /* GENERATED_UI_SUBJECTS_GEN_H */")
     return "\n".join(lines) + "\n"
 
 

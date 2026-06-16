@@ -44,7 +44,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_UI_H
+#define MODULES_UI_UI_H
 
 
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
@@ -65,3 +66,5 @@
  * driver before this function is called.
  */
 void ui_module_init(void);
+
+#endif /* MODULES_UI_UI_H */
