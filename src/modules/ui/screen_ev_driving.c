@@ -64,6 +64,7 @@
 
 #include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
+#include "modules/ui/ui_unit_label.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "generated/ui_subjects_gen.h"
@@ -176,11 +177,12 @@ static void build_labels(lv_obj_t *scr)
     lv_obj_bind_state_if_gt(lbl_mean_power, &ui_subj_power_average, UI_STATE_CRIT, UI_POWER_AVERAGE_CRIT_HIGH);
     lv_obj_align(lbl_mean_power, LV_ALIGN_LEFT_MID, 10, 0);
 
-    lv_obj_t *lbl_hv_volt_akku = lv_label_create(scr);
-    lv_obj_add_style(lbl_hv_volt_akku, &ui_style_label_value_lg, 0);
+    lv_obj_t *lbl_hv_volt_akku = ui_unit_label_create(scr,
+                                      &BarlowCondensed_BoldItalic_100,
+                                      &BarlowCondensed_Italic_44, "V");
     lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_label_bind_text(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, "%d");
+    ui_unit_label_bind_value(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, "%d");
     lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
     lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
     lv_obj_align(lbl_hv_volt_akku, LV_ALIGN_LEFT_MID, 150, 0);
