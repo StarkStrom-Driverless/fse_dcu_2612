@@ -72,6 +72,7 @@ enum screen_id {
     SCREEN_PRE_RTD,           /**< Pre-drive checklist (future).                   */
     SCREEN_RTD,               /**< Live telemetry during mission.                  */
     SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
+    SCREEN_EV_DRIVING,        /**< Show telemetry and adjust vehicle in EV driving */
     SCREEN_ERROR,             /**< Safety fault overlay (future).                  */
 };
 
