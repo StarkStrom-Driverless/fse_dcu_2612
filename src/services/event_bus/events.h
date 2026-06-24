@@ -67,13 +67,17 @@ enum mission_id {
  */
 enum screen_id {
     SCREEN_NONE          = 0,
+    SCREEN_DEBUG_HV_ACCU,     /**< Show debug values for High Voltage Accu         */
+    SCREEN_DEBUG_LV_ACCU,     /**< Show debug values for Low Voltage Accu          */
+    SCREEN_DEBUG_PRESSURE,    /**< Show debug values of air and brake pressure     */
+    SCREEN_DEBUG_TS,          /**< Show debug values for tractive system           */
+    SCREEN_DEBUG_WRITE,       /**< Send generic debug Bits.                        */
     SCREEN_BOOT,              /**< Initial splash; starting position in carousel.  */
     SCREEN_MISSION_SELECT,    /**< Mission roller + OK + RTD buttons.              */
-    SCREEN_DEBUG_WRITE,       /**< Send generic debug Bits.                        */
     SCREEN_PRE_RTD,           /**< Pre-drive checklist (future).                   */
     SCREEN_RTD,               /**< Live telemetry during mission.                  */
-    SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
     SCREEN_EV_DRIVING,        /**< Show telemetry and adjust vehicle in EV driving */
+    SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
     SCREEN_ERROR,             /**< Safety fault overlay (future).                  */
 };
 
@@ -134,6 +138,8 @@ enum ui_input_type {
     UI_INPUT_ENCODER_CLICK,        /**< Right encoder button press.                */
     UI_INPUT_MISSION_SELECTED,     /**< Driver confirmed a mission via OK button.  */
     UI_INPUT_RTD_REQUEST,          /**< RTD button pressed: request Ready-to-Drive.*/
+    UI_INPUT_TORQUE_VECT_ON,       /**< Driver activated Torque Vectoring          */
+    UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled Torque Vectoring          */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Engineer set debug bits via OK button.     */
     UI_INPUT_TIMESTAMP,            /**< Timestamp button pressed: log event marker.*/
 };

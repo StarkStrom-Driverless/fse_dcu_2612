@@ -79,6 +79,7 @@
 #include "modules/ui/screens/screen_boot.h"
 #include "modules/ui/screens/screen_mission_select.h"
 #include "modules/ui/screens/screen_checklist.h"
+#include "modules/ui/screens/screen_debug_pressure.h"
 #include "modules/ui/screens/screen_debug_write.h"
 #include "modules/ui/screens/screen_ev_driving.h"
 #include "generated/ui_subjects_gen.h"
@@ -99,7 +100,7 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
 #define UI_ANIM_DURATION_MS     300U
 
 /** @brief Stack size for the LVGL task thread. */
-#define UI_THREAD_STACK_SIZE    8192U
+#define UI_THREAD_STACK_SIZE    16384U
 
 /** @brief Scheduling priority for the LVGL task thread (lowest in the system). */
 #define UI_THREAD_PRIORITY      8
@@ -120,6 +121,10 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * The starting position is SCREEN_BOOT (index 1).
  */
 static const enum screen_id k_carousel[] = {
+    // SCREEN_DEBUG_LV_ACCU,   /* index 0 — CCW from boot   */
+    // SCREEN_DEBUG_HV_ACCU,   /* index 0 — CCW from boot   */
+    // SCREEN_DEBUG_PRESSURE,  /* index 0 — CCW from boot   */
+    SCREEN_DEBUG_TS,        /* index 0 — CCW from boot   */
     SCREEN_DEBUG_WRITE,     /* index 0 — CCW from boot   */
     SCREEN_BOOT,            /* index 1 — initial screen  */
     SCREEN_MISSION_SELECT,  /* index 2 — CW from boot    */
@@ -144,7 +149,7 @@ static lv_obj_t *s_screens[SCREEN_ID_COUNT];
 static enum screen_id s_active_screen = SCREEN_NONE;
 
 /** @brief Current position in the carousel array. */
-static uint8_t s_carousel_pos = 1U;    /* starts at SCREEN_BOOT */
+static uint8_t s_carousel_pos = SCREEN_BOOT;    /* starts at SCREEN_BOOT */
 
 /**
  * @brief Accumulated left encoder delta from the input callback.
@@ -516,6 +521,10 @@ void ui_module_init(void)
     ui_subjects_gen_init();
 
     /* ── 2. Create all MVP screen objects ───────────────────────────────── */
+    // s_screens[SCREEN_DEBUG_LV_ACCU]  = screen_debug_pressure_create();// = screen_debug_lv_accu_create();
+    // s_screens[SCREEN_DEBUG_HV_ACCU]  = screen_debug_pressure_create();// = screen_debug_hv_accu_create();
+    // s_screens[SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create();
+    s_screens[SCREEN_DEBUG_TS]       = screen_debug_pressure_create();// = screen_debug_tractive_system_create();
     s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create();
     s_screens[SCREEN_BOOT]           = screen_boot_create();
     s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create();
@@ -532,9 +541,9 @@ void ui_module_init(void)
     }
 
     /* ── 4. Load the boot screen (no animation on cold start) ───────────── */
-    s_active_screen = SCREEN_BOOT;
-    s_carousel_pos  = 1U;
-    lv_screen_load(s_screens[SCREEN_BOOT]);
+    s_active_screen = SCREEN_BOOT; //SCREEN_BOOT;
+    s_carousel_pos  = SCREEN_BOOT;
+    lv_screen_load(s_screens[s_active_screen]);
 
     /*
      * lv_timer_handler() and display_blanking_off() are intentionally deferred
