@@ -80,6 +80,7 @@
 #include "modules/ui/screens/screen_mission_select.h"
 #include "modules/ui/screens/screen_checklist.h"
 #include "modules/ui/screens/screen_debug_pressure.h"
+#include "modules/ui/screens/screen_debug_tractive_system.h"
 #include "modules/ui/screens/screen_debug_write.h"
 #include "modules/ui/screens/screen_ev_driving.h"
 #include "generated/ui_subjects_gen.h"
@@ -523,8 +524,8 @@ void ui_module_init(void)
     /* ── 2. Create all MVP screen objects ───────────────────────────────── */
     // s_screens[SCREEN_DEBUG_LV_ACCU]  = screen_debug_pressure_create();// = screen_debug_lv_accu_create();
     // s_screens[SCREEN_DEBUG_HV_ACCU]  = screen_debug_pressure_create();// = screen_debug_hv_accu_create();
-    // s_screens[SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create();
-    s_screens[SCREEN_DEBUG_TS]       = screen_debug_pressure_create();// = screen_debug_tractive_system_create();
+    s_screens[SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create();
+    s_screens[SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create();
     s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create();
     s_screens[SCREEN_BOOT]           = screen_boot_create();
     s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create();
