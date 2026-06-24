@@ -110,6 +110,9 @@ LV_FONT_DECLARE(BarlowCondensed_BoldItalic_32)
 /** @brief 44 pt italic — screen sub-headings and secondary captions. */
 LV_FONT_DECLARE(BarlowCondensed_Italic_44)
 
+/** @brief 80 pt bold-italic — hero numeric display (RPM, SoC …). */
+LV_FONT_DECLARE(BarlowCondensed_BoldItalic_80)
+
 /** @brief 100 pt bold-italic — hero numeric display (RPM, SoC …). */
 LV_FONT_DECLARE(BarlowCondensed_BoldItalic_100)
 
