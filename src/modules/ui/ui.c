@@ -79,6 +79,8 @@
 #include "modules/ui/screens/screen_boot.h"
 #include "modules/ui/screens/screen_mission_select.h"
 #include "modules/ui/screens/screen_checklist.h"
+#include "modules/ui/screens/screen_debug_lv_accu.h"
+#include "modules/ui/screens/screen_debug_hv_accu.h"
 #include "modules/ui/screens/screen_debug_pressure.h"
 #include "modules/ui/screens/screen_debug_tractive_system.h"
 #include "modules/ui/screens/screen_debug_write.h"
@@ -122,15 +124,15 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * The starting position is SCREEN_BOOT (index 1).
  */
 static const enum screen_id k_carousel[] = {
-    // SCREEN_DEBUG_LV_ACCU,   /* index 0 — CCW from boot   */
-    // SCREEN_DEBUG_HV_ACCU,   /* index 0 — CCW from boot   */
-    // SCREEN_DEBUG_PRESSURE,  /* index 0 — CCW from boot   */
-    SCREEN_DEBUG_TS,        /* index 0 — CCW from boot   */
-    SCREEN_DEBUG_WRITE,     /* index 0 — CCW from boot   */
-    SCREEN_BOOT,            /* index 1 — initial screen  */
-    SCREEN_MISSION_SELECT,  /* index 2 — CW from boot    */
-    SCREEN_PRE_RTD,         /* index 3 — CW from Mission */
-    SCREEN_EV_DRIVING,      /* index 4 - EV Driving      */
+    SCREEN_DEBUG_LV_ACCU,   /* index 1 — CCW from boot   */
+    SCREEN_DEBUG_HV_ACCU,   /* index 2 — CCW from boot   */
+    SCREEN_DEBUG_PRESSURE,  /* index 3 — CCW from boot   */
+    SCREEN_DEBUG_TS,        /* index 4 — CCW from boot   */
+    SCREEN_DEBUG_WRITE,     /* index 5 — CCW from boot   */
+    SCREEN_BOOT,            /* index 6 — initial screen  */
+    SCREEN_MISSION_SELECT,  /* index 7 — CW from boot    */
+    SCREEN_PRE_RTD,         /* index 8 — CW from Mission */
+    SCREEN_EV_DRIVING,      /* index 9 - EV Driving      */
 };
 
 #define CAROUSEL_LEN    ARRAY_SIZE(k_carousel)
@@ -522,8 +524,8 @@ void ui_module_init(void)
     ui_subjects_gen_init();
 
     /* ── 2. Create all MVP screen objects ───────────────────────────────── */
-    // s_screens[SCREEN_DEBUG_LV_ACCU]  = screen_debug_pressure_create();// = screen_debug_lv_accu_create();
-    // s_screens[SCREEN_DEBUG_HV_ACCU]  = screen_debug_pressure_create();// = screen_debug_hv_accu_create();
+    s_screens[SCREEN_DEBUG_LV_ACCU]  = screen_debug_lv_accu_create();
+    s_screens[SCREEN_DEBUG_HV_ACCU]  = screen_debug_hv_accu_create();
     s_screens[SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create();
     s_screens[SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create();
     s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create();
