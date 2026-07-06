@@ -8,6 +8,8 @@
         keypad-left = &keypad_left;
         keypad-right = &keypad_right;
         pwm-pizeo = &pwm_piezo;
+        pwm-display-bright = &pwm_display_bright;
+        led-strip = &apa102;
     };
 
     pwmleds {
@@ -114,4 +116,18 @@
 
 &can2 {
     phys = <&can_phy1>;
+};
+
+
+&spi3 {
+    pinctrl-0 = <&spi3_sck_pc10 &spi3_mosi_pc12>;
+    
+	apa102: apa102@0 {
+		compatible = "apa,apa102";
+		reg = <0>;
+		spi-max-frequency = <5250000>;
+		chain-length = <12>;
+		color-mapping = <LED_COLOR_ID_BLUE LED_COLOR_ID_GREEN LED_COLOR_ID_RED>;
+	};
+    status = "okay";
 };
