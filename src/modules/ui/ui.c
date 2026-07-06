@@ -417,15 +417,11 @@ static void handle_ui_cmd(const struct ui_cmd *cmd)
     switch (cmd->type) {
     case UI_CMD_SET_SCREEN: {
         enum screen_id target = cmd->data.screen;
-        lv_scr_load_anim_t anim = LV_SCR_LOAD_ANIM_FADE_IN;
+        lv_scr_load_anim_t anim = LV_SCR_LOAD_ANIM_NONE;
 
         /* If the target is in the carousel, use a directional slide */
         for (uint8_t i = 0U; i < (uint8_t)CAROUSEL_LEN; i++) {
             if (k_carousel[i] == target) {
-                bool going_right = (i > s_carousel_pos);
-                anim = going_right
-                    ? LV_SCR_LOAD_ANIM_MOVE_LEFT
-                    : LV_SCR_LOAD_ANIM_MOVE_RIGHT;
                 s_carousel_pos = i;
                 break;
             }

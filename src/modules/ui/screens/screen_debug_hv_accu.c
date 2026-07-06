@@ -88,7 +88,7 @@ static void build_bars(lv_obj_t *scr)
     lv_bar_set_range(bar_hv_accu_volt, 0, 500);
     lv_bar_bind_value(bar_hv_accu_volt, &ui_subj_voltage_accu_hv);
     lv_obj_set_size(bar_hv_accu_volt, 300, 20);
-    lv_obj_align(bar_hv_accu_volt, LV_ALIGN_TOP_MID, -60, 80);
+    lv_obj_align(bar_hv_accu_volt, LV_ALIGN_TOP_MID, -70, 80);
 
     lv_obj_t *lbl_bar_hv_accu_volt_title = lv_label_create(scr);
     lv_obj_add_style(lbl_bar_hv_accu_volt_title, &ui_style_label_subtitle, 0);
@@ -115,7 +115,7 @@ static void build_bars(lv_obj_t *scr)
     lv_bar_set_range(bar_hv_accu_temp, 0, 100);
     lv_bar_bind_value(bar_hv_accu_temp, &ui_subj_temperature_accu_hv);
     lv_obj_set_size(bar_hv_accu_temp, 300, 20);
-    lv_obj_align(bar_hv_accu_temp, LV_ALIGN_TOP_MID, -60, 130);
+    lv_obj_align(bar_hv_accu_temp, LV_ALIGN_TOP_MID, -70, 130);
 
     lv_obj_t *lbl_bar_hv_accu_temp_title = lv_label_create(scr);
     lv_obj_add_style(lbl_bar_hv_accu_temp_title, &ui_style_label_subtitle, 0);
@@ -142,7 +142,7 @@ static void build_bars(lv_obj_t *scr)
     // lv_bar_set_range(bar_air_front, 0, 100);
     // lv_bar_bind_value(bar_air_front, &ui_subj_air_pressure_front);
     // lv_obj_set_size(bar_air_front, 300, 20);
-    // lv_obj_align(bar_air_front, LV_ALIGN_TOP_MID, -60, 180);
+    // lv_obj_align(bar_air_front, LV_ALIGN_TOP_MID, -70, 180);
 
     // lv_obj_t *lbl_bar_air_front_title = lv_label_create(scr);
     // lv_obj_add_style(lbl_bar_air_front_title, &ui_style_label_subtitle, 0);
@@ -169,7 +169,7 @@ static void build_bars(lv_obj_t *scr)
     // lv_bar_set_range(bar_air_rear, 0, 100);
     // lv_bar_bind_value(bar_air_rear, &ui_subj_air_pressure_rear);
     // lv_obj_set_size(bar_air_rear, 300, 20);
-    // lv_obj_align(bar_air_rear, LV_ALIGN_TOP_MID, -60, 230);
+    // lv_obj_align(bar_air_rear, LV_ALIGN_TOP_MID, -70, 230);
 
     // lv_obj_t *lbl_bar_air_rear_title = lv_label_create(scr);
     // lv_obj_add_style(lbl_bar_air_rear_title, &ui_style_label_subtitle, 0);
