@@ -55,6 +55,7 @@
 
 #include "app/app.h"
 #include "modules/can/can.h"
+#include "modules/lighting/lighting.h"
 #include "modules/ui/ui.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
@@ -87,12 +88,24 @@ int main(void)
     can_module_init();
 
     /*
-     * Step 3: UI module
+     * Step 3: Lighting module
+     *
+     * Starts the lighting thread and begins the KITT scanner effect.
+     * Must run before the UI module so LEDs are active when the display
+     * shows the boot screen.
+     */
+    lighting_module_init();
+
+    /*
+     * Step 4: UI module
      *
      * Creates LVGL screen objects, renders the first frame, enables the
      * display, and starts the LVGL task thread.  Started last because
      * encoder and button events flow towards the App thread which must
      * already be active.
+     *
+     * Note: All modules prior to UI must be initialised first so that no
+     * upward Zbus events are dropped during the UI startup phase.
      */
     ui_module_init();
 
