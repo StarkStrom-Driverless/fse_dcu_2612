@@ -291,15 +291,15 @@ static void handle_can_data(const struct can_data_snapshot *snap)
     app_state_update_can_data(snap);
 
     /*
-     * TODO: when SCREEN_RTD is active, push the snapshot to the UI module
-     * so the live telemetry display can update:
-     *
-     *   struct ui_cmd cmd = {
-     *       .type          = UI_CMD_UPDATE_DATA,
-     *       .data.snapshot = *snap,
-     *   };
-     *   pub_ui_cmd(&cmd);
+     * Forward to the UI module unconditionally.  The LVGL subjects perform
+     * change detection themselves (observers fire only on value change), so
+     * screens that do not display CAN data cost nothing.
      */
+    struct ui_cmd cmd = {
+        .type          = UI_CMD_UPDATE_DATA,
+        .data.snapshot = *snap,
+    };
+    pub_ui_cmd(&cmd);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────────────────────

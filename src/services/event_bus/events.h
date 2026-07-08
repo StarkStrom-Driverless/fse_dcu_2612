@@ -72,6 +72,7 @@ enum screen_id {
     SCREEN_PRE_RTD,           /**< Pre-drive checklist (future).                   */
     SCREEN_RTD,               /**< Live telemetry during mission.                  */
     SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
+    SCREEN_EV_DRIVING,        /**< Show telemetry and adjust vehicle in EV driving */
     SCREEN_ERROR,             /**< Safety fault overlay (future).                  */
 };
 
@@ -96,34 +97,15 @@ struct can_status_event {
 
 /* ---- can_data_chan -------------------------------------------------------------------- */
 
-/**
- * @brief Snapshot of all decoded CAN signal values.
+/*
+ * struct can_data_snapshot is generated from dbc/dcu_app.yaml — the field
+ * list follows the app_name mappings there.  Published by the CAN module
+ * at ~100 ms; forwarded to the UI module via ui_cmd_chan by the App Layer.
  *
- * Published by the CAN module at ~100 ms or on significant value change.
- * Forwarded to the UI module via ui_cmd_chan by the App Layer.
- *
- * @note Extend this struct as the vehicle DBC is finalised. All fields
- *       must remain trivially copyable (no pointers, no VLAs).
+ * To add a signal: edit dbc/dcu_app.yaml, then run
+ *   python3 tools/codegen/gen_can.py
  */
-struct can_data_snapshot {
-    /* Drivetrain */
-    float   motor_rpm;
-    float   motor_temp_c;
-
-    /* HV Accumulator */
-    float   hv_soc_pct;       /**< State of charge, 0.0 – 100.0 %.  */
-    float   hv_voltage_v;
-    float   hv_temp_max_c;
-
-    /* LV Accumulator */
-    float   lv_voltage_v;
-
-    /**
-     * Zephyr uptime (ms) at the time this snapshot was decoded.
-     * Allows the App Layer to detect stale data when CAN is silent.
-     */
-    int64_t timestamp_ms;
-};
+#include "generated/can_data_gen.h"
 
 /* ---- ui_input_chan -------------------------------------------------------------------- */
 

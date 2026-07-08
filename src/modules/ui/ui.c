@@ -80,6 +80,8 @@
 #include "modules/ui/screen_mission_select.h"
 #include "modules/ui/screen_checklist.h"
 #include "modules/ui/screen_debug_write.h"
+#include "modules/ui/screen_ev_driving.h"
+#include "generated/ui_subjects_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 
@@ -122,6 +124,7 @@ static const enum screen_id k_carousel[] = {
     SCREEN_BOOT,            /* index 1 — initial screen  */
     SCREEN_MISSION_SELECT,  /* index 2 — CW from boot    */
     SCREEN_PRE_RTD,         /* index 3 — CW from Mission */
+    SCREEN_EV_DRIVING,      /* index 4 - EV Driving      */
 };
 
 #define CAROUSEL_LEN    ARRAY_SIZE(k_carousel)
@@ -293,6 +296,13 @@ static void set_encoder_group(enum screen_id id)
         left_button_group = screen_debug_write_get_left_button_group();
         right_button_group = screen_debug_write_get_right_button_group();
         break;
+
+    case SCREEN_EV_DRIVING:
+        right_encoder_group = screen_ev_driving_get_right_encoder_group();
+        left_button_group = screen_ev_driving_get_left_button_group();
+        right_button_group = screen_ev_driving_get_right_button_group();
+        break;
+
     default:
         right_encoder_group = NULL;
         right_button_group = NULL;
@@ -418,8 +428,12 @@ static void handle_ui_cmd(const struct ui_cmd *cmd)
     }
 
     case UI_CMD_UPDATE_DATA:
-        /* TODO: push can_data_snapshot to the RTD screen */
-        LOG_DBG("UI_CMD_UPDATE_DATA received (not yet implemented)");
+        /*
+         * Push the snapshot into the generated LVGL subjects.  Observers
+         * (widget bindings in the screens) fire synchronously here, in the
+         * LVGL thread — and only for values that actually changed.
+         */
+        ui_subjects_gen_update(&cmd->data.snapshot);
         break;
 
     case UI_CMD_SET_STATUS:
@@ -493,11 +507,20 @@ void ui_module_init(void)
     /* ── 1. Shared LVGL styles ───────────────────────────────────────────── */
     ui_styles_init();
 
+    /*
+     * ── 1b. Generated LVGL subjects ─────────────────────────────────────
+     * Must precede screen creation: screens bind their widgets to the
+     * subjects while building.  Safe here (main thread) because the LVGL
+     * task thread has not been started yet.
+     */
+    ui_subjects_gen_init();
+
     /* ── 2. Create all MVP screen objects ───────────────────────────────── */
     s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create();
     s_screens[SCREEN_BOOT]           = screen_boot_create();
     s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create();
     s_screens[SCREEN_PRE_RTD]        = screen_checklist_create();
+    s_screens[SCREEN_EV_DRIVING]     = screen_ev_driving_create();
 
     /* Additional screens (SCREEN_RTD, SCREEN_DEBUG …) added as implemented. */
 
