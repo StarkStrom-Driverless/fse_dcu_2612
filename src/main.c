@@ -54,6 +54,7 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "app/app.h"
+#include "modules/audio/audio.h"
 #include "modules/can/can.h"
 #include "modules/lighting/lighting.h"
 #include "modules/ui/ui.h"
@@ -88,7 +89,16 @@ int main(void)
     can_module_init();
 
     /*
-     * Step 3: Lighting module
+     * Step 3: Audio module
+     *
+     * Configures the piezo GPIO and starts the audio subscriber thread.
+     * Initialised before the UI so audio feedback is available from first
+     * screen interaction.
+     */
+    audio_module_init();
+
+    /*
+     * Step 4: Lighting module
      *
      * Starts the lighting thread and begins the KITT scanner effect.
      * Must run before the UI module so LEDs are active when the display
@@ -97,7 +107,7 @@ int main(void)
     lighting_module_init();
 
     /*
-     * Step 4: UI module
+     * Step 5: UI module
      *
      * Creates LVGL screen objects, renders the first frame, enables the
      * display, and starts the LVGL task thread.  Started last because
