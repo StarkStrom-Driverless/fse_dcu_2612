@@ -50,7 +50,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_SCREENS_SCREEN_BOOT_H
+#define MODULES_UI_SCREENS_SCREEN_BOOT_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -75,3 +76,5 @@
  * @return  Pointer to the created screen object.  Never NULL.
  */
 lv_obj_t *screen_boot_create(void);
+
+#endif /* MODULES_UI_SCREENS_SCREEN_BOOT_H */

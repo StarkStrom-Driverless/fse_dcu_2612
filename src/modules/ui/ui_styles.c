@@ -63,6 +63,11 @@ lv_style_t ui_style_status_ok;
 lv_style_t ui_style_status_warn;
 lv_style_t ui_style_status_fault;
 
+lv_style_t ui_style_level_warn;
+lv_style_t ui_style_level_crit;
+lv_style_t ui_style_level_warn_indicator;
+lv_style_t ui_style_level_crit_indicator;
+
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
@@ -84,6 +89,7 @@ static void init_label_styles(void);
 static void init_button_styles(void);
 static void init_slider_styles(void);
 static void init_status_styles(void);
+static void init_level_styles(void);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
@@ -242,6 +248,27 @@ static void init_status_styles(void)
     lv_style_set_radius(&ui_style_status_fault,   LV_RADIUS_CIRCLE);
 }
 
+static void init_level_styles(void)
+{
+    /* Warning text — gold/accent (UI_STATE_WARN, labels/spans) */
+    lv_style_init(&ui_style_level_warn);
+    lv_style_set_text_color(&ui_style_level_warn, UI_C_ACCENT);
+
+    /* Critical text — red (UI_STATE_CRIT, higher priority) */
+    lv_style_init(&ui_style_level_crit);
+    lv_style_set_text_color(&ui_style_level_crit, UI_C_RED);
+
+    /* Warning indicator fill — gold/accent (UI_STATE_WARN | LV_PART_INDICATOR) */
+    lv_style_init(&ui_style_level_warn_indicator);
+    lv_style_set_bg_opa(&ui_style_level_warn_indicator,   LV_OPA_COVER);
+    lv_style_set_bg_color(&ui_style_level_warn_indicator, UI_C_ACCENT);
+
+    /* Critical indicator fill — red (UI_STATE_CRIT | LV_PART_INDICATOR) */
+    lv_style_init(&ui_style_level_crit_indicator);
+    lv_style_set_bg_opa(&ui_style_level_crit_indicator,   LV_OPA_COVER);
+    lv_style_set_bg_color(&ui_style_level_crit_indicator, UI_C_RED);
+}
+
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
@@ -254,4 +281,5 @@ void ui_styles_init(void)
     init_button_styles();
     init_slider_styles();
     init_status_styles();
+    init_level_styles();
 }

@@ -1,8 +1,8 @@
 /**
- * @file        screen_mission_select.c
- * @brief       Mission selection screen implementation
+ * @file        screen_ev_driving.c
+ * @brief       EV driving screen implementation
  *
- * @details     Builds the mission selection screen with:
+ * @details     Builds the ev driving screen with:
  *
  *                – Roller  : lists all seven FS disciplines; controlled by the
  *                            right encoder via an lv_group_t.  Rolling does NOT
@@ -32,7 +32,7 @@
  *              Button focused                  : LV_KEY_ENTER → LV_EVENT_CLICKED
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
- * @date        Created: 2026-06-02
+ * @date        Created: 2026-06-15
  *
  * @version     0.1.0
  *
@@ -46,13 +46,13 @@
  * Revision History
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
+ * 0.1.0    2026-06-15  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
 
-#include "modules/ui/screen_mission_select.h"
+#include "modules/ui/screens/screen_ev_driving.h"
 
 /* ── Zephyr Includes ─────────────────────────────────────────────────────────────────────────── */
 
@@ -64,43 +64,17 @@
 
 #include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
+#include "modules/ui/widgets/ui_unit_label.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "generated/ui_subjects_gen.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
-LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
+LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
 
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
-
-/**
- * @brief Roller option string.
- *
- * Index maps directly to enum mission_id (both start at 0):
- *   0 → MISSION_NONE          "---"
- *   1 → MISSION_ACCELERATION
- *   2 → MISSION_SKIDPAD
- *   3 → MISSION_AUTOCROSS
- *   4 → MISSION_ENDURANCE
- *   5 → MISSION_INSPECTION
- *   6 → MISSION_MANUAL_DRIVING
- */
-#define ROLLER_OPTIONS          \
-    "None\n"                    \
-    "Acceleration\n"            \
-    "Skidpad\n"                 \
-    "Trackdrive\n"              \
-    "Braketest\n"               \
-    "Inspection\n"              \
-    "Autocross\n"               \
-    "Manual Driving"            \
-
-/** @brief Number of roller rows visible simultaneously (one above/below the selection). */
-#define ROLLER_VISIBLE_ROWS     3U
-
-/** @brief Width of the roller widget in pixels. */
-#define ROLLER_WIDTH            220
 
 /** @brief Width of each action button in pixels. */
 #define BTN_WIDTH               100
@@ -122,12 +96,14 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
-/** @brief Mission roller — user scrolls with the right encoder. */
-static lv_obj_t   *s_roller;
+/** @brief Left slider */
+static lv_obj_t   *s_sldr_left;
 
-static lv_obj_t   *s_roller_lbl;
+/** @brief Right slider */
+static lv_obj_t   *s_sldr_right;
 
-/** @brief OK button — confirms the roller selection (sends mission over CAN). */
+
+/** @brief OK button */
 static lv_obj_t   *s_btn_ok;
 
 /** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
@@ -136,17 +112,17 @@ static lv_obj_t   *s_btn_ok;
 /** @brief LVGL input group for the right encoder. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief LVGL input group for the left encoder. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief LVGL input group for the right button. */
 static lv_group_t *s_right_button_group;
 
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static void build_header(lv_obj_t *scr);
-static void build_roller(lv_obj_t *scr);
+static void build_sliders(lv_obj_t *scr);
 static void build_buttons(lv_obj_t *scr);
 static void btn_ok_event_cb(lv_event_t *e);
 // static void btn_esc_event_cb(lv_event_t *e);
@@ -167,48 +143,55 @@ static void build_header(lv_obj_t *scr)
     lv_obj_t *title = lv_label_create(header);
     lv_obj_add_style(title, &ui_style_label_title, 0);
     /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
-    lv_obj_set_style_text_color(title, UI_C_WHITE, 0);
-    lv_label_set_text(title, "DV MISSION");
+    // lv_obj_set_style_text_color(title, UI_C_WHITE, 0);
+    lv_label_set_text(title, "EV DRIVING");
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);
 }
 
-static void build_roller(lv_obj_t *scr)
+
+static void build_sliders(lv_obj_t *scr)
 {
-    s_roller = lv_roller_create(scr);
+    s_sldr_left = lv_slider_create(scr);
+    lv_obj_remove_style_all(s_sldr_left);
+    lv_obj_add_style(s_sldr_left, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(s_sldr_left, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_obj_set_size(s_sldr_left, 40, 200);
+    lv_obj_set_pos(s_sldr_left, 10, 70);
 
-    lv_roller_set_options(s_roller, ROLLER_OPTIONS, LV_ROLLER_MODE_NORMAL);
-    lv_roller_set_visible_row_count(s_roller, ROLLER_VISIBLE_ROWS);
-    lv_roller_set_selected(s_roller, 0, LV_ANIM_OFF); /* default: MISSION_NONE */
+    lv_obj_t *s_lbl_sldr_left_title = lv_label_create(scr);
+    lv_obj_add_style(s_lbl_sldr_left_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(s_lbl_sldr_left_title, "TQG F");
+    lv_obj_align_to(s_lbl_sldr_left_title, s_sldr_left, LV_ALIGN_OUT_TOP_MID, 0, 0);
 
-    lv_obj_set_width(s_roller, ROLLER_WIDTH);
+    
+}
 
-    /* ── Main part: all items ──────────────────────────────────────────── */
-    lv_obj_set_style_bg_color(s_roller,     UI_C_WHITE,                     LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_roller,       LV_OPA_COVER,                   LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_roller,    &BarlowCondensed_BoldItalic_18, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_roller,   UI_C_DARK,                      LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_roller, 2,                              LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_roller, UI_C_DARK,                      LV_PART_MAIN);
-    lv_obj_set_style_radius(s_roller,       0,                              LV_PART_MAIN);
+static void build_labels(lv_obj_t *scr)
+{
+    lv_obj_t *lbl_mean_power = lv_label_create(scr);
+    lv_obj_add_style(lbl_mean_power, &ui_style_label_value_lg, 0);
+    lv_obj_add_style(lbl_mean_power, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_mean_power, &ui_style_level_crit, UI_STATE_CRIT);
+    lv_label_bind_text(lbl_mean_power, &ui_subj_power_average, "%d");
+    lv_obj_bind_state_if_gt(lbl_mean_power, &ui_subj_power_average, UI_STATE_WARN, UI_POWER_AVERAGE_WARN_HIGH);
+    lv_obj_bind_state_if_gt(lbl_mean_power, &ui_subj_power_average, UI_STATE_CRIT, UI_POWER_AVERAGE_CRIT_HIGH);
+    lv_obj_align(lbl_mean_power, LV_ALIGN_LEFT_MID, 10, 0);
 
-    /* ── Selected part: centre row highlight ───────────────────────────── */
-    lv_obj_set_style_bg_color(s_roller,   UI_C_ACCENT,                     LV_PART_SELECTED);
-    lv_obj_set_style_bg_opa(s_roller,     LV_OPA_COVER,                    LV_PART_SELECTED);
-    lv_obj_set_style_text_font(s_roller,  &BarlowCondensed_BoldItalic_18,  LV_PART_SELECTED);
-    lv_obj_set_style_text_color(s_roller, UI_C_DARK,                       LV_PART_SELECTED);
+    lv_obj_t *lbl_hv_volt_akku = ui_unit_label_create(scr,
+                                      &BarlowCondensed_BoldItalic_100,
+                                      &BarlowCondensed_Italic_44, "V");
+    lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_crit, UI_STATE_CRIT);
+    ui_unit_label_bind_value(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, "%d");
+    lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
+    lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    lv_obj_align(lbl_hv_volt_akku, LV_ALIGN_LEFT_MID, 150, 0);
 
-    /* Vertically centred in the content area below the 15 % header. */
-    lv_obj_align(s_roller, LV_ALIGN_CENTER, 0, -30);
-
-    /* ── Curent selected item ───────────────────────────── */
-
-    char buf[32];
-    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
-
-    s_roller_lbl = lv_label_create(scr);
-    lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
-    lv_label_set_text_fmt(s_roller_lbl, "Current Mission %s", buf);
-    lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, 0, 35);
+    lv_obj_t *lbl_hv_volt_ts = lv_label_create(scr);
+    lv_obj_add_style(lbl_hv_volt_ts, &ui_style_label_value_lg, 0);
+    lv_obj_set_style_text_color(lbl_hv_volt_ts, UI_C_DARK, 0);
+    lv_label_bind_text(lbl_hv_volt_ts, &ui_subj_voltage_tractive_system, "%d");
+    lv_obj_align(lbl_hv_volt_ts, LV_ALIGN_LEFT_MID, 300, 0);
 }
 
 static void build_buttons(lv_obj_t *scr)
@@ -259,24 +242,24 @@ static void build_buttons(lv_obj_t *scr)
  */
 static void btn_ok_event_cb(lv_event_t *e)
 {
-    uint16_t  idx    = lv_roller_get_selected(s_roller);
-    char buf[32];
+    // uint16_t  idx    = lv_roller_get_selected(s_roller);
+    // char buf[32];
 
-    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
+    // lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
 
-    struct ui_input_event evt = {
-        .type         = UI_INPUT_MISSION_SELECTED,
-        .data.mission = (enum mission_id)idx,
-    };
+    // struct ui_input_event evt = {
+    //     .type         = UI_INPUT_MISSION_SELECTED,
+    //     .data.mission = (enum mission_id)idx,
+    // };
 
-    int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-    if (ret != 0) {
-        LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
-                (unsigned)idx, ret);
-    } else {
-        lv_label_set_text_fmt(s_roller_lbl, "Current Mission %s", buf);
-        LOG_DBG("Mission selected: %u", (unsigned)idx);
-    }
+    // int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
+    // if (ret != 0) {
+    //     LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
+    //             (unsigned)idx, ret);
+    // } else {
+    //     lv_label_set_text_fmt(s_roller_lbl, "Current Mission %s", buf);
+    //     LOG_DBG("Mission selected: %u", (unsigned)idx);
+    // }
 }
 
 /**
@@ -313,7 +296,7 @@ static void btn_ok_event_cb(lv_event_t *e)
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
-lv_obj_t *screen_mission_select_create(void)
+lv_obj_t *screen_ev_driving_create(void)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
@@ -325,7 +308,8 @@ lv_obj_t *screen_mission_select_create(void)
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
     build_header(scr);
-    build_roller(scr);
+    build_sliders(scr);
+    build_labels(scr);
     build_buttons(scr);
 
     /* ── Input group (right encoder) ─────────────────────────────────────── */
@@ -334,13 +318,13 @@ lv_obj_t *screen_mission_select_create(void)
      * Tab order: roller → OK → RTD.
      *
      * ui.c assigns this group to the right encoder indev on screen entry:
-     *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group())
+     *   lv_indev_set_group(right_encoder_indev, screen_ev_driving_get_group())
      * and removes it on screen leave:
      *   lv_indev_set_group(right_encoder_indev, NULL)
      */
-    s_right_encoder_group = lv_group_create();
-    lv_group_add_obj(s_right_encoder_group, s_roller);
-    lv_group_set_editing(s_right_encoder_group, true);
+    // s_right_encoder_group = lv_group_create();
+    // lv_group_add_obj(s_right_encoder_group, s_roller);
+    // lv_group_set_editing(s_right_encoder_group, true);
 
     s_right_button_group = lv_group_create();
     lv_group_add_obj(s_right_button_group, s_btn_ok);
@@ -349,17 +333,17 @@ lv_obj_t *screen_mission_select_create(void)
     return scr;
 }
 
-lv_group_t *screen_mission_select_get_right_encoder_group(void)
+lv_group_t *screen_ev_driving_get_right_encoder_group(void)
 {
     return s_right_encoder_group;
 }
 
-lv_group_t *screen_mission_select_get_left_button_group(void)
+lv_group_t *screen_ev_driving_get_left_button_group(void)
 {
     return s_left_button_group;
 }
 
-lv_group_t *screen_mission_select_get_right_button_group(void)
+lv_group_t *screen_ev_driving_get_right_button_group(void)
 {
     return s_right_button_group;
 }

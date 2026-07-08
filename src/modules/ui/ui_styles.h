@@ -55,7 +55,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_UI_STYLES_H
+#define MODULES_UI_UI_STYLES_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -108,6 +109,9 @@ LV_FONT_DECLARE(BarlowCondensed_BoldItalic_32)
 
 /** @brief 44 pt italic — screen sub-headings and secondary captions. */
 LV_FONT_DECLARE(BarlowCondensed_Italic_44)
+
+/** @brief 80 pt bold-italic — hero numeric display (RPM, SoC …). */
+LV_FONT_DECLARE(BarlowCondensed_BoldItalic_80)
 
 /** @brief 100 pt bold-italic — hero numeric display (RPM, SoC …). */
 LV_FONT_DECLARE(BarlowCondensed_BoldItalic_100)
@@ -247,6 +251,52 @@ extern lv_style_t ui_style_status_warn;
  */
 extern lv_style_t ui_style_status_fault;
 
+/* --- Level indicators (UI_STATE_WARN / UI_STATE_CRIT) ----------------------------- */
+
+/**
+ * @brief LVGL state alias for the WARNING level.
+ *
+ * Maps to LV_STATE_USER_1. Use this alias everywhere instead of the raw
+ * LVGL constant so the assignment can be changed in a single place.
+ */
+#define UI_STATE_WARN   LV_STATE_USER_1
+
+/**
+ * @brief LVGL state alias for the CRITICAL level.
+ *
+ * Maps to LV_STATE_USER_2, which has higher priority than USER_1 —
+ * the critical style overrides the warning style when both states are active.
+ */
+#define UI_STATE_CRIT   LV_STATE_USER_2
+
+/**
+ * @brief Text colour style for the WARNING level (UI_STATE_WARN).
+ * Sets text_color to UI_C_ACCENT (gold). For labels and span groups.
+ */
+extern lv_style_t ui_style_level_warn;
+
+/**
+ * @brief Text colour style for the CRITICAL level (UI_STATE_CRIT).
+ * Sets text_color to UI_C_RED. Higher priority than ui_style_level_warn.
+ */
+extern lv_style_t ui_style_level_crit;
+
+/**
+ * @brief Background/fill colour style for the WARNING level (UI_STATE_WARN).
+ * Sets bg_color to UI_C_ACCENT (gold). For slider indicators, arcs, progress fills.
+ * Apply with: lv_obj_add_style(obj, &ui_style_level_warn_indicator,
+ *                              UI_STATE_WARN | LV_PART_INDICATOR);
+ */
+extern lv_style_t ui_style_level_warn_indicator;
+
+/**
+ * @brief Background/fill colour style for the CRITICAL level (UI_STATE_CRIT).
+ * Sets bg_color to UI_C_RED. Higher priority than ui_style_level_warn_indicator.
+ * Apply with: lv_obj_add_style(obj, &ui_style_level_crit_indicator,
+ *                              UI_STATE_CRIT | LV_PART_INDICATOR);
+ */
+extern lv_style_t ui_style_level_crit_indicator;
+
 
 /* ── Initialisation ──────────────────────────────────────────────────────────────────────────── */
 
@@ -262,3 +312,5 @@ extern lv_style_t ui_style_status_fault;
  * registered.
  */
 void ui_styles_init(void);
+
+#endif /* MODULES_UI_UI_STYLES_H */

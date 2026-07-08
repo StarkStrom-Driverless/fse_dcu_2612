@@ -1,9 +1,8 @@
 /**
- * @file        screen_debug_write.h
- * @brief       Mission selection screen factory
+ * @file        screen_ev_driving.h
+ * @brief       EV driving screen factory
  *
- * @details     Provides a factory function and a group accessor for the mission
- *              selection screen.
+ * @details     Provides a factory function and a group accessor for the ev driving screen.
  *
  *              Screen layout (480 × 320)
  *              ─────────────────────────
@@ -51,7 +50,7 @@
  *              pressing OK or RTD does.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
- * @date        Created: 2026-06-09
+ * @date        Created: 2026-06-15
  *
  * @version     0.1.0
  *
@@ -65,11 +64,12 @@
  * Revision History
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
- * 0.1.0    2026-06-09  Mario Wegmann   Initial creation
+ * 0.1.0    2026-06-15  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H
+#define MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -86,7 +86,7 @@
  *
  * @return  Pointer to the top-level screen object.  Never NULL.
  */
-lv_obj_t *screen_debug_write_create(void);
+lv_obj_t *screen_ev_driving_create(void);
 
 /**
  * @brief Return the LVGL input group for the right encoder.
@@ -97,13 +97,15 @@ lv_obj_t *screen_debug_write_create(void);
  *
  * @code
  *   // on screen enter:
- *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group());
+ *   lv_indev_set_group(right_encoder_indev, screen_ev_driving_get_group());
  *   // on screen leave:
  *   lv_indev_set_group(right_encoder_indev, NULL);
  * @endcode
  *
- * @return  Pointer to the lv_group_t.  Valid after screen_mission_select_create().
+ * @return  Pointer to the lv_group_t.  Valid after screen_ev_driving_create().
  */
-lv_group_t *screen_debug_write_get_right_encoder_group(void);
-lv_group_t *screen_debug_write_get_left_button_group(void);
-lv_group_t *screen_debug_write_get_right_button_group(void);
+lv_group_t *screen_ev_driving_get_right_encoder_group(void);
+lv_group_t *screen_ev_driving_get_left_button_group(void);
+lv_group_t *screen_ev_driving_get_right_button_group(void);
+
+#endif /* MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H */

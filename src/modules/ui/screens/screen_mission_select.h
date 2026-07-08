@@ -1,8 +1,9 @@
 /**
- * @file        screen_checklist.h
- * @brief       Pre-RTD cheklist screen factory
+ * @file        screen_mission_select.h
+ * @brief       Mission selection screen factory
  *
- * @details     Provides a factory function and a group accessor for the pre-RTD checklist screen.
+ * @details     Provides a factory function and a group accessor for the mission
+ *              selection screen.
  *
  *              Screen layout (480 × 320)
  *              ─────────────────────────
@@ -50,7 +51,7 @@
  *              pressing OK or RTD does.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
- * @date        Created: 2026-06-08
+ * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
@@ -64,11 +65,12 @@
  * Revision History
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
- * 0.1.0    2026-06-08  Mario Wegmann   Initial creation
+ * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef MODULES_UI_SCREENS_SCREEN_MISSION_SELECT_H
+#define MODULES_UI_SCREENS_SCREEN_MISSION_SELECT_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -85,7 +87,7 @@
  *
  * @return  Pointer to the top-level screen object.  Never NULL.
  */
-lv_obj_t *screen_checklist_create(void);
+lv_obj_t *screen_mission_select_create(void);
 
 /**
  * @brief Return the LVGL input group for the right encoder.
@@ -103,7 +105,8 @@ lv_obj_t *screen_checklist_create(void);
  *
  * @return  Pointer to the lv_group_t.  Valid after screen_mission_select_create().
  */
+lv_group_t *screen_mission_select_get_right_encoder_group(void);
+lv_group_t *screen_mission_select_get_left_button_group(void);
+lv_group_t *screen_mission_select_get_right_button_group(void);
 
-lv_group_t *screen_checklist_get_right_encoder_group(void);
-lv_group_t *screen_checklist_get_left_button_group(void);
-lv_group_t *screen_checklist_get_right_button_group(void);
+#endif /* MODULES_UI_SCREENS_SCREEN_MISSION_SELECT_H */

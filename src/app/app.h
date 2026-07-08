@@ -30,7 +30,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#pragma once
+#ifndef APP_APP_H
+#define APP_APP_H
 
 
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
@@ -45,3 +46,5 @@
  * Zbus channel is started; otherwise early events may be dropped.
  */
 void app_module_init(void);
+
+#endif /* APP_APP_H */
