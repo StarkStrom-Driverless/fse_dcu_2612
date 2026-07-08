@@ -125,7 +125,7 @@ static void init_header_style(void)
 
     lv_grad_init_stops(&s_header_grad, grad_colors, grad_opa, NULL, 2);
     // lv_grad_linear_init(&s_header_grad, 0, 0, disp_w, 0, LV_GRAD_EXTEND_PAD);
-    lv_grad_linear_init(&s_header_grad, 159, 9, 160, 10, LV_GRAD_EXTEND_PAD);
+    lv_grad_linear_init(&s_header_grad, 209, 9, 210, 10, LV_GRAD_EXTEND_PAD);
 
     lv_style_init(&ui_style_header);
     lv_style_set_bg_grad(&ui_style_header,    &s_header_grad);

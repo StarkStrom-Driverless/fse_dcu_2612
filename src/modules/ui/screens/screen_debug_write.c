@@ -167,7 +167,7 @@ static void build_header(lv_obj_t *scr)
     lv_obj_add_style(title, &ui_style_label_title, 0);
     /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
     // lv_obj_set_style_text_color(title, UI_C_WHITE, 0);
-    lv_label_set_text(title, "DEBUG TX");
+    lv_label_set_text(title, "DBG TX");
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);
 }
 
