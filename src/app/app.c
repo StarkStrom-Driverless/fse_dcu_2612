@@ -87,6 +87,9 @@ LOG_MODULE_REGISTER(app, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Thread control block for the App thread. */
 static struct k_thread s_app_thread;
 
+/** @brief Last rtd_sound value — detect transitions to avoid redundant publishes. */
+static bool s_last_rtd_sound;
+
 /** @brief Stack storage for the App thread. */
 static K_THREAD_STACK_DEFINE(s_app_stack, APP_THREAD_STACK_SIZE);
 
@@ -300,6 +303,27 @@ static void handle_can_data(const struct can_data_snapshot *snap)
         .data.snapshot = *snap,
     };
     pub_ui_cmd(&cmd);
+
+    /* RTD sound: drive piezo on/off whenever the signal changes. */
+    if (snap->rtd_sound != s_last_rtd_sound) {
+        s_last_rtd_sound = snap->rtd_sound;
+
+        struct audio_cmd acmd;
+        if (snap->rtd_sound) {
+            acmd.type   = AUDIO_CMD_PLAY_EFFECT;
+            acmd.effect = AUDIO_EFFECT_RTD_READY;
+            // LOG_INF("RTD sound ON");
+        } else {
+            acmd.type   = AUDIO_CMD_STOP;
+            acmd.effect = AUDIO_EFFECT_NONE;
+            // LOG_INF("RTD sound OFF");
+        }
+
+        int ret = zbus_chan_pub(&audio_cmd_chan, &acmd, K_NO_WAIT);
+        if (ret != 0) {
+            LOG_ERR("audio_cmd_chan publish failed: %d", ret);
+        }
+    }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────────────────────
