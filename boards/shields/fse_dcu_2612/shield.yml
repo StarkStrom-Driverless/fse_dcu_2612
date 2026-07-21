@@ -1,0 +1,6 @@
+shields:
+  - name: fse_dcu_2612
+    full_name: Driver Control Unit version 2612
+    vendor: StarkStrom Augsburg e.V.
+    supported_features:
+      - display

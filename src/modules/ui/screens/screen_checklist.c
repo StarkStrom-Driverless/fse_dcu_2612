@@ -140,7 +140,7 @@ static void build_buttons(lv_obj_t *scr)
     s_btn_rtd = lv_button_create(scr);
     lv_obj_remove_style_all(s_btn_rtd);
     lv_obj_add_style(s_btn_rtd, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_rtd, &ui_style_btn_checked, LV_STATE_CHECKED);
+    lv_obj_add_style(s_btn_rtd, &ui_style_btn_checked, LV_STATE_USER_1);
     lv_obj_add_style(s_btn_rtd, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
     lv_obj_set_size(s_btn_rtd, BTN_WIDTH, BTN_HEIGHT);
     lv_obj_align(s_btn_rtd, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
@@ -150,35 +150,33 @@ static void build_buttons(lv_obj_t *scr)
     lv_label_set_text(lbl_rtd, "RTD");
     lv_obj_align(lbl_rtd, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_add_flag(s_btn_rtd, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_LONG_PRESSED,  NULL);
+    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_RELEASED, NULL);
 }
 
 /**
- * @brief RTD button click handler.
+ * @brief RTD button press/release handler.
  *
- * Publishes UI_INPUT_RTD_REQUEST.  The App Layer responds by sending
- * CAN_TX_CMD_SEND_RTD_REQUEST using the last-known drive mode.
- *
- * Can be pressed without having first confirmed a mission; in that case the
- * CAN module uses drive mode 0 (MISSION_NONE).
+ * PRESSED  → publishes UI_INPUT_RTD_REQUEST  (App sets mode RTD  → CAN rtd_button=1)
+ * RELEASED → publishes UI_INPUT_RTD_RELEASE  (App sets mode DEBUG → CAN rtd_button=0)
  */
 static void btn_rtd_event_cb(lv_event_t *e)
 {
     lv_obj_t * button = lv_event_get_target_obj(e);
+    lv_event_code_t code = lv_event_get_code(e);
+
+    lv_obj_set_state(button, LV_STATE_USER_1, (code == LV_EVENT_LONG_PRESSED) ? true : false);
 
     struct ui_input_event evt = {
-        .type = UI_INPUT_RTD_REQUEST,
+        .type = (code == LV_EVENT_LONG_PRESSED) ? UI_INPUT_RTD_REQUEST : UI_INPUT_RTD_RELEASE,
     };
 
-    if (lv_obj_has_state(button, LV_STATE_CHECKED) == true) {
-        int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-        if (ret != 0) {
-            LOG_WRN("UI_INPUT_RTD_REQUEST publish failed: %d", ret);
-        } else {
-            LOG_DBG("RTD requested");
-        }
-    } 
+    int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
+    if (ret != 0) {
+        LOG_WRN("RTD event publish failed: %d", ret);
+    } else {
+        LOG_DBG("RTD %s", (code == LV_EVENT_LONG_PRESSED) ? "pressed" : "released");
+    }
 }
 
 

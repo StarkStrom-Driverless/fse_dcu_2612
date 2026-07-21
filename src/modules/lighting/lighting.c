@@ -68,7 +68,7 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 #endif
 
 /** @brief Thread stack size for the lighting thread. */
-#define LIGHTING_THREAD_STACK_SIZE  4096U
+#define LIGHTING_THREAD_STACK_SIZE  2048U
 
 /** @brief Scheduling priority for the lighting thread. */
 #define LIGHTING_THREAD_PRIORITY    7

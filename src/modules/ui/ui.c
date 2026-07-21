@@ -97,10 +97,10 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
 /** @brief LVGL task period in milliseconds (~100 fps upper bound). */
-#define UI_TASK_PERIOD_MS       10U
+#define UI_TASK_PERIOD_MS       5U
 
 /** @brief Screen slide animation duration in milliseconds. */
-#define UI_ANIM_DURATION_MS     300U
+#define UI_ANIM_DURATION_MS     0U
 
 /** @brief Stack size for the LVGL task thread. */
 #define UI_THREAD_STACK_SIZE    16384U
@@ -113,7 +113,6 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * Sized to SCREEN_ERROR+1 so any valid enum value is a safe index.
  */
 #define SCREEN_ID_COUNT         (SCREEN_ERROR + 1U)
-
 
 /* ── Carousel Definition ─────────────────────────────────────────────────────────────────────── */
 

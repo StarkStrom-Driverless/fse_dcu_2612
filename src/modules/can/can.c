@@ -94,8 +94,10 @@ LOG_MODULE_REGISTER(can_module, CONFIG_LOG_DEFAULT_LEVEL);
 #define CAN_THREAD_PRIORITY     3
 
 /** @brief Capacity of the RX frame message queue (frames buffered between cycles). */
-#define CAN_RX_MSGQ_DEPTH       16U
+#define CAN_RX_MSGQ_DEPTH       550U
 
+/** @brief TX period: DCU_2_mABX is sent cyclically at this interval. */
+#define CAN_TX_PERIOD_MS        10U
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
@@ -132,7 +134,7 @@ CAN_MSGQ_DEFINE(s_can_rx_msgq, CAN_RX_MSGQ_DEPTH);
  * every signal; published as a whole to can_data_chan after each RX drain so
  * partial updates (only one of the two frames received) keep earlier values.
  */
-static struct can_data_snapshot s_rx_snapshot;
+static struct can_data_snapshot s_rx_snapshot; // 80UL = 320 Byte?
 
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
@@ -269,9 +271,6 @@ static bool can_drain_rx(void)
 
     return updated;
 }
-
-/** @brief TX period: DCU_2_mABX is sent cyclically at this interval. */
-#define CAN_TX_PERIOD_MS    100U
 
 /**
  * @brief Convert a mission_id to the DV_Drive_Mode_SETTING raw value.

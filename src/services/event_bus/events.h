@@ -137,7 +137,8 @@ enum ui_input_type {
     UI_INPUT_ENCODER_DOWN,         /**< Right encoder: CCW (spare/fallback).       */
     UI_INPUT_ENCODER_CLICK,        /**< Right encoder button press.                */
     UI_INPUT_MISSION_SELECTED,     /**< Driver confirmed a mission via OK button.  */
-    UI_INPUT_RTD_REQUEST,          /**< RTD button pressed: request Ready-to-Drive.*/
+    UI_INPUT_RTD_REQUEST,          /**< RTD button pressed: activate RTD signal.   */
+    UI_INPUT_RTD_RELEASE,          /**< RTD button released: deactivate RTD signal.*/
     UI_INPUT_TORQUE_VECT_ON,       /**< Driver activated Torque Vectoring          */
     UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled Torque Vectoring          */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Engineer set debug bits via OK button.     */

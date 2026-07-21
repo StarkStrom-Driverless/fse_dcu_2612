@@ -185,32 +185,24 @@ static void handle_ui_input(const struct ui_input_event *evt)
         break;
     }
 
-    case UI_INPUT_RTD_REQUEST: {
-        /* Lock the mission so the driver cannot change it mid-run */
-        struct app_state_mission mission;
-        app_state_get_mission(&mission);
-        mission.active = true;
-        mission.locked = true;
-        app_state_set_mission(&mission);
-
+    case UI_INPUT_RTD_REQUEST:
         /*
-         * Setting the mode to RTD is sufficient: the CAN module checks
-         * app_state_get_mode() == OPERATING_MODE_RTD each cycle and sets
-         * RTD_Button = 1 automatically.
+         * RTD button pressed — activate RTD signal.
+         * The CAN module reads app_state_get_mode() every cycle; setting
+         * OPERATING_MODE_RTD causes it to set RTD_Button = 1 immediately.
          */
         app_state_set_mode(OPERATING_MODE_RTD);
-
-        /* Navigate to the RTD screen — ui.c logs a warning if not yet built */
-        struct ui_cmd ui_nav = {
-            .type        = UI_CMD_SET_SCREEN,
-            .data.screen = SCREEN_RTD,
-        };
-        pub_ui_cmd(&ui_nav);
-
-        LOG_INF("RTD request sent — operating mode: RTD, mission: %d",
-                (int)mission.selected);
+        LOG_INF("RTD pressed — RTD=1");
         break;
-    }
+
+    case UI_INPUT_RTD_RELEASE:
+        /*
+         * RTD button released — deactivate RTD signal.
+         * Return to DEBUG so the CAN module sends RTD_Button = 0.
+         */
+        app_state_set_mode(OPERATING_MODE_DEBUG);
+        LOG_INF("RTD released — RTD=0");
+        break;
 
     case UI_INPUT_BACK: {
         /* ESC button: return to boot screen unconditionally */
@@ -235,6 +227,8 @@ static void handle_ui_input(const struct ui_input_event *evt)
         LOG_INF("Timestamp: %lld ms", (long long)k_uptime_get());
         break;
 
+    case UI_INPUT_TORQUE_VECT_ON:
+    case UI_INPUT_TORQUE_VECT_OFF:
     case UI_INPUT_CONFIRM:
     case UI_INPUT_ENCODER_UP:
     case UI_INPUT_ENCODER_DOWN:
