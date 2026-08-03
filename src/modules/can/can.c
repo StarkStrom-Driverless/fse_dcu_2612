@@ -71,6 +71,7 @@
 #include "app/app_state.h"
 #include "generated/dcu_can_gen.h"
 #include "generated/can_rx_gen.h"
+#include "generated/can_tx_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 
@@ -96,7 +97,8 @@ LOG_MODULE_REGISTER(can_module, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Capacity of the RX frame message queue (frames buffered between cycles). */
 #define CAN_RX_MSGQ_DEPTH       550U
 
-/** @brief TX period: DCU_2_mABX is sent cyclically at this interval. */
+/** @brief Base tick interval of the CAN worker thread. TX messages are sent at
+ *         multiples of this value (see CAN_TX_GEN_*_PERIOD_MS in can_tx_gen.h). */
 #define CAN_TX_PERIOD_MS        10U
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -118,6 +120,10 @@ static struct k_thread s_can_thread;
 
 /** @brief Flag set after hardware initialisation completes successfully. */
 static bool s_hw_ready;
+
+/** @brief Tick counter incremented once per CAN_TX_PERIOD_MS cycle. Used to
+ *         schedule TX messages at their individual period_ms via modulo. */
+static uint32_t s_tx_tick;
 
 /**
  * @brief RX message queue, filled by the CAN driver ISR for matching frames.
@@ -286,15 +292,17 @@ static inline uint8_t mission_to_drive_mode(enum mission_id mission)
 /**
  * @brief CAN worker thread entry point.
  *
- * Runs a fixed 100 ms cycle:
+ * Runs a fixed CAN_TX_PERIOD_MS (10 ms) base tick:
  *
- *   1. Drain the RX message queue — decode every received mABX frame into
- *      the snapshot accumulator.  If anything arrived, publish the full
- *      snapshot to can_data_chan (the App Layer stores it in app_state).
- *   2. Read drive_mode, RTD flag, and debug bits directly from app_state —
- *      the single source of truth.  No local TX state is kept.
- *   3. Transmit DCU_2_mABX with the current values.
- *   4. Sleep for the remainder of the 100 ms period.
+ *   1. Drain the RX message queue — decode every received frame into the
+ *      snapshot accumulator.  If anything arrived, publish the full snapshot
+ *      to can_data_chan (the App Layer stores it in app_state).
+ *   2. For each TX message: check s_tx_tick % (period_ms / CAN_TX_PERIOD_MS).
+ *      If zero, read current state from app_state and transmit the frame.
+ *   3. Increment s_tx_tick and sleep for the remainder of the base tick.
+ *
+ * TX periods come from can_tx_gen.h (generated from dcu_app.yaml period_ms).
+ * Adding a TX message there requires updating only the send_* call below.
  *
  * app_state getters are thread-safe (mutex-protected inside app_state.c)
  * so they are safe to call here.
@@ -324,15 +332,16 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
             }
         }
 
-        /* ── 2. Read current TX state from the App Layer ─────────────── */
-        uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
-        bool    rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD);
-        uint8_t debug      = app_state_get_debug_bits();
+        /* ── 2. Transmit scheduled TX messages ──────────────────────── */
+        if (s_tx_tick % (CAN_TX_GEN_DCU_2_M_ABX_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) {
+            uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
+            bool    rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD);
+            uint8_t debug      = app_state_get_debug_bits();
+            can_send_dcu2_mabx(drive_mode, rtd_active, debug);
+        }
 
-        /* ── 3. Transmit ─────────────────────────────────────────────── */
-        can_send_dcu2_mabx(drive_mode, rtd_active, debug);
-
-        /* ── 4. Wait for next 100 ms slot ────────────────────────────── */
+        /* ── 3. Advance tick and wait for next base slot ─────────────── */
+        s_tx_tick++;
         k_msleep(CAN_TX_PERIOD_MS);
     }
 }
