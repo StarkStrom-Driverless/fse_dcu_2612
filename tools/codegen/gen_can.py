@@ -60,6 +60,8 @@ LIMIT_DEFINE_SUFFIX = {
     "critical_high": "CRIT_HIGH",
 }
 
+RANGE_KEYS = ("min", "max")
+
 VALID_DIRECTIONS = {"rx", "tx"}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -130,6 +132,15 @@ def validate(db: Database, cfg: dict) -> list[str]:
                 f"{msg_name}: direction must be 'rx' or 'tx' (got: {direction!r})"
             )
 
+        if direction == "tx":
+            period_ms = msg_cfg.get("period_ms")
+            if period_ms is None:
+                errors.append(f"{msg_name}: TX message requires 'period_ms'")
+            elif not isinstance(period_ms, int) or period_ms <= 0:
+                errors.append(
+                    f"{msg_name}: period_ms must be a positive integer (got: {period_ms!r})"
+                )
+
         dbc_signal_names = {s.name for s in dbc_msg.signals}
 
         for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
@@ -174,6 +185,29 @@ def validate(db: Database, cfg: dict) -> list[str]:
                     errors.append(
                         f"{origin}: limits are not monotonic — expected "
                         f"critical_low <= warning_low <= warning_high <= critical_high"
+                    )
+
+            range_ = sig_cfg.get("range")
+            if range_:
+                if not app_name:
+                    errors.append(f"{origin}: range requires an app_name")
+
+                unknown = set(range_) - set(RANGE_KEYS)
+                if unknown:
+                    errors.append(
+                        f"{origin}: unknown range keys {sorted(unknown)} "
+                        f"(allowed: {list(RANGE_KEYS)})"
+                    )
+                    continue
+
+                non_numeric = [k for k in range_ if not isinstance(range_[k], (int, float))]
+                if non_numeric:
+                    errors.append(f"{origin}: range {non_numeric} are not numeric")
+                    continue
+
+                if "min" in range_ and "max" in range_ and range_["min"] >= range_["max"]:
+                    errors.append(
+                        f"{origin}: range min ({range_['min']}) must be less than max ({range_['max']})"
                     )
 
     return errors
@@ -227,7 +261,7 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
 
     Returns a list of dicts:
       { "msg": cantools message, "snake": c_name,
-        "signals": [(dbc_signal, app_name, c_type), ...] }
+        "signals": [(dbc_signal, app_name, c_type, limits, range_), ...] }
     Only signals with an app_name are included (selection at signal level).
     """
     dbc_messages = {m.name: m for m in db.messages}
@@ -246,7 +280,8 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
             app_name = sig_cfg.get("app_name")
             if app_name:
                 sig = dbc_signals[sig_name]
-                mapped.append((sig, app_name, snapshot_c_type(sig), sig_cfg.get("limits")))
+                mapped.append((sig, app_name, snapshot_c_type(sig),
+                               sig_cfg.get("limits"), sig_cfg.get("range")))
 
         if mapped:
             result.append({
@@ -256,6 +291,68 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
             })
 
     return result
+
+
+def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
+    """
+    Collect all direction==tx messages with their period_ms.
+
+    Returns a list of dicts:
+      { "msg": cantools message, "snake": c_name, "period_ms": int }
+    """
+    dbc_messages = {m.name: m for m in db.messages}
+    result = []
+
+    for msg_name, msg_cfg in cfg["messages"].items():
+        msg_cfg = msg_cfg or {}
+        if msg_cfg.get("direction") != "tx":
+            continue
+
+        result.append({
+            "msg":       dbc_messages[msg_name],
+            "snake":     camel_to_snake_case(msg_name),
+            "period_ms": msg_cfg["period_ms"],
+        })
+
+    return result
+
+
+def emit_tx_header(tx_messages: list[dict]) -> str:
+    """
+    Emit can_tx_gen.h: one PERIOD_MS #define per TX message.
+
+    Usage in can.c (CAN_TX_PERIOD_MS is the thread base tick):
+      if (s_tx_tick % (CAN_TX_GEN_<MSG>_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) { ... }
+      s_tx_tick++;
+    Both values are compile-time constants, so the division folds away.
+    """
+    lines = [GENERATED_BANNER]
+    lines.append("#ifndef GENERATED_CAN_TX_GEN_H\n#define GENERATED_CAN_TX_GEN_H\n")
+    lines.append("""\
+/*
+ * TX message period constants (physical milliseconds from dcu_app.yaml).
+ *
+ * Intended use in can.c — CAN_TX_PERIOD_MS is the thread base-tick interval:
+ *
+ *   static uint32_t s_tx_tick = 0U;
+ *   ...
+ *   if (s_tx_tick % (CAN_TX_GEN_DCU_2_M_ABX_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) {
+ *       can_send_dcu2_mabx(...);
+ *   }
+ *   s_tx_tick++;
+ *
+ * Both operands are compile-time constants; the division folds to a literal.
+ */
+""")
+    for entry in tx_messages:
+        msg   = entry["msg"]
+        snake = entry["snake"]
+        ms    = entry["period_ms"]
+        define_name = f"CAN_TX_GEN_{snake.upper()}_PERIOD_MS"
+        lines.append(f"/** @brief {msg.name} (0x{msg.frame_id:03X}) TX period. */")
+        lines.append(f"#define {define_name:<44} {ms}U\n")
+    lines.append("#endif /* GENERATED_CAN_TX_GEN_H */")
+    return "\n".join(lines) + "\n"
 
 
 def emit_data_header(rx_messages: list[dict]) -> str:
@@ -275,7 +372,7 @@ struct can_data_snapshot {""")
     for entry in rx_messages:
         msg = entry["msg"]
         lines.append(f"\n    /* ── {msg.name} (0x{msg.frame_id:03X}) ── */\n")
-        for sig, app_name, c_type, _limits in entry["signals"]:
+        for sig, app_name, c_type, _limits, _range in entry["signals"]:
             lines.append(f"    {c_type:<8} {app_name};{'':<4}/**< {sig.name} */")
     lines.append("""
     /**
@@ -338,7 +435,7 @@ def emit_rx_dispatch_source(rx_messages: list[dict]) -> str:
         lines.append(f"    if ({fn}_unpack(&msg, data, dlc) != 0) {{")
         lines.append("        return false;")
         lines.append("    }\n")
-        for sig, app_name, c_type, _limits in entry["signals"]:
+        for sig, app_name, c_type, _limits, _range in entry["signals"]:
             field = camel_to_snake_case(sig.name)
             if c_type == "bool":
                 rhs = f"(msg.{field} != 0u)"
@@ -413,15 +510,20 @@ def emit_subjects_header(rx_messages: list[dict]) -> str:
     for entry in rx_messages:
         msg = entry["msg"]
         lines.append(f"/* ── {msg.name} (0x{msg.frame_id:03X}) ── */\n")
-        for sig, app_name, c_type, limits in entry["signals"]:
+        for sig, app_name, c_type, limits, range_ in entry["signals"]:
             lines.append(f"extern lv_subject_t ui_subj_{app_name};{'':<4}"
                          f"/**< {sig.name} ({subject_kind(c_type)}) */")
+            prefix = f"UI_{app_name.upper()}"
             if limits:
-                prefix = f"UI_{app_name.upper()}"
                 for key, suffix in LIMIT_DEFINE_SUFFIX.items():
                     if key in limits:
                         define_name = f"{prefix}_{suffix}"
                         lines.append(f"#define {define_name:<44} {c_float(limits[key])}")
+            if range_:
+                if "min" in range_:
+                    lines.append(f"#define {prefix + '_RANGE_MIN':<44} {c_float(range_['min'])}")
+                if "max" in range_:
+                    lines.append(f"#define {prefix + '_RANGE_MAX':<44} {c_float(range_['max'])}")
         lines.append("")
     lines.append("""\
 /**
@@ -444,19 +546,19 @@ void ui_subjects_gen_update(const struct can_data_snapshot *snap);""")
 
 def emit_subjects_source(rx_messages: list[dict]) -> str:
     all_signals = [
-        (sig, app_name, c_type, limits)
+        (sig, app_name, c_type, limits, range_)
         for entry in rx_messages
-        for sig, app_name, c_type, limits in entry["signals"]
+        for sig, app_name, c_type, limits, range_ in entry["signals"]
     ]
 
     lines = [GENERATED_BANNER]
     lines.append('#include "ui_subjects_gen.h"\n')
 
-    for _sig, app_name, _c_type, _limits in all_signals:
+    for _sig, app_name, _c_type, _limits, _range in all_signals:
         lines.append(f"lv_subject_t ui_subj_{app_name};")
 
     lines.append("\nvoid ui_subjects_gen_init(void)\n{")
-    for _sig, app_name, c_type, _limits in all_signals:
+    for _sig, app_name, c_type, _limits, _range in all_signals:
         if subject_kind(c_type) == "float":
             lines.append(f"    lv_subject_init_float(&ui_subj_{app_name}, 0.0f);")
         else:
@@ -464,7 +566,7 @@ def emit_subjects_source(rx_messages: list[dict]) -> str:
     lines.append("}\n")
 
     lines.append("void ui_subjects_gen_update(const struct can_data_snapshot *snap)\n{")
-    for _sig, app_name, c_type, _limits in all_signals:
+    for _sig, app_name, c_type, _limits, _range in all_signals:
         if subject_kind(c_type) == "float":
             lines.append(f"    lv_subject_set_float(&ui_subj_{app_name}, snap->{app_name});")
         else:
@@ -502,11 +604,13 @@ def main() -> None:
         write_filtered_dbc(db, selected, filtered_dbc)
         run_cantools_codegen(filtered_dbc, args.out)
 
-    # Stage 2: snapshot struct + RX dispatch
+    # Stage 2: snapshot struct + RX dispatch + TX periods
     rx_messages = collect_rx_messages(db, cfg)
+    tx_messages = collect_tx_messages(db, cfg)
     (args.out / "can_data_gen.h").write_text(emit_data_header(rx_messages), encoding="utf-8")
     (args.out / "can_rx_gen.h").write_text(emit_rx_dispatch_header(rx_messages), encoding="utf-8")
     (args.out / "can_rx_gen.c").write_text(emit_rx_dispatch_source(rx_messages), encoding="utf-8")
+    (args.out / "can_tx_gen.h").write_text(emit_tx_header(tx_messages), encoding="utf-8")
 
     # Stage 3: LVGL subjects + level-binding helpers
     (args.out / "ui_subjects_gen.h").write_text(
@@ -520,15 +624,21 @@ def main() -> None:
     rx_signal_count = sum(len(e["signals"]) for e in rx_messages)
     limited_count = sum(
         1 for e in rx_messages
-        for _sig, _app_name, _c_type, limits in e["signals"]
+        for _sig, _app_name, _c_type, limits, _range in e["signals"]
         if limits
     )
+    range_count = sum(
+        1 for e in rx_messages
+        for _sig, _app_name, _c_type, _limits, range_ in e["signals"]
+        if range_
+    )
     print(f"OK: {len(selected)} messages ({len(db.messages)} in DBC), "
-          f"{total_signals} signals mapped, {limited_count} with level bindings")
+          f"{total_signals} signals mapped, {limited_count} with level bindings, "
+          f"{range_count} with range defines, {len(tx_messages)} TX period(s)")
     print(f"    RX dispatch: {len(rx_messages)} messages, "
           f"{rx_signal_count} snapshot fields")
     for name in ("dcu_can_gen.c", "dcu_can_gen.h", "can_data_gen.h",
-                 "can_rx_gen.c", "can_rx_gen.h",
+                 "can_rx_gen.c", "can_rx_gen.h", "can_tx_gen.h",
                  "ui_subjects_gen.c", "ui_subjects_gen.h"):
         print(f"  → {args.out / name}")
 
