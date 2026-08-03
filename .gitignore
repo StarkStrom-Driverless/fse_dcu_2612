@@ -56,3 +56,6 @@ dkms.conf
 
 # Generated source code
 src/generated
+
+# Generated documentation
+docs/_build
