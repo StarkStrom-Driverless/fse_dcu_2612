@@ -159,23 +159,6 @@ struct ui_input_event {
     } data;
 };
 
-/* ---- safety_chan ---------------------------------------------------------------------- */
-
-/** @brief Safety-critical event types decoded from CAN or GPIO. */
-enum safety_event_type {
-    SAFETY_EVT_IMD_FAULT       = 0,
-    SAFETY_EVT_AMS_FAULT,
-    SAFETY_EVT_SHUTDOWN_OPEN,
-    SAFETY_EVT_SHUTDOWN_CLOSED,
-    SAFETY_EVT_TS_OFF,
-    SAFETY_EVT_TS_ACTIVE,
-};
-
-/** @brief Payload for safety_chan. */
-struct safety_event {
-    enum safety_event_type type;
-};
-
 /* ---- settings_chan -------------------------------------------------------------------- */
 
 /** @brief Settings lifecycle event types. */

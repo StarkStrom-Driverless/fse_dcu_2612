@@ -8,8 +8,8 @@
  *
  *              Channel directions:
  *                Upward   (Module → App) : can_status_chan, can_data_chan,
- *                                          ui_input_chan, safety_chan,
- *                                          settings_chan, feedback_chan
+ *                                          ui_input_chan, settings_chan,
+ *                                          feedback_chan
  *                Downward (App → Module) : ui_cmd_chan, lighting_cmd_chan,
  *                                          audio_cmd_chan, can_tx_cmd_chan
  *
@@ -58,15 +58,6 @@ ZBUS_CHAN_DECLARE(can_data_chan);
 
 /** Semantic driver input events (published by UI module). */
 ZBUS_CHAN_DECLARE(ui_input_chan);
-
-/**
- * Safety-critical events decoded from CAN.
- *
- * @note Subscribed by App, Lighting, and Audio modules. Lighting and Audio
- *       react directly for immediate override without waiting for App
- *       (safety fast-path). See docs/event_system.md for rationale.
- */
-ZBUS_CHAN_DECLARE(safety_chan);
 
 /** Settings lifecycle events (published by Settings module). */
 ZBUS_CHAN_DECLARE(settings_chan);
