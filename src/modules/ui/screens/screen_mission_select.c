@@ -64,6 +64,7 @@
 
 #include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
+#include "modules/ui/widgets/ui_header.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 
@@ -145,7 +146,6 @@ static lv_group_t *s_right_button_group;
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static void build_header(lv_obj_t *scr);
 static void build_roller(lv_obj_t *scr);
 static void build_buttons(lv_obj_t *scr);
 static void btn_ok_event_cb(lv_event_t *e);
@@ -153,24 +153,6 @@ static void btn_ok_event_cb(lv_event_t *e);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
-
-static void build_header(lv_obj_t *scr)
-{
-    lv_obj_t *header = lv_obj_create(scr);
-    lv_obj_remove_style_all(header);
-    lv_obj_add_style(header, &ui_style_header, 0);
-    lv_obj_set_width(header,  lv_pct(100));
-    lv_obj_set_height(header, lv_pct(15));
-    lv_obj_align(header, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *title = lv_label_create(header);
-    lv_obj_add_style(title, &ui_style_label_title, 0);
-    /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
-    // lv_obj_set_style_text_color(title, UI_C_WHITE, 0);
-    lv_label_set_text(title, "DV MISSION");
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);
-}
 
 static void build_roller(lv_obj_t *scr)
 {
@@ -313,7 +295,7 @@ static void btn_ok_event_cb(lv_event_t *e)
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
-lv_obj_t *screen_mission_select_create(void)
+lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
@@ -324,7 +306,7 @@ lv_obj_t *screen_mission_select_create(void)
 
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
-    build_header(scr);
+    ui_header_create(scr, "DV MISSION", status_subjects);
     build_roller(scr);
     build_buttons(scr);
 
@@ -363,3 +345,4 @@ lv_group_t *screen_mission_select_get_right_button_group(void)
 {
     return s_right_button_group;
 }
+

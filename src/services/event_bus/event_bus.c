@@ -85,6 +85,17 @@ ZBUS_CHAN_DEFINE(feedback_chan,
 );
 
 
+/* ── Cross-Module Channel Definitions: App → All ────────────────────────────────────────────── */
+
+ZBUS_CHAN_DEFINE(vehicle_status_chan,
+    struct vehicle_status,
+    NULL,
+    NULL,
+    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_MSG_INIT(.slots = {0})
+);
+
+
 /* ── Downward Channel Definitions: App → Module ──────────────────────────────────────────────── */
 
 ZBUS_CHAN_DEFINE(ui_cmd_chan,

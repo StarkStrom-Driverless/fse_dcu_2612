@@ -35,6 +35,7 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "modules/ui/ui_styles.h"
+#include "modules/ui/widgets/ui_header.h"
 
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
@@ -45,7 +46,7 @@
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
-lv_obj_t *screen_boot_create(void)
+lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
@@ -53,6 +54,10 @@ lv_obj_t *screen_boot_create(void)
     lv_obj_remove_style_all(scr);
     lv_obj_add_style(scr, &ui_style_screen, 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* ── Widgets ─────────────────────────────────────────────────────────── */
+
+    ui_header_create(scr, "BOOT", status_subjects);
 
     /* ── Product label ───────────────────────────────────────────────────── */
 
