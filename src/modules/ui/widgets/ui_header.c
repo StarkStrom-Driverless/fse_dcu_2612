@@ -43,28 +43,77 @@ static lv_color_t status_to_color(enum ui_device_status s)
     }
 }
 
-static void blink_anim_cb(void *obj, int32_t v)
+/* ── Shared blink state ──────────────────────────────────────────────────── */
+/*
+ * All blinking slot containers observe a single phase subject toggled by one
+ * shared timer.  This guarantees perfect sync (same subject notification round)
+ * and zero drift (one timer, no per-slot phase offset).
+ *
+ * Opacity is used instead of LV_OBJ_FLAG_HIDDEN so the flex row does not
+ * reflow when a slot disappears, which would shift neighbouring icons.
+ */
+
+static lv_subject_t s_blink_phase;  /* 0 = opaque, 1 = transparent */
+static lv_timer_t  *s_blink_timer;
+static uint32_t     s_blink_count;  /* nr of actively blinking containers */
+
+static void blink_phase_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
-    lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
+    lv_obj_t *cont = lv_observer_get_target_obj(observer);
+    lv_opa_t opa = lv_subject_get_int(subject) ? LV_OPA_TRANSP : LV_OPA_COVER;
+    lv_obj_set_style_opa(cont, opa, 0);
+}
+
+static void blink_tick_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    lv_subject_set_int(&s_blink_phase, !lv_subject_get_int(&s_blink_phase));
+}
+
+static void blink_delete_event_cb(lv_event_t *e)
+{
+    lv_obj_t *cont = lv_event_get_target_obj(e);
+    lv_observer_t *obs = lv_obj_get_user_data(cont);
+    if (obs == NULL) {
+        return;
+    }
+    lv_observer_remove(obs);
+    if (s_blink_count > 0 && --s_blink_count == 0) {
+        lv_timer_delete(s_blink_timer);
+        s_blink_timer = NULL;
+    }
 }
 
 static void blink_start(lv_obj_t *cont)
 {
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, cont);
-    lv_anim_set_exec_cb(&a, blink_anim_cb);
-    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_duration(&a, BLINK_HALF_MS);
-    lv_anim_set_playback_duration(&a, BLINK_HALF_MS);
-    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_start(&a);
+    if (lv_obj_get_user_data(cont) != NULL) {
+        return; /* already subscribed */
+    }
+    if (s_blink_count == 0) {
+        lv_subject_init_int(&s_blink_phase, 0);
+        s_blink_timer = lv_timer_create(blink_tick_cb, BLINK_HALF_MS, NULL);
+    }
+    s_blink_count++;
+    lv_observer_t *obs = lv_subject_add_observer_obj(&s_blink_phase,
+                                                      blink_phase_cb,
+                                                      cont, NULL);
+    lv_obj_set_user_data(cont, obs);
+    lv_obj_add_event_cb(cont, blink_delete_event_cb, LV_EVENT_DELETE, NULL);
 }
 
 static void blink_stop(lv_obj_t *cont)
 {
-    lv_anim_delete(cont, blink_anim_cb);
+    lv_observer_t *obs = lv_obj_get_user_data(cont);
+    if (obs == NULL) {
+        return;
+    }
+    lv_observer_remove(obs);
+    lv_obj_set_user_data(cont, NULL);
     lv_obj_set_style_opa(cont, LV_OPA_COVER, 0);
+    if (s_blink_count > 0 && --s_blink_count == 0) {
+        lv_timer_delete(s_blink_timer);
+        s_blink_timer = NULL;
+    }
 }
 
 /**
