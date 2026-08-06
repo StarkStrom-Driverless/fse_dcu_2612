@@ -172,7 +172,7 @@ static void build_checklist(lv_obj_t *scr)
     lv_obj_set_style_pad_row(panel, 3, 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
-    for (uint8_t i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < SDC_NODE_COUNT; i++) {
         lv_obj_t *row = lv_obj_create(panel);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -185,17 +185,12 @@ static void build_checklist(lv_obj_t *scr)
         lv_obj_set_style_pad_column(row, 5, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_t *led = lv_led_create(row);
-        lv_obj_set_size(led, SDC_LED_SIZE_LIST, SDC_LED_SIZE_LIST);
-        lv_led_set_color(led, lv_color_hex(0xff2020));
-        lv_led_on(led);
-
         lv_obj_t *lbl = lv_label_create(row);
         lv_obj_add_style(lbl, &ui_style_label_subtitle, 0);
         lv_label_set_text(lbl, k_sdc_nodes[i].label);
 
-        lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
-                                    sdc_led_observer_cb, led, NULL);
+        // lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
+        //                             sdc_led_observer_cb, led, NULL);
     }
 }
 
@@ -242,11 +237,11 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
 
     /* ── Topdown Image ───────────────────────────────────────────────────── */
 
-    // LV_IMAGE_DECLARE(car_topdown_b_i4);
+    LV_IMAGE_DECLARE(car_topdown_b_i4);
 
-    // lv_obj_t *img_car_topdown = lv_image_create(scr);
-    // lv_image_set_src(img_car_topdown, &car_topdown_b_i4);
-    // lv_obj_align(img_car_topdown, LV_ALIGN_CENTER, -80, 0);
+    lv_obj_t *img_car_topdown = lv_image_create(scr);
+    lv_image_set_src(img_car_topdown, &car_topdown_b_i4);
+    lv_obj_align(img_car_topdown, LV_ALIGN_CENTER, -80, 0);
 
     /* ── Overlay LEDs on topdown image ───────────────────────────────────── */
     /*
@@ -254,15 +249,15 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
      * to the image's top-left corner.  Adjust the coordinates in k_sdc_nodes
      * to match the component positions on a different vehicle.
      */
-    // for (uint8_t i = 0; i < SDC_NODE_COUNT; i++) {
-    //     lv_obj_t *led = lv_led_create(img_car_topdown);
-    //     lv_obj_set_size(led, SDC_LED_SIZE_OVERLAY, SDC_LED_SIZE_OVERLAY);
-    //     lv_obj_set_pos(led, k_sdc_nodes[i].img_x, k_sdc_nodes[i].img_y);
-    //     lv_led_set_color(led, lv_color_hex(0xff2020));
-    //     lv_led_on(led);
-    //     lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
-    //                                 sdc_led_observer_cb, led, NULL);
-    // }
+    for (uint8_t i = 0; i < SDC_NODE_COUNT; i++) {
+        lv_obj_t *led = lv_led_create(img_car_topdown);
+        lv_obj_set_size(led, SDC_LED_SIZE_OVERLAY, SDC_LED_SIZE_OVERLAY);
+        lv_obj_set_pos(led, k_sdc_nodes[i].img_x, k_sdc_nodes[i].img_y);
+        lv_led_set_color(led, lv_color_hex(0xff2020));
+        lv_led_on(led);
+        lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
+                                    sdc_led_observer_cb, led, NULL);
+    }
 
     // /* ── Checklist (right side) ──────────────────────────────────────────── */
 
