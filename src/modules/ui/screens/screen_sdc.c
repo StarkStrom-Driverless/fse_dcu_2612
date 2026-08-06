@@ -48,30 +48,11 @@ LOG_MODULE_REGISTER(screen_sdc, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
-/** @brief Width of each action button in pixels. */
-#define BTN_WIDTH               100
-
-/** @brief Height of each action button in pixels. */
-#define BTN_HEIGHT              50
-
-/**
- * @brief Half the centre-to-centre distance between the two buttons.
- *
- * Layout: |←BTN_WIDTH→| 10px gap |←BTN_WIDTH→|
- *          centre-to-centre = BTN_WIDTH + 10 = 110 px → half = 55 px
- */
-#define BTN_HALF_SPACING        55
-
-/** @brief Bottom margin for the button row (pixels from screen bottom). */
-#define BTN_BOTTOM_MARGIN       20
-
-/* ── SDC node table ──────────────────────────────────────────────────────── */
-
-/** @brief Diameter of the LED indicator dot in the checklist (px). */
-#define SDC_LED_SIZE_LIST       10
-
 /** @brief Diameter of the overlay LED dot on the topdown image (px). */
 #define SDC_LED_SIZE_OVERLAY    8
+
+/** @brief Width of each table column in pixels. */
+#define SDC_COL_WIDTH           75
 
 #define SDC_NODE_COUNT          12
 
@@ -97,125 +78,130 @@ typedef struct {
  */
 static const sdc_node_t k_sdc_nodes[SDC_NODE_COUNT] = {
     /*  label        subject                       img_x  img_y */
-    { "MOTOR_RL", &ui_subj_sdc_motor_rl,            30,   105 },
-    { "MOTOR_FL", &ui_subj_sdc_motor_fl,            30,    30 },
-    { "MOTOR_RR", &ui_subj_sdc_motor_rr,           252,   105 },
-    { "MOTOR_FR", &ui_subj_sdc_motor_fr,           252,    30 },
-    { "COCKPIT",  &ui_subj_sdc_cockpit,            141,    25 },
-    { "BSPD",     &ui_subj_sdc_bspd,              141,    55 },
-    { "ASCU",     &ui_subj_sdc_ascu,              141,    70 },
-    { "HVD",      &ui_subj_sdc_hvd,               141,    85 },
-    { "MH",       &ui_subj_sdc_sdb_mh,            141,   100 },
-    { "RES",      &ui_subj_sdc_res,               100,   130 },
-    { "BOTS",     &ui_subj_sdc_bots,              182,   130 },
-    { "INERTIA",  &ui_subj_sdc_inertia,           141,    40 },
+    { "MOTOR FL", &ui_subj_sdc_motor_fl,           205,    10 },
+    { "MOTOR FR", &ui_subj_sdc_motor_fr,           205,   134 },
+    { "MOTOR RL", &ui_subj_sdc_motor_rl,            45,    10 },
+    { "MOTOR RR", &ui_subj_sdc_motor_rr,            45,   134 },
+    { "COCKPIT",  &ui_subj_sdc_cockpit,            175,    72 },
+    { "BSPD",     &ui_subj_sdc_bspd,               252,    72 },
+    { "ASCU",     &ui_subj_sdc_ascu,               141,    70 },
+    { "HVD",      &ui_subj_sdc_hvd,                 70,    72 },
+    { "MH",       &ui_subj_sdc_sdb_mh,             141,   100 },
+    { "RES",      &ui_subj_sdc_res,                100,   130 },
+    { "BOTS",     &ui_subj_sdc_bots,               182,   130 },
+    { "INERTIA",  &ui_subj_sdc_inertia,            141,    40 },
 };
-
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
-/** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
-static lv_obj_t   *s_btn_rtd;
+/** @brief SDC status table (2 columns × 6 rows). */
+static lv_obj_t   *s_table;
 
 /** @brief LVGL input group for the right encoder. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief LVGL input group for the left button. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief LVGL input group for the right button. */
 static lv_group_t *s_right_button_group;
 
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
-static void build_buttons(lv_obj_t *scr);
 static void build_checklist(lv_obj_t *scr);
 static void sdc_led_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
-static void btn_rtd_event_cb(lv_event_t *e);
+static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject);
+static void sdc_table_draw_cb(lv_event_t *e);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
-/**
- * @brief Common observer callback for both checklist LEDs and overlay LEDs.
- *
- * Signal = 1 → SDC closed (OK)  → green
- * Signal = 0 → SDC open (fault) → red
- *
- * LVGL fires this callback immediately on subscription so the initial
- * state is set without a separate initialisation call.
- */
+/** @brief Observer for overlay LEDs on the car topdown image. */
 static void sdc_led_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *led = lv_observer_get_target_obj(observer);
     bool closed = lv_subject_get_int(subject) != 0;
-
     lv_led_set_color(led, closed ? lv_color_hex(0x00cc44) : lv_color_hex(0xff2020));
-    lv_led_on(led);
 }
 
 /**
- * @brief Build the 12-entry SDC checklist on the right side of the screen.
+ * @brief Observer that triggers a table redraw when any SDC subject changes.
  *
- * Each row contains a small LED indicator and a label.  The LEDs are wired
- * to the same subjects as the overlay LEDs via sdc_led_observer_cb so both
- * update together.
+ * Does not update individual cells — the draw callback reads subject values
+ * directly at paint time, so invalidating the table is sufficient.
+ */
+static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject)
+{
+    ARG_UNUSED(subject);
+    lv_obj_invalidate(lv_observer_get_target_obj(observer));
+}
+
+/**
+ * @brief Draw callback that colours table cell text based on SDC subject state.
+ *
+ * value = 0 → UI_C_DARK (node OK / SDC closed)
+ * value = 1 → UI_C_RED  (node fault / SDC open)
+ *
+ * Cell index = row × 2 + col, matching the k_sdc_nodes[] order.
+ */
+static void sdc_table_draw_cb(lv_event_t *e)
+{
+    lv_draw_task_t     *t    = lv_event_get_draw_task(e);
+    lv_draw_dsc_base_t *base = (lv_draw_dsc_base_t *)lv_draw_task_get_draw_dsc(t);
+
+    if (base->part != LV_PART_ITEMS) return;
+    if (lv_draw_task_get_type(t) != LV_DRAW_TASK_TYPE_LABEL) return;
+
+    uint8_t idx = (uint8_t)(base->id1 * 2u + base->id2);
+    if (idx >= SDC_NODE_COUNT) return;
+
+    bool fault = lv_subject_get_int(k_sdc_nodes[idx].subject) != 0;
+    ((lv_draw_label_dsc_t *)lv_draw_task_get_draw_dsc(t))->color = fault ? UI_C_DARK : UI_C_RED;
+}
+
+/**
+ * @brief Build the 2×6 SDC status table on the right side of the screen.
+ *
+ * One lv_table replaces the previous 12-label list.  Text colour is set
+ * in sdc_table_draw_cb; sdc_invalidate_cb ensures the table repaints
+ * whenever any subject changes value.
  */
 static void build_checklist(lv_obj_t *scr)
 {
-    lv_obj_t *panel = lv_obj_create(scr);
-    lv_obj_remove_style_all(panel);
-    lv_obj_set_size(panel, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_align(panel, LV_ALIGN_RIGHT_MID, -12, 20);
-    lv_obj_set_layout(panel, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(panel, 3, 0);
-    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    s_table = lv_table_create(scr);
+    lv_obj_remove_style_all(s_table);
+
+    lv_table_set_column_count(s_table, 2);
+
+    // lv_table_set_cell_value(s_table, 0, 0, "SDC Components");
+    // lv_table_set_cell_ctrl(s_table, 0, 0, LV_TABLE_CELL_CTRL_MERGE_RIGHT);
 
     for (uint8_t i = 0; i < SDC_NODE_COUNT; i++) {
-        lv_obj_t *row = lv_obj_create(panel);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-        lv_obj_set_layout(row, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row,
-                              LV_FLEX_ALIGN_START,
-                              LV_FLEX_ALIGN_CENTER,
-                              LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_column(row, 5, 0);
-        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t *lbl = lv_label_create(row);
-        lv_obj_add_style(lbl, &ui_style_label_subtitle, 0);
-        lv_label_set_text(lbl, k_sdc_nodes[i].label);
-
-        // lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
-        //                             sdc_led_observer_cb, led, NULL);
+        lv_table_set_cell_value(s_table, i / 2u, i % 2u, k_sdc_nodes[i].label);
     }
-}
 
-/**
- * @brief RTD button press/release handler.
- *
- * PRESSED  → publishes UI_INPUT_RTD_REQUEST  (App sets mode RTD  → CAN rtd_button=1)
- * RELEASED → publishes UI_INPUT_RTD_RELEASE  (App sets mode DEBUG → CAN rtd_button=0)
- */
-static void btn_rtd_event_cb(lv_event_t *e)
-{
-    lv_obj_t * button = lv_event_get_target_obj(e);
-    lv_event_code_t code = lv_event_get_code(e);
+    lv_table_set_column_width(s_table, 0, SDC_COL_WIDTH);
+    lv_table_set_column_width(s_table, 1, SDC_COL_WIDTH);
 
-    lv_obj_set_state(button, LV_STATE_USER_1, (code == LV_EVENT_LONG_PRESSED) ? true : false);
+    lv_obj_set_style_text_font(s_table,    &BarlowCondensed_BoldItalic_18, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(s_table,   UI_C_DARK,                      LV_PART_ITEMS);
+    lv_obj_set_style_pad_ver(s_table,      4,                              LV_PART_ITEMS);
+    lv_obj_set_style_pad_hor(s_table,      4,                              LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_table, 0,                              LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(s_table,       LV_OPA_TRANSP,                  LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_table, 1,                              LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_table, UI_C_DARK,                      LV_PART_MAIN);
 
-    struct ui_input_event evt = {
-        .type = (code == LV_EVENT_LONG_PRESSED) ? UI_INPUT_RTD_REQUEST : UI_INPUT_RTD_RELEASE,
-    };
 
-    int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-    if (ret != 0) {
-        LOG_WRN("RTD event publish failed: %d", ret);
-    } else {
-        LOG_DBG("RTD %s", (code == LV_EVENT_LONG_PRESSED) ? "pressed" : "released");
+    lv_obj_align(s_table, LV_ALIGN_RIGHT_MID, -12, 20);
+    lv_obj_clear_flag(s_table, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_add_flag(s_table, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
+    lv_obj_add_event_cb(s_table, sdc_table_draw_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
+
+    for (uint8_t i = 0; i < SDC_NODE_COUNT; i++) {
+        lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
+                                    sdc_invalidate_cb, s_table, NULL);
     }
 }
 
@@ -241,7 +227,7 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
 
     lv_obj_t *img_car_topdown = lv_image_create(scr);
     lv_image_set_src(img_car_topdown, &car_topdown_b_i4);
-    lv_obj_align(img_car_topdown, LV_ALIGN_CENTER, -80, 0);
+    lv_obj_align(img_car_topdown, LV_ALIGN_CENTER, -85, 24);
 
     /* ── Overlay LEDs on topdown image ───────────────────────────────────── */
     /*
@@ -254,12 +240,12 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
         lv_obj_set_size(led, SDC_LED_SIZE_OVERLAY, SDC_LED_SIZE_OVERLAY);
         lv_obj_set_pos(led, k_sdc_nodes[i].img_x, k_sdc_nodes[i].img_y);
         lv_led_set_color(led, lv_color_hex(0xff2020));
-        lv_led_on(led);
+        lv_led_off(led);
         lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
                                     sdc_led_observer_cb, led, NULL);
     }
 
-    // /* ── Checklist (right side) ──────────────────────────────────────────── */
+    /* ── Status table (right side, 2×6) ─────────────────────────────────── */
 
     build_checklist(scr);
 
@@ -277,7 +263,6 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
     // lv_group_set_editing(s_right_encoder_group, true);
 
     // s_right_button_group = lv_group_create();
-    // lv_group_add_obj(s_right_button_group, s_btn_rtd);
     // lv_group_set_editing(s_right_button_group, true);
 
     return scr;
