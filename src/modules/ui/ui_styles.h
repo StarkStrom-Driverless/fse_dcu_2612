@@ -187,6 +187,12 @@ extern lv_style_t ui_style_label_caption;
  */
 extern lv_style_t ui_style_label_value_lg;
 
+/**
+ * @brief Hero numeric display (RPM, SoC …).
+ * Font: BarlowCondensed_BoldItalic_80. Colour: UI_C_DARK.
+ */
+extern lv_style_t ui_style_label_value_md;
+
 /* --- Buttons ---------------------------------------------------------------------- */
 
 /**
