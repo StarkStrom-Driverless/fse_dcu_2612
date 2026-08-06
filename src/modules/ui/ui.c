@@ -78,6 +78,7 @@
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/screens/screen_boot.h"
 #include "modules/ui/screens/screen_mission_select.h"
+#include "modules/ui/screens/screen_sdc.h"
 #include "modules/ui/screens/screen_checklist.h"
 #include "modules/ui/screens/screen_debug_lv_accu.h"
 #include "modules/ui/screens/screen_debug_hv_accu.h"
@@ -124,15 +125,16 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * The starting position is SCREEN_BOOT (index 1).
  */
 static const enum screen_id k_carousel[] = {
-    SCREEN_DEBUG_LV_ACCU,   /* index 1 — CCW from boot   */
-    SCREEN_DEBUG_HV_ACCU,   /* index 2 — CCW from boot   */
-    SCREEN_DEBUG_PRESSURE,  /* index 3 — CCW from boot   */
-    SCREEN_DEBUG_TS,        /* index 4 — CCW from boot   */
-    SCREEN_DEBUG_WRITE,     /* index 5 — CCW from boot   */
-    SCREEN_BOOT,            /* index 6 — initial screen  */
-    SCREEN_MISSION_SELECT,  /* index 7 — CW from boot    */
-    SCREEN_PRE_RTD,         /* index 8 — CW from Mission */
-    SCREEN_EV_DRIVING,      /* index 9 - EV Driving      */
+    SCREEN_DEBUG_LV_ACCU,   /* index  1 - CCW from boot   */
+    SCREEN_DEBUG_HV_ACCU,   /* index  2 - CCW from boot   */
+    SCREEN_DEBUG_PRESSURE,  /* index  3 - CCW from boot   */
+    SCREEN_DEBUG_TS,        /* index  4 - CCW from boot   */
+    SCREEN_DEBUG_WRITE,     /* index  5 - CCW from boot   */
+    SCREEN_BOOT,            /* index  6 - initial screen  */
+    SCREEN_MISSION_SELECT,  /* index  7 - CW from boot    */
+    SCREEN_SDC,             /* index  8 - CW from Mission */
+    SCREEN_PRE_RTD,         /* index  9 - CW from Mission */
+    SCREEN_EV_DRIVING,      /* index 10 - EV Driving      */
 };
 
 #define CAROUSEL_LEN    ARRAY_SIZE(k_carousel)
@@ -307,6 +309,11 @@ static void set_encoder_group(enum screen_id id)
         right_encoder_group = screen_checklist_get_right_encoder_group();
         left_button_group = screen_checklist_get_left_button_group();
         right_button_group = screen_checklist_get_right_button_group();
+        break;
+    case SCREEN_SDC:
+        right_encoder_group = screen_sdc_get_right_encoder_group();
+        left_button_group = screen_sdc_get_left_button_group();
+        right_button_group = screen_sdc_get_right_button_group();
         break;
     case SCREEN_DEBUG_WRITE:
         right_encoder_group = screen_debug_write_get_right_encoder_group();
@@ -551,6 +558,7 @@ void ui_module_init(void)
     s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create(s_device_status);
     s_screens[SCREEN_BOOT]           = screen_boot_create(s_device_status);
     s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create(s_device_status);
+    s_screens[SCREEN_SDC]            = screen_sdc_create(s_device_status);
     s_screens[SCREEN_PRE_RTD]        = screen_checklist_create(s_device_status);
     s_screens[SCREEN_EV_DRIVING]     = screen_ev_driving_create(s_device_status);
 

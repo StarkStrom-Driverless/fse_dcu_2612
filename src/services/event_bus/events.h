@@ -74,7 +74,8 @@ enum screen_id {
     SCREEN_DEBUG_WRITE,       /**< Send generic debug Bits.                        */
     SCREEN_BOOT,              /**< Initial splash; starting position in carousel.  */
     SCREEN_MISSION_SELECT,    /**< Mission roller + OK + RTD buttons.              */
-    SCREEN_PRE_RTD,           /**< Pre-drive checklist (future).                   */
+    SCREEN_SDC,               /**< Shutdown circuits.                              */
+    SCREEN_PRE_RTD,           /**< Pre-drive checklist.                            */
     SCREEN_RTD,               /**< Live telemetry during mission.                  */
     SCREEN_EV_DRIVING,        /**< Show telemetry and adjust vehicle in EV driving */
     SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
