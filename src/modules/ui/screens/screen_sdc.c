@@ -78,18 +78,18 @@ typedef struct {
  */
 static const sdc_node_t k_sdc_nodes[SDC_NODE_COUNT] = {
     /*  label        subject                       img_x  img_y */
-    { "MOTOR FL", &ui_subj_sdc_motor_fl,           205,    10 },
-    { "MOTOR FR", &ui_subj_sdc_motor_fr,           205,   134 },
-    { "MOTOR RL", &ui_subj_sdc_motor_rl,            45,    10 },
-    { "MOTOR RR", &ui_subj_sdc_motor_rr,            45,   134 },
-    { "COCKPIT",  &ui_subj_sdc_cockpit,            175,    72 },
-    { "BSPD",     &ui_subj_sdc_bspd,               252,    72 },
     { "ASCU",     &ui_subj_sdc_ascu,               141,    70 },
     { "HVD",      &ui_subj_sdc_hvd,                 70,    72 },
-    { "MH",       &ui_subj_sdc_sdb_mh,             141,   100 },
+    { "MOTOR RL", &ui_subj_sdc_motor_rl,            45,    10 },
     { "RES",      &ui_subj_sdc_res,                100,   130 },
+    { "MOTOR FL", &ui_subj_sdc_motor_fl,           205,    10 },
     { "BOTS",     &ui_subj_sdc_bots,               182,   130 },
+    { "MOTOR FR", &ui_subj_sdc_motor_fr,           205,   134 },
+    { "COCKPIT",  &ui_subj_sdc_cockpit,            175,    72 },
     { "INERTIA",  &ui_subj_sdc_inertia,            141,    40 },
+    { "MH",       &ui_subj_sdc_sdb_mh,             141,   100 },
+    { "MOTOR RR", &ui_subj_sdc_motor_rr,            45,   134 },
+    { "BSPD",     &ui_subj_sdc_bspd,               252,    72 },
 };
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -156,7 +156,7 @@ static void sdc_table_draw_cb(lv_event_t *e)
     if (idx >= SDC_NODE_COUNT) return;
 
     bool fault = lv_subject_get_int(k_sdc_nodes[idx].subject) != 0;
-    ((lv_draw_label_dsc_t *)lv_draw_task_get_draw_dsc(t))->color = fault ? UI_C_DARK : UI_C_RED;
+    ((lv_draw_label_dsc_t *)lv_draw_task_get_draw_dsc(t))->color = fault ? UI_C_RED : UI_C_DARK;
 }
 
 /**
@@ -240,7 +240,7 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
         lv_obj_set_size(led, SDC_LED_SIZE_OVERLAY, SDC_LED_SIZE_OVERLAY);
         lv_obj_set_pos(led, k_sdc_nodes[i].img_x, k_sdc_nodes[i].img_y);
         lv_led_set_color(led, lv_color_hex(0xff2020));
-        lv_led_off(led);
+        lv_led_on(led);
         lv_subject_add_observer_obj(k_sdc_nodes[i].subject,
                                     sdc_led_observer_cb, led, NULL);
     }
