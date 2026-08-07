@@ -116,6 +116,9 @@ LV_FONT_DECLARE(BarlowCondensed_BoldItalic_80)
 /** @brief 100 pt bold-italic — hero numeric display (RPM, SoC …). */
 LV_FONT_DECLARE(BarlowCondensed_BoldItalic_100)
 
+/** @brief 18 pt Fone Awesome for custom icons */
+LV_FONT_DECLARE(FontAwesome_Solid_18)
+
 
 /* ── Style Declarations ──────────────────────────────────────────────────────────────────────── */
 
@@ -303,6 +306,29 @@ extern lv_style_t ui_style_level_warn_indicator;
  */
 extern lv_style_t ui_style_level_crit_indicator;
 
+/* ─── Custom Icons ───────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Custom added Icons
+ *
+ * Custom Icons from Font Awesome Font. 
+ */
+
+#define FA_SYMBOL_DESKTOP_SOLID "\xEF\x8E\x90"
+
+#define FA_SYMBOL_GAUGE_SIMPLE  "\xEF\x98\xAA"
+
+#define FA_SYMBOL_MICROCHIP     "\xEF\x8B\x9B"
+
+#define FA_SYMBOL_NETWORK_SOLID "\xEF\x9B\xBF"
+
+#define FA_SYMBOL_RULER         "\xEF\x95\x85"
+
+#define FA_SYMBOL_VIDEO         "\xEF\x80\xBD"
+
+#define FA_SYMBOL_POWER_OFF     "\xEF\x80\x91"
+
+#define FA_SYMBOL_ROBOT         "\xEF\x95\x84"
 
 /* ── Initialisation ──────────────────────────────────────────────────────────────────────────── */
 

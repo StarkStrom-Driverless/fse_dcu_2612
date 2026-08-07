@@ -125,6 +125,16 @@ static bool s_hw_ready;
  *         schedule TX messages at their individual period_ms via modulo. */
 static uint32_t s_tx_tick;
 
+/** @brief Last-known CAN bus state; used to detect and publish state changes. */
+static enum can_state s_can_state_prev = CAN_STATE_STOPPED;
+
+/* Verify that enum can_bus_state values (events.h) match enum can_state (Zephyr). */
+_Static_assert((int)CAN_STATE_ERROR_ACTIVE  == (int)CAN_BUS_STATE_ERROR_ACTIVE,  "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_ERROR_WARNING == (int)CAN_BUS_STATE_ERROR_WARNING, "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_ERROR_PASSIVE == (int)CAN_BUS_STATE_ERROR_PASSIVE, "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_BUS_OFF       == (int)CAN_BUS_STATE_BUS_OFF,       "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_STOPPED       == (int)CAN_BUS_STATE_STOPPED,       "CAN state enum mismatch");
+
 /**
  * @brief RX message queue, filled by the CAN driver ISR for matching frames.
  *
@@ -340,7 +350,24 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
             can_send_dcu2_mabx(drive_mode, rtd_active, debug);
         }
 
-        /* ── 3. Advance tick and wait for next base slot ─────────────── */
+        /* ── 3. Poll CAN bus state; publish to can_status_chan on change ─ */
+        enum can_state cur_state;
+        struct can_bus_err_cnt err_cnt;
+        if (can_get_state(s_can_dev, &cur_state, &err_cnt) == 0 &&
+            cur_state != s_can_state_prev) {
+            s_can_state_prev = cur_state;
+            struct can_status_event state_evt = {
+                .type   = CAN_STATUS_CONNECTED,
+                .msg_id = 0U,
+                .state  = (enum can_bus_state)cur_state,
+            };
+            int rc = zbus_chan_pub(&can_status_chan, &state_evt, K_NO_WAIT);
+            if (rc != 0) {
+                LOG_WRN("can_status_chan (state) publish failed: %d", rc);
+            }
+        }
+
+        /* ── 4. Advance tick and wait for next base slot ─────────────── */
         s_tx_tick++;
         k_msleep(CAN_TX_PERIOD_MS);
     }
@@ -359,10 +386,14 @@ void can_module_init(void)
     } else {
         s_hw_ready = true;
 
+        /* can_start() leaves the controller in ERROR_ACTIVE. */
+        s_can_state_prev = CAN_STATE_ERROR_ACTIVE;
+
         /* Publish initial connected status to the event bus. */
         struct can_status_event status_evt = {
             .type   = CAN_STATUS_CONNECTED,
             .msg_id = 0U,
+            .state  = CAN_BUS_STATE_ERROR_ACTIVE,
         };
         ret = zbus_chan_pub(&can_status_chan, &status_evt, K_NO_WAIT);
         if (ret != 0) {

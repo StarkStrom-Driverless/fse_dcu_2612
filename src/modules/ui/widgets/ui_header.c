@@ -11,23 +11,25 @@
 #include <lvgl.h>
 
 #include "modules/ui/ui_styles.h"
-#include "modules/ui/icons/ui_icons.h"
 #include "services/event_bus/events.h"
 
 /* ── Layout constants ────────────────────────────────────────────────────── */
 
 #define HEADER_HEIGHT_PCT   15
-#define ICON_ROW_MARGIN_R   8
-#define ICON_COL_GAP        8
+#define ICON_ROW_MARGIN_R   4
+#define ICON_COL_GAP        6
 #define BLINK_HALF_MS       400U
 
-/* ── Icon source table ───────────────────────────────────────────────────── */
+/* ── Per-slot icon configuration ─────────────────────────────────────────── */
 
-static const lv_image_dsc_t *const k_icon_src[UI_DEVICE_SLOT_COUNT] = {
-    [UI_DEVICE_KISTLER] = &icon_kistler,
-    [UI_DEVICE_DV_PC]   = &icon_dv_pc,
-    [UI_DEVICE_LOGGER]  = &icon_logger,
-    [UI_DEVICE_EBS]     = &icon_ebs,
+static const ui_header_slot_cfg_t k_slot_cfg[UI_DEVICE_SLOT_COUNT] = {
+    [UI_DEVICE_LOGGER]  = { .symbol = FA_SYMBOL_VIDEO         },
+    [UI_DEVICE_ROS]     = { .symbol = FA_SYMBOL_ROBOT         },
+    [UI_DEVICE_DV_PC]   = { .symbol = FA_SYMBOL_DESKTOP_SOLID },
+    [UI_DEVICE_KISTLER] = { .symbol = FA_SYMBOL_RULER         },
+    [UI_DEVICE_MABX]    = { .symbol = FA_SYMBOL_MICROCHIP     },
+    [UI_DEVICE_SDCS]    = { .symbol = FA_SYMBOL_POWER_OFF     },
+    [UI_DEVICE_CAN]     = { .symbol = FA_SYMBOL_NETWORK_SOLID },
 };
 
 /* ── Private helpers ─────────────────────────────────────────────────────── */
@@ -35,11 +37,11 @@ static const lv_image_dsc_t *const k_icon_src[UI_DEVICE_SLOT_COUNT] = {
 static lv_color_t status_to_color(enum ui_device_status s)
 {
     switch (s) {
-    case UI_DEVICE_STATUS_WARN:    return UI_C_ACCENT;
-    case UI_DEVICE_STATUS_FAULT:   /* fall through */
-    case UI_DEVICE_STATUS_OFFLINE: return UI_C_RED;
-    case UI_DEVICE_STATUS_OK:      /* fall through */
-    default:                       return UI_C_GREEN;
+    case UI_DEVICE_STATUS_WARN:     return UI_C_ACCENT;
+    case UI_DEVICE_STATUS_FAULT:    return UI_C_RED;
+    case UI_DEVICE_STATUS_ACTIVE: return UI_C_RED;
+    case UI_DEVICE_STATUS_OK:       return UI_C_GREEN;
+    default:                        return UI_C_GREEN;
     }
 }
 
@@ -72,12 +74,13 @@ static void blink_tick_cb(lv_timer_t *timer)
 
 static void blink_delete_event_cb(lv_event_t *e)
 {
-    lv_obj_t *cont = lv_event_get_target_obj(e);
-    lv_observer_t *obs = lv_obj_get_user_data(cont);
-    if (obs == NULL) {
-        return;
-    }
-    lv_observer_remove(obs);
+    (void)e;
+    /*
+     * lv_subject_add_observer_obj already registered its own LV_EVENT_DELETE
+     * callback that calls lv_observer_remove() and frees the observer before
+     * this callback runs.  Do NOT touch the observer pointer here — it is
+     * already freed memory.  Only manage the shared count and timer.
+     */
     if (s_blink_count > 0 && --s_blink_count == 0) {
         lv_timer_delete(s_blink_timer);
         s_blink_timer = NULL;
@@ -136,16 +139,8 @@ static void slot_status_observer_cb(lv_observer_t *observer, lv_subject_t *subje
     // lv_obj_set_style_image_recolor(img, status_to_color(cur), 0);
     lv_obj_set_style_text_color(img, status_to_color(cur), LV_PART_MAIN);
 
-    if (cur == UI_DEVICE_STATUS_OFFLINE) {
-        // lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        // lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    bool should_blink = (cur  == UI_DEVICE_STATUS_FAULT ||
-                         cur  == UI_DEVICE_STATUS_OFFLINE);
-    bool was_blinking = (prev == UI_DEVICE_STATUS_FAULT ||
-                         prev == UI_DEVICE_STATUS_OFFLINE);
+    bool should_blink = (cur  == UI_DEVICE_STATUS_ACTIVE);
+    bool was_blinking = (prev == UI_DEVICE_STATUS_ACTIVE);
 
     if (should_blink && !was_blinking) {
         blink_start(cont);
@@ -155,6 +150,7 @@ static void slot_status_observer_cb(lv_observer_t *observer, lv_subject_t *subje
 }
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
+
 
 lv_obj_t *ui_header_create(lv_obj_t    *parent,
                             const char  *title,
@@ -193,26 +189,16 @@ lv_obj_t *ui_header_create(lv_obj_t    *parent,
     for (uint8_t i = 0U; i < UI_DEVICE_SLOT_COUNT; i++) {
         /* Slot container — child[i] of icon_row */
         lv_obj_t *cont = lv_obj_create(icon_row);
+        
         lv_obj_remove_style_all(cont);
-        lv_obj_set_size(cont, UI_ICON_SIZE, UI_ICON_SIZE);
+        lv_obj_set_size(cont, 24U, 24U);
         lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
 
-        // /* Device icon — child[0] of cont */
-        lv_obj_t *img = lv_image_create(cont);
-        // lv_image_set_src(img, k_icon_src[i]);
-        lv_image_set_src(img, LV_SYMBOL_BATTERY_FULL);
+        /* Device icon — child[0] of cont */
+        lv_obj_t *img = lv_label_create(cont);
+        lv_obj_set_style_text_font(img, &FontAwesome_Solid_18, 0);
+        lv_label_set_text(img, k_slot_cfg[i].symbol);
         lv_obj_center(img);
-        lv_obj_set_style_image_recolor(img, lv_color_hex(0x6366f1), LV_PART_MAIN);
-        lv_obj_set_style_text_color(img, lv_color_hex(0x6366f1), LV_PART_MAIN);
-        lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, LV_PART_MAIN);
-
-        // /* Offline overlay (X) — child[1] of cont, hidden by default */
-        // lv_obj_t *overlay = lv_image_create(cont);
-        // lv_image_set_src(overlay, &icon_offline);
-        // lv_obj_center(overlay);
-        // lv_obj_set_style_image_recolor(overlay, UI_C_RED, 0);
-        // lv_obj_set_style_image_recolor_opa(overlay, LV_OPA_COVER, 0);
-        // lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 
         /*
          * Subscribe cont to its status subject.

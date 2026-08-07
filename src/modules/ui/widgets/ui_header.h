@@ -17,10 +17,10 @@
  *
  *              Status colours
  *              ──────────────
- *              UI_DEVICE_STATUS_OK      → UI_C_GREEN (solid)
- *              UI_DEVICE_STATUS_WARN    → UI_C_ACCENT gold (solid)
- *              UI_DEVICE_STATUS_FAULT   → UI_C_RED + blink animation
- *              UI_DEVICE_STATUS_OFFLINE → UI_C_RED + blink + X overlay
+ *              UI_DEVICE_STATUS_OK       → UI_C_GREEN (solid)
+ *              UI_DEVICE_STATUS_WARN     → UI_C_ACCENT gold (solid)
+ *              UI_DEVICE_STATUS_FAULT    → UI_C_RED
+ *              UI_DEVICE_STATUS_ACTIVE   → UI_C_RED + blink
  *
  *              Usage
  *              ─────
@@ -38,6 +38,27 @@
 
 #include <lvgl.h>
 #include "services/event_bus/events.h"
+
+/**
+ * @brief Per-slot icon configuration for the header widget.
+ *
+ * Define one entry per @ref ui_device_slot value.  The @p symbol field
+ * accepts any UTF-8 symbol string: Font Awesome defines from ui_styles.h
+ * (FA_SYMBOL_*) or LVGL built-in symbols (LV_SYMBOL_*).
+ *
+ * Example (in ui.c):
+ * @code
+ *   static const ui_header_slot_cfg_t k_header_slot_cfg[UI_DEVICE_SLOT_COUNT] = {
+ *       [UI_DEVICE_KISTLER] = { .symbol = FA_SYMBOL_RULER         },
+ *       [UI_DEVICE_DV_PC]   = { .symbol = FA_SYMBOL_DESKTOP_SOLID },
+ *       [UI_DEVICE_LOGGER]  = { .symbol = FA_SYMBOL_VIDEO         },
+ *       [UI_DEVICE_EBS]     = { .symbol = FA_SYMBOL_GAUGE_SIMPLE  },
+ *   };
+ * @endcode
+ */
+typedef struct {
+    const char *symbol; /**< UTF-8 symbol string for this slot's icon. */
+} ui_header_slot_cfg_t;
 
 /**
  * @brief Create a header widget as a child of @p parent.
