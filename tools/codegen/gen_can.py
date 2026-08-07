@@ -293,6 +293,80 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
     return result
 
 
+def collect_tx_signals(db: Database, cfg: dict) -> list[tuple]:
+    """
+    Collect all TX signals that carry an app_name for UI subject generation.
+
+    Returns a list of (dbc_signal, app_name, c_type) tuples in YAML order.
+    """
+    dbc_messages = {m.name: m for m in db.messages}
+    result = []
+
+    for msg_name, msg_cfg in cfg["messages"].items():
+        msg_cfg = msg_cfg or {}
+        if msg_cfg.get("direction") != "tx":
+            continue
+
+        dbc_msg = dbc_messages[msg_name]
+        dbc_signals = {s.name: s for s in dbc_msg.signals}
+
+        for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
+            sig_cfg = sig_cfg or {}
+            app_name = sig_cfg.get("app_name")
+            if app_name:
+                sig = dbc_signals[sig_name]
+                result.append((sig, app_name, snapshot_c_type(sig)))
+
+    return result
+
+
+def emit_tx_subjects_header(tx_signals: list[tuple]) -> str:
+    lines = [GENERATED_BANNER]
+    lines.append("#ifndef GENERATED_UI_TX_SUBJECTS_GEN_H\n#define GENERATED_UI_TX_SUBJECTS_GEN_H\n")
+    lines.append("#include <lvgl.h>\n")
+    lines.append("""\
+/*
+ * One value subject ui_tx_subj_<x> per TX signal with an app_name in dcu_app.yaml.
+ *
+ * The UI layer writes to these subjects when the user interacts with a control.
+ * The CAN TX layer reads them (via a future snapshot helper) when packing frames.
+ *
+ * Threading: ui_tx_subjects_gen_init() must be called from the LVGL thread
+ * before any screen that binds to these subjects is created.
+ */
+""")
+    for sig, app_name, c_type in tx_signals:
+        lines.append(f"extern lv_subject_t ui_tx_subj_{app_name};{'':<4}"
+                     f"/**< {sig.name} ({subject_kind(c_type)}) */")
+    lines.append("")
+    lines.append("""\
+/**
+ * @brief Initializes all TX subjects to 0.
+ * Call before screen creation so screens can bind widgets during construction.
+ */
+void ui_tx_subjects_gen_init(void);""")
+    lines.append("\n#endif /* GENERATED_UI_TX_SUBJECTS_GEN_H */")
+    return "\n".join(lines) + "\n"
+
+
+def emit_tx_subjects_source(tx_signals: list[tuple]) -> str:
+    lines = [GENERATED_BANNER]
+    lines.append('#include "ui_tx_subjects_gen.h"\n')
+
+    for _sig, app_name, _c_type in tx_signals:
+        lines.append(f"lv_subject_t ui_tx_subj_{app_name};")
+
+    lines.append("\nvoid ui_tx_subjects_gen_init(void)\n{")
+    for _sig, app_name, c_type in tx_signals:
+        if subject_kind(c_type) == "float":
+            lines.append(f"    lv_subject_init_float(&ui_tx_subj_{app_name}, 0.0f);")
+        else:
+            lines.append(f"    lv_subject_init_int(&ui_tx_subj_{app_name}, 0);")
+    lines.append("}")
+
+    return "\n".join(lines) + "\n"
+
+
 def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
     """
     Collect all direction==tx messages with their period_ms.
@@ -607,16 +681,21 @@ def main() -> None:
     # Stage 2: snapshot struct + RX dispatch + TX periods
     rx_messages = collect_rx_messages(db, cfg)
     tx_messages = collect_tx_messages(db, cfg)
+    tx_signals  = collect_tx_signals(db, cfg)
     (args.out / "can_data_gen.h").write_text(emit_data_header(rx_messages), encoding="utf-8")
     (args.out / "can_rx_gen.h").write_text(emit_rx_dispatch_header(rx_messages), encoding="utf-8")
     (args.out / "can_rx_gen.c").write_text(emit_rx_dispatch_source(rx_messages), encoding="utf-8")
     (args.out / "can_tx_gen.h").write_text(emit_tx_header(tx_messages), encoding="utf-8")
 
-    # Stage 3: LVGL subjects + level-binding helpers
+    # Stage 3: LVGL subjects — RX (CAN → UI) + TX (UI → CAN)
     (args.out / "ui_subjects_gen.h").write_text(
         emit_subjects_header(rx_messages), encoding="utf-8")
     (args.out / "ui_subjects_gen.c").write_text(
         emit_subjects_source(rx_messages), encoding="utf-8")
+    (args.out / "ui_tx_subjects_gen.h").write_text(
+        emit_tx_subjects_header(tx_signals), encoding="utf-8")
+    (args.out / "ui_tx_subjects_gen.c").write_text(
+        emit_tx_subjects_source(tx_signals), encoding="utf-8")
 
     total_signals = sum(
         len((m or {}).get("signals") or {}) for m in cfg["messages"].values()
@@ -637,9 +716,11 @@ def main() -> None:
           f"{range_count} with range defines, {len(tx_messages)} TX period(s)")
     print(f"    RX dispatch: {len(rx_messages)} messages, "
           f"{rx_signal_count} snapshot fields")
+    print(f"    TX subjects: {len(tx_signals)} signals")
     for name in ("dcu_can_gen.c", "dcu_can_gen.h", "can_data_gen.h",
                  "can_rx_gen.c", "can_rx_gen.h", "can_tx_gen.h",
-                 "ui_subjects_gen.c", "ui_subjects_gen.h"):
+                 "ui_subjects_gen.c", "ui_subjects_gen.h",
+                 "ui_tx_subjects_gen.c", "ui_tx_subjects_gen.h"):
         print(f"  → {args.out / name}")
 
 

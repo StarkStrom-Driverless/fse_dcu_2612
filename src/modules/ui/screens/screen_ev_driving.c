@@ -69,6 +69,7 @@
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "generated/ui_subjects_gen.h"
+#include "generated/ui_tx_subjects_gen.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -96,6 +97,10 @@ LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
+
+static lv_subject_t s_sldr_left_val;  /* TQG F slider value */
+static lv_subject_t s_sldr_right_val; /* TQG R slider value */
+static bool         s_subjects_init;
 
 /** @brief Left slider */
 static lv_obj_t   *s_sldr_left;
@@ -132,9 +137,48 @@ static void build_sliders(lv_obj_t *scr);
 static void build_buttons(lv_obj_t *scr);
 static void btn_left_event_cb(lv_event_t *e);
 static void btn_right_event_cb(lv_event_t *e);
+static void tq_vect_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
+static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
+
+static void sldr_left_value_changed_cb(lv_event_t *e)
+{
+    lv_subject_set_int(&s_sldr_left_val,
+                       lv_slider_get_value(lv_event_get_target_obj(e)));
+}
+
+static void sldr_right_value_changed_cb(lv_event_t *e)
+{
+    lv_subject_set_int(&s_sldr_right_val,
+                       lv_slider_get_value(lv_event_get_target_obj(e)));
+}
+
+static void tq_vect_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
+{
+    lv_obj_t *btn = lv_observer_get_target_obj(observer);
+    bool on = lv_subject_get_int(subject) != 0;
+
+    if (on) {
+        lv_obj_add_state(btn, LV_STATE_CHECKED);
+    } else {
+        lv_obj_clear_state(btn, LV_STATE_CHECKED);
+    }
+    lv_label_set_text(s_lbl_btn_right_value, on ? "ON" : "OFF");
+    lv_obj_set_style_text_color(s_lbl_btn_right_value,
+                                on ? UI_C_WHITE : UI_C_DARK, 0);
+}
+
+static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
+{
+    lv_obj_t *btn = lv_observer_get_target_obj(observer);
+    if (lv_subject_get_int(subject)) {
+        lv_obj_add_state(btn, LV_STATE_CHECKED);
+    } else {
+        lv_obj_clear_state(btn, LV_STATE_CHECKED);
+    }
+}
 
 static void build_sliders(lv_obj_t *scr)
 {
@@ -146,6 +190,9 @@ static void build_sliders(lv_obj_t *scr)
     lv_obj_add_style(s_sldr_left, &ui_style_slider_indicator, LV_PART_INDICATOR);
     lv_obj_set_size(s_sldr_left, 40, 200);
     lv_obj_set_pos(s_sldr_left, 10, 70);
+
+    lv_slider_set_value(s_sldr_left, (int32_t)lv_subject_get_int(&s_sldr_left_val), LV_ANIM_OFF);
+    lv_obj_add_event_cb(s_sldr_left, sldr_left_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t *lbl_sldr_left_title = lv_label_create(scr);
     lv_obj_add_style(lbl_sldr_left_title, &ui_style_label_subtitle, 0);
@@ -160,6 +207,9 @@ static void build_sliders(lv_obj_t *scr)
     lv_obj_add_style(s_sldr_right, &ui_style_slider_indicator, LV_PART_INDICATOR);
     lv_obj_set_size(s_sldr_right, 40, 200);
     lv_obj_set_pos(s_sldr_right, 430, 70);
+
+    lv_slider_set_value(s_sldr_right, (int32_t)lv_subject_get_int(&s_sldr_right_val), LV_ANIM_OFF);
+    lv_obj_add_event_cb(s_sldr_right, sldr_right_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t *lbl_sldr_right_title = lv_label_create(scr);
     lv_obj_add_style(lbl_sldr_right_title, &ui_style_label_subtitle, 0);
@@ -297,7 +347,8 @@ static void build_buttons(lv_obj_t *scr)
     lv_obj_align(lbl_esc, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_add_flag(s_btn_left, LV_OBJ_FLAG_CHECKABLE);
-    // lv_obj_add_event_cb(s_btn_left, btn_right_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_btn_left, btn_left_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_subject_add_observer_obj(&ui_tx_subj_pwrlimit_setting, pwr_limit_observer_cb, s_btn_left, NULL);
     
 
     /* ── Torque Vectoring button ────────────────────────────────────────── */
@@ -321,6 +372,7 @@ static void build_buttons(lv_obj_t *scr)
     lv_obj_align(s_lbl_btn_right_value, LV_ALIGN_BOTTOM_LEFT, 0, 8);
 
     lv_obj_add_event_cb(s_btn_right, btn_right_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_subject_add_observer_obj(&ui_tx_subj_torquevect_setting, tq_vect_observer_cb, s_btn_right, NULL);
 
     
 
@@ -355,10 +407,8 @@ static void build_buttons(lv_obj_t *scr)
  */
 static void btn_left_event_cb(lv_event_t *e)
 {
-    // uint16_t  idx    = lv_roller_get_selected(s_roller);
-    // char buf[32];
-
-    // lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
+    bool on = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED);
+    lv_subject_set_int(&ui_tx_subj_pwrlimit_setting, on ? 1 : 0);
 
 }
 
@@ -373,21 +423,18 @@ static void btn_left_event_cb(lv_event_t *e)
  */
 static void btn_right_event_cb(lv_event_t *e)
 {
-    struct ui_input_event evt = {
-        .type = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED)
-                ? UI_INPUT_TORQUE_VECT_ON
-                : UI_INPUT_TORQUE_VECT_OFF
-    };
+    bool on = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED);
 
-    const char *new_value = (evt.type == UI_INPUT_TORQUE_VECT_ON) ? "ON" : "OFF";
+    struct ui_input_event evt = {
+        .type = on ? UI_INPUT_TORQUE_VECT_ON : UI_INPUT_TORQUE_VECT_OFF,
+    };
 
     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
     if (ret != 0) {
         LOG_WRN("UI_INPUT_TORQUE_VECT publish failed: %d", ret);
     } else {
-        lv_label_set_text(s_lbl_btn_right_value, new_value);
-        lv_obj_set_style_text_color(s_lbl_btn_right_value, (evt.type == UI_INPUT_TORQUE_VECT_ON) ? UI_C_WHITE : UI_C_DARK, 0);
-        LOG_DBG("Torque Vectoring toggled: %s", new_value);
+        lv_subject_set_int(&ui_tx_subj_torquevect_setting, on ? 1 : 0);
+        LOG_DBG("Torque Vectoring toggled: %s", on ? "ON" : "OFF");
     }
 }
 
@@ -399,6 +446,12 @@ static void btn_right_event_cb(lv_event_t *e)
 lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
+
+    if (!s_subjects_init) {
+        lv_subject_init_int(&s_sldr_left_val, 0);
+        lv_subject_init_int(&s_sldr_right_val, 0);
+        s_subjects_init = true;
+    }
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_remove_style_all(scr);

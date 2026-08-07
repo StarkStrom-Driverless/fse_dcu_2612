@@ -88,6 +88,7 @@
 #include "modules/ui/screens/screen_ev_driving.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "generated/ui_subjects_gen.h"
+#include "generated/ui_tx_subjects_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 
@@ -140,13 +141,31 @@ static const enum screen_id k_carousel[] = {
 #define CAROUSEL_LEN    ARRAY_SIZE(k_carousel)
 
 
+/* ── Screen factory ──────────────────────────────────────────────────────────────────────────── */
+
+typedef lv_obj_t *(*screen_factory_fn)(lv_subject_t *);
+
+static const screen_factory_fn k_screen_factories[SCREEN_ID_COUNT] = {
+    [SCREEN_DEBUG_LV_ACCU]  = screen_debug_lv_accu_create,
+    [SCREEN_DEBUG_HV_ACCU]  = screen_debug_hv_accu_create,
+    [SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create,
+    [SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create,
+    [SCREEN_DEBUG_WRITE]    = screen_debug_write_create,
+    [SCREEN_BOOT]           = screen_boot_create,
+    [SCREEN_MISSION_SELECT] = screen_mission_select_create,
+    [SCREEN_SDC]            = screen_sdc_create,
+    [SCREEN_PRE_RTD]        = screen_checklist_create,
+    [SCREEN_EV_DRIVING]     = screen_ev_driving_create,
+};
+
+
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Screen object pool, indexed by enum screen_id.
+ * @brief Screen object cache, indexed by enum screen_id.
  *
- * Entries are NULL for screens not yet implemented.  Checked before any
- * lv_screen_load_anim() call.
+ * NULL means the screen has not been created yet (or was destroyed after
+ * navigation).  Created on first visit, destroyed on departure.
  */
 static lv_obj_t *s_screens[SCREEN_ID_COUNT];
 
@@ -217,6 +236,10 @@ ZBUS_CHAN_ADD_OBS(ui_cmd_chan, ui_cmd_sub, 0);
 ZBUS_SUBSCRIBER_DEFINE(vehicle_status_sub, 4);
 ZBUS_CHAN_ADD_OBS(vehicle_status_chan, vehicle_status_sub, 0);
 
+/** @brief Subscriber for can_status_chan (CAN module → all). */
+ZBUS_SUBSCRIBER_DEFINE(can_status_sub, 2);
+ZBUS_CHAN_ADD_OBS(can_status_chan, can_status_sub, 0);
+
 
 /* ── Left Encoder Input Callback ─────────────────────────────────────────────────────────────── */
 
@@ -253,6 +276,7 @@ static void        ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim);
 static void        carousel_navigate(int32_t delta);
 static void        handle_ui_cmd(const struct ui_cmd *cmd);
 static void        handle_vehicle_status(const struct vehicle_status *status);
+static void        handle_can_status(const struct can_status_event *evt);
 static void        ui_thread_fn(void *p1, void *p2, void *p3);
 
 
@@ -358,14 +382,29 @@ static void set_encoder_group(enum screen_id id)
  */
 static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
 {
-    if (id == SCREEN_NONE || id >= SCREEN_ID_COUNT || s_screens[id] == NULL) {
-        LOG_WRN("Screen %d not available", (int)id);
+    if (id == SCREEN_NONE || id >= SCREEN_ID_COUNT) {
+        LOG_WRN("Screen %d out of range", (int)id);
         return;
     }
+
+    if (s_screens[id] == NULL) {
+        if (k_screen_factories[id] == NULL) {
+            LOG_WRN("Screen %d not implemented", (int)id);
+            return;
+        }
+        s_screens[id] = k_screen_factories[id](s_device_status);
+    }
+
+    enum screen_id prev = s_active_screen;
 
     set_encoder_group(id);
     lv_screen_load_anim(s_screens[id], anim, UI_ANIM_DURATION_MS, 0, false);
     s_active_screen = id;
+
+    if (prev != SCREEN_NONE && prev != id && s_screens[prev] != NULL) {
+        lv_obj_delete_async(s_screens[prev]);
+        s_screens[prev] = NULL;
+    }
 
     LOG_DBG("Screen transition → %d", (int)id);
 }
@@ -414,6 +453,48 @@ static void carousel_navigate(int32_t delta)
 }
 
 /**
+ * @brief Derive per-device icon status from the latest CAN snapshot.
+ *
+ * Called on every UI_CMD_UPDATE_DATA.  Only slots with CAN-derivable status
+ * are written; UI_DEVICE_MABX and UI_DEVICE_CAN are left unchanged.
+ */
+static void update_device_status(const struct can_data_snapshot *snap)
+{
+    /* KISTLER: timeout counter = 0 → receiving → OK */
+    lv_subject_set_int(&s_device_status[UI_DEVICE_KISTLER],
+        snap->kistler_timeout ? UI_DEVICE_STATUS_FAULT : UI_DEVICE_STATUS_OK);
+
+    /* SDCS: any open SDC node → FAULT */
+    bool sdc_any_open = snap->sdc_bspd     || snap->sdc_cockpit  ||
+                        snap->sdc_ascu     || snap->sdc_motor_rl ||
+                        snap->sdc_hvd      || snap->sdc_motor_rr ||
+                        snap->sdc_sdb_mh   || snap->sdc_res      ||
+                        snap->sdc_motor_fl || snap->sdc_bots     ||
+                        snap->sdc_motor_fr || snap->sdc_inertia;
+    lv_subject_set_int(&s_device_status[UI_DEVICE_SDCS],
+        sdc_any_open ? UI_DEVICE_STATUS_FAULT : UI_DEVICE_STATUS_OK);
+
+    /* DV_PC: actively receiving mission data → OK */
+    lv_subject_set_int(&s_device_status[UI_DEVICE_DV_PC],
+        snap->dv_receiving ? UI_DEVICE_STATUS_OK : UI_DEVICE_STATUS_FAULT);
+
+    /* ROS: autonomy stack ready → OK */
+    lv_subject_set_int(&s_device_status[UI_DEVICE_ROS],
+        snap->dv_ready ? UI_DEVICE_STATUS_OK : UI_DEVICE_STATUS_FAULT);
+
+    /* LOGGER: recording → OFFLINE (busy), ready → OK, else FAULT */
+    enum ui_device_status logger_status;
+    if (snap->datalogger_recording) {
+        logger_status = UI_DEVICE_STATUS_ACTIVE;
+    } else if (snap->datalogger_ready) {
+        logger_status = UI_DEVICE_STATUS_OK;
+    } else {
+        logger_status = UI_DEVICE_STATUS_FAULT;
+    }
+    lv_subject_set_int(&s_device_status[UI_DEVICE_LOGGER], logger_status);
+}
+
+/**
  * @brief Process a single ui_cmd received from the App Layer.
  *
  * UI_CMD_SET_SCREEN  — switches to the requested screen; if the target is
@@ -443,6 +524,7 @@ static void handle_ui_cmd(const struct ui_cmd *cmd)
 
     case UI_CMD_UPDATE_DATA:
         ui_subjects_gen_update(&cmd->data.snapshot);
+        update_device_status(&cmd->data.snapshot);
         break;
 
     default:
@@ -463,6 +545,31 @@ static void handle_vehicle_status(const struct vehicle_status *status)
     for (int i = 0; i < UI_DEVICE_SLOT_COUNT; i++) {
         lv_subject_set_int(&s_device_status[i], (int32_t)status->slots[i]);
     }
+}
+
+/**
+ * @brief Map a CAN bus state event to the UI_DEVICE_CAN icon status.
+ *
+ * CAN_BUS_STATE_ERROR_ACTIVE  → OK    (normal operation)
+ * CAN_BUS_STATE_ERROR_WARNING → WARN  (error counters elevated)
+ * CAN_BUS_STATE_ERROR_PASSIVE → FAULT (error-passive, TX limited)
+ * CAN_BUS_STATE_BUS_OFF       → ACTIVE (controller silent)
+ * CAN_BUS_STATE_STOPPED       → ACTIVE (controller not started)
+ */
+static void handle_can_status(const struct can_status_event *evt)
+{
+    enum ui_device_status s;
+
+    switch (evt->state) {
+    case CAN_BUS_STATE_ERROR_ACTIVE:  s = UI_DEVICE_STATUS_OK;     break;
+    case CAN_BUS_STATE_ERROR_WARNING: s = UI_DEVICE_STATUS_WARN;   break;
+    case CAN_BUS_STATE_ERROR_PASSIVE: s = UI_DEVICE_STATUS_FAULT;  break;
+    case CAN_BUS_STATE_BUS_OFF:       /* fall through */
+    case CAN_BUS_STATE_STOPPED:       s = UI_DEVICE_STATUS_ACTIVE; break;
+    default:                          s = UI_DEVICE_STATUS_FAULT;  break;
+    }
+
+    lv_subject_set_int(&s_device_status[UI_DEVICE_CAN], (int32_t)s);
 }
 
 /**
@@ -521,6 +628,14 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
             }
         }
 
+        /* ── CAN bus state updates (non-blocking) ────────────────────────── */
+        while (zbus_sub_wait(&can_status_sub, &chan, K_NO_WAIT) == 0) {
+            struct can_status_event evt;
+            if (zbus_chan_read(chan, &evt, K_NO_WAIT) == 0) {
+                handle_can_status(&evt);
+            }
+        }
+
         k_msleep(UI_TASK_PERIOD_MS);
     }
 }
@@ -540,6 +655,7 @@ void ui_module_init(void)
      * task thread has not been started yet.
      */
     ui_subjects_gen_init();
+    ui_tx_subjects_gen_init();
 
     /*
      * ── 1c. Device status subjects ───────────────────────────────────────
@@ -550,20 +666,6 @@ void ui_module_init(void)
         lv_subject_init_int(&s_device_status[i], (int32_t)UI_DEVICE_STATUS_OK);
     }
 
-    /* ── 2. Create all MVP screen objects ───────────────────────────────── */
-    s_screens[SCREEN_DEBUG_LV_ACCU]  = screen_debug_lv_accu_create(s_device_status);
-    s_screens[SCREEN_DEBUG_HV_ACCU]  = screen_debug_hv_accu_create(s_device_status);
-    s_screens[SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create(s_device_status);
-    s_screens[SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create(s_device_status);
-    s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create(s_device_status);
-    s_screens[SCREEN_BOOT]           = screen_boot_create(s_device_status);
-    s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create(s_device_status);
-    s_screens[SCREEN_SDC]            = screen_sdc_create(s_device_status);
-    s_screens[SCREEN_PRE_RTD]        = screen_checklist_create(s_device_status);
-    s_screens[SCREEN_EV_DRIVING]     = screen_ev_driving_create(s_device_status);
-
-    /* Additional screens (SCREEN_RTD, SCREEN_DEBUG …) added as implemented. */
-
     /* ── 3. Resolve the display device (used by the LVGL thread) ────────── */
     s_disp_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
     if (!device_is_ready(s_disp_dev)) {
@@ -572,10 +674,15 @@ void ui_module_init(void)
     }
 
     /* ── 4. Load the boot screen (no animation on cold start) ───────────── */
-    
-    s_active_screen = SCREEN_BOOT;
-    s_carousel_pos  = SCREEN_BOOT;
-    lv_screen_load(s_screens[s_active_screen]);
+
+    s_carousel_pos = 0;
+    for (uint8_t i = 0; i < (uint8_t)CAROUSEL_LEN; i++) {
+        if (k_carousel[i] == SCREEN_BOOT) {
+            s_carousel_pos = i;
+            break;
+        }
+    }
+    ui_load_screen(SCREEN_BOOT, LV_SCR_LOAD_ANIM_NONE);
 
     /*
      * lv_timer_handler() and display_blanking_off() are intentionally deferred
