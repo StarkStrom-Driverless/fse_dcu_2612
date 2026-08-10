@@ -36,6 +36,7 @@ Copyright (c) 2026 Mario Wegmann
 from __future__ import annotations
 
 import argparse
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -61,6 +62,12 @@ LIMIT_DEFINE_SUFFIX = {
 }
 
 RANGE_KEYS = ("min", "max")
+
+# Keys allowed inside a signal's `persist:` block and the top-level `settings:`.
+PERSIST_KEYS = ("default", "min", "max")
+
+# Settings are stored as uint8_t in the NVS blob.
+SETTING_VALUE_MAX = 255
 
 VALID_DIRECTIONS = {"rx", "tx"}
 
@@ -117,6 +124,7 @@ def validate(db: Database, cfg: dict) -> list[str]:
 
     dbc_messages = {m.name: m for m in db.messages}
     seen_app_names: dict[str, str] = {}
+    seen_setting_names: dict[str, str] = {}
 
     for msg_name, msg_cfg in messages.items():
         msg_cfg = msg_cfg or {}
@@ -141,13 +149,13 @@ def validate(db: Database, cfg: dict) -> list[str]:
                     f"{msg_name}: period_ms must be a positive integer (got: {period_ms!r})"
                 )
 
-        dbc_signal_names = {s.name for s in dbc_msg.signals}
+        dbc_signals = {s.name: s for s in dbc_msg.signals}
 
         for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
             sig_cfg = sig_cfg or {}
             origin = f"{msg_name}.{sig_name}"
 
-            if sig_name not in dbc_signal_names:
+            if sig_name not in dbc_signals:
                 errors.append(f"{origin}: signal does not exist in the DBC message")
                 continue
 
@@ -210,6 +218,144 @@ def validate(db: Database, cfg: dict) -> list[str]:
                         f"{origin}: range min ({range_['min']}) must be less than max ({range_['max']})"
                     )
 
+            persist = sig_cfg.get("persist")
+            if persist is not None:
+                errors.extend(
+                    validate_persist(persist, origin, dbc_signals[sig_name],
+                                     direction, app_name, seen_setting_names)
+                )
+
+    errors.extend(validate_settings_section(cfg, seen_setting_names))
+
+    return errors
+
+
+def validate_persist(persist, origin, sig, direction, app_name,
+                     seen_setting_names: dict[str, str]) -> list[str]:
+    """Validate a signal-level `persist:` block. Returns a list of errors."""
+    errors: list[str] = []
+
+    if not isinstance(persist, dict):
+        return [f"{origin}: persist must be a mapping (got: {persist!r})"]
+
+    if direction != "tx":
+        errors.append(f"{origin}: persist is only valid on TX signals")
+    if not app_name:
+        errors.append(f"{origin}: persist requires an app_name")
+
+    unknown = set(persist) - set(PERSIST_KEYS)
+    if unknown:
+        errors.append(
+            f"{origin}: unknown persist keys {sorted(unknown)} "
+            f"(allowed: {list(PERSIST_KEYS)})"
+        )
+        return errors
+
+    if "default" not in persist:
+        errors.append(f"{origin}: persist requires 'default'")
+        return errors
+
+    non_int = [k for k in persist if not isinstance(persist[k], int)
+               or isinstance(persist[k], bool)]
+    if non_int:
+        errors.append(f"{origin}: persist {sorted(non_int)} must be integers")
+        return errors
+
+    # Settings are packed as raw CAN values into a uint8_t blob field, so a
+    # scaled or signed signal cannot round-trip losslessly.
+    if sig.is_signed:
+        errors.append(f"{origin}: persist requires an unsigned signal")
+    if sig.scale != 1 or sig.offset != 0:
+        errors.append(
+            f"{origin}: persist requires scale 1 and offset 0 "
+            f"(got scale={sig.scale}, offset={sig.offset})"
+        )
+
+    lo, hi = signal_int_range(sig)
+    lo = persist.get("min", lo)
+    hi = persist.get("max", hi)
+
+    if lo > hi:
+        errors.append(f"{origin}: persist min ({lo}) must not exceed max ({hi})")
+    elif not lo <= persist["default"] <= hi:
+        errors.append(
+            f"{origin}: persist default ({persist['default']}) outside range [{lo}, {hi}]"
+        )
+
+    if hi > SETTING_VALUE_MAX:
+        errors.append(
+            f"{origin}: persist max ({hi}) exceeds {SETTING_VALUE_MAX} — "
+            f"settings are stored as uint8_t"
+        )
+
+    if app_name:
+        if app_name in seen_setting_names:
+            errors.append(
+                f"{origin}: setting name '{app_name}' already used by "
+                f"{seen_setting_names[app_name]}"
+            )
+        seen_setting_names[app_name] = origin
+
+    return errors
+
+
+def validate_settings_section(cfg: dict,
+                              seen_setting_names: dict[str, str]) -> list[str]:
+    """Validate the top-level `settings:` block (settings without a CAN signal)."""
+    errors: list[str] = []
+    section = cfg.get("settings")
+
+    if section is None:
+        return errors
+    if not isinstance(section, dict):
+        return [f"settings: must be a mapping (got: {section!r})"]
+
+    for name, s_cfg in section.items():
+        s_cfg = s_cfg or {}
+        origin = f"settings.{name}"
+
+        if not isinstance(name, str) or not name.isidentifier():
+            errors.append(f"{origin}: '{name}' is not a valid C identifier")
+        if name in seen_setting_names:
+            errors.append(
+                f"{origin}: setting name '{name}' already used by "
+                f"{seen_setting_names[name]}"
+            )
+        seen_setting_names[name] = origin
+
+        unknown = set(s_cfg) - set(PERSIST_KEYS)
+        if unknown:
+            errors.append(
+                f"{origin}: unknown keys {sorted(unknown)} (allowed: {list(PERSIST_KEYS)})"
+            )
+            continue
+
+        if "default" not in s_cfg:
+            errors.append(f"{origin}: requires 'default'")
+            continue
+
+        non_int = [k for k in s_cfg if not isinstance(s_cfg[k], int)
+                   or isinstance(s_cfg[k], bool)]
+        if non_int:
+            errors.append(f"{origin}: {sorted(non_int)} must be integers")
+            continue
+
+        lo = s_cfg.get("min", 0)
+        hi = s_cfg.get("max", SETTING_VALUE_MAX)
+
+        if lo > hi:
+            errors.append(f"{origin}: min ({lo}) must not exceed max ({hi})")
+        elif not lo <= s_cfg["default"] <= hi:
+            errors.append(
+                f"{origin}: default ({s_cfg['default']}) outside range [{lo}, {hi}]"
+            )
+
+        if lo < 0 or hi > SETTING_VALUE_MAX:
+            errors.append(
+                f"{origin}: range [{lo}, {hi}] outside [0, {SETTING_VALUE_MAX}] — "
+                f"settings are stored as uint8_t"
+            )
+
     return errors
 
 
@@ -255,6 +401,23 @@ def snapshot_c_type(sig) -> str:
     raise ValueError(f"Signal {sig.name}: length {sig.length} not supported")
 
 
+def signal_int_range(sig) -> tuple[int, int]:
+    """
+    Derive the valid raw integer range of a CAN signal.
+
+    An explicit, non-degenerate DBC minimum/maximum wins.  Otherwise the range
+    follows from the bit width — an unsigned N-bit signal covers [0, 2^N - 1].
+    Most settings signals carry [0|0] in the DBC, which cantools reports as
+    absent, so the bit width is what actually applies.
+    """
+    lo, hi = sig.minimum, sig.maximum
+    if lo is not None and hi is not None and hi > lo:
+        return int(lo), int(hi)
+    if sig.is_signed:
+        return -(1 << (sig.length - 1)), (1 << (sig.length - 1)) - 1
+    return 0, (1 << sig.length) - 1
+
+
 def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
     """
     Collect all direction==rx messages with their app_name-mapped signals.
@@ -291,6 +454,216 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
             })
 
     return result
+
+
+def collect_tx_signals(db: Database, cfg: dict) -> list[tuple]:
+    """
+    Collect all TX signals that carry an app_name for UI subject generation.
+
+    Returns a list of (dbc_signal, app_name, c_type) tuples in YAML order.
+    """
+    dbc_messages = {m.name: m for m in db.messages}
+    result = []
+
+    for msg_name, msg_cfg in cfg["messages"].items():
+        msg_cfg = msg_cfg or {}
+        if msg_cfg.get("direction") != "tx":
+            continue
+
+        dbc_msg = dbc_messages[msg_name]
+        dbc_signals = {s.name: s for s in dbc_msg.signals}
+
+        for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
+            sig_cfg = sig_cfg or {}
+            app_name = sig_cfg.get("app_name")
+            if app_name:
+                sig = dbc_signals[sig_name]
+                result.append((sig, app_name, snapshot_c_type(sig)))
+
+    return result
+
+
+def emit_tx_subjects_header(tx_signals: list[tuple]) -> str:
+    lines = [GENERATED_BANNER]
+    lines.append("#ifndef GENERATED_UI_TX_SUBJECTS_GEN_H\n#define GENERATED_UI_TX_SUBJECTS_GEN_H\n")
+    lines.append("#include <lvgl.h>\n")
+    lines.append("""\
+/*
+ * One value subject ui_tx_subj_<x> per TX signal with an app_name in dcu_app.yaml.
+ *
+ * These are a UI-side mirror only.  The UI writes them when the user operates a
+ * control and widgets observe them for rendering.
+ *
+ * Threading: subjects belong to the LVGL thread.  The CAN TX thread must NOT
+ * read them — it takes persistent values from the Settings service and volatile
+ * ones from app_state, both of which are mutex-protected.  See
+ * docs/settings_module.md §2.
+ *
+ * ui_tx_subjects_gen_init() must be called from the LVGL thread before any
+ * screen that binds to these subjects is created.
+ */
+""")
+    for sig, app_name, c_type in tx_signals:
+        lines.append(f"extern lv_subject_t ui_tx_subj_{app_name};{'':<4}"
+                     f"/**< {sig.name} ({subject_kind(c_type)}) */")
+    lines.append("")
+    lines.append("""\
+/**
+ * @brief Initializes all TX subjects to 0.
+ * Call before screen creation so screens can bind widgets during construction.
+ */
+void ui_tx_subjects_gen_init(void);""")
+    lines.append("\n#endif /* GENERATED_UI_TX_SUBJECTS_GEN_H */")
+    return "\n".join(lines) + "\n"
+
+
+def emit_tx_subjects_source(tx_signals: list[tuple]) -> str:
+    lines = [GENERATED_BANNER]
+    lines.append('#include "ui_tx_subjects_gen.h"\n')
+
+    for _sig, app_name, _c_type in tx_signals:
+        lines.append(f"lv_subject_t ui_tx_subj_{app_name};")
+
+    lines.append("\nvoid ui_tx_subjects_gen_init(void)\n{")
+    for _sig, app_name, c_type in tx_signals:
+        if subject_kind(c_type) == "float":
+            lines.append(f"    lv_subject_init_float(&ui_tx_subj_{app_name}, 0.0f);")
+        else:
+            lines.append(f"    lv_subject_init_int(&ui_tx_subj_{app_name}, 0);")
+    lines.append("}")
+
+    return "\n".join(lines) + "\n"
+
+
+# ── Persistent Settings Schema Generation ─────────────────────────────────────
+
+
+def collect_settings(db: Database, cfg: dict) -> list[dict]:
+    """
+    Collect every persistent setting, CAN-backed ones first, then standalone.
+
+    CAN-backed settings are TX signals carrying a `persist:` block; standalone
+    settings come from the top-level `settings:` section.  Both end up in the
+    same enum setting_id, so the order here defines the on-flash layout — which
+    is exactly why the schema hash exists (see settings_schema_hash).
+
+    Returns a list of dicts:
+      { "name": str, "default": int, "min": int, "max": int, "can_tx": bool }
+    """
+    dbc_messages = {m.name: m for m in db.messages}
+    result: list[dict] = []
+
+    for msg_name, msg_cfg in cfg["messages"].items():
+        msg_cfg = msg_cfg or {}
+        if msg_cfg.get("direction") != "tx":
+            continue
+
+        dbc_signals = {s.name: s for s in dbc_messages[msg_name].signals}
+
+        for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
+            sig_cfg = sig_cfg or {}
+            persist = sig_cfg.get("persist")
+            if not persist:
+                continue
+
+            lo, hi = signal_int_range(dbc_signals[sig_name])
+            result.append({
+                "name":    sig_cfg["app_name"],
+                "default": persist["default"],
+                "min":     persist.get("min", lo),
+                "max":     persist.get("max", hi),
+                "can_tx":  True,
+            })
+
+    for name, s_cfg in (cfg.get("settings") or {}).items():
+        s_cfg = s_cfg or {}
+        result.append({
+            "name":    name,
+            "default": s_cfg["default"],
+            "min":     s_cfg.get("min", 0),
+            "max":     s_cfg.get("max", SETTING_VALUE_MAX),
+            "can_tx":  False,
+        })
+
+    return result
+
+
+def settings_schema_hash(settings: list[dict]) -> int:
+    """
+    Hash the canonical schema description into a 32-bit value.
+
+    Stored alongside the values in flash.  A mismatch on load means the schema
+    changed since the blob was written, so the blob is discarded and defaults
+    apply.  This is what makes inserting a setting in the middle safe: without
+    it, every setting after the insertion point would silently inherit its
+    neighbour's value.
+    """
+    canonical = ";".join(
+        f"{s['name']}:{s['default']}:{s['min']}:{s['max']}:{int(s['can_tx'])}"
+        for s in settings
+    )
+    return int.from_bytes(hashlib.sha256(canonical.encode("utf-8")).digest()[:4], "big")
+
+
+def emit_settings_schema_header(settings: list[dict], schema_hash: int) -> str:
+    lines = [GENERATED_BANNER]
+    lines.append("#ifndef GENERATED_SETTINGS_SCHEMA_GEN_H\n"
+                 "#define GENERATED_SETTINGS_SCHEMA_GEN_H\n")
+    lines.append("#include <stdbool.h>\n#include <stdint.h>\n")
+    lines.append("""\
+/*
+ * Schema for values persisted across reboots (see docs/settings_module.md).
+ *
+ * Sources, in this order:
+ *   1. TX signals with a `persist:` block in dcu_app.yaml (can_tx = true)
+ *   2. The top-level `settings:` section         (can_tx = false)
+ *
+ * The enum order defines the on-flash layout.  Any change to it also changes
+ * SETTINGS_SCHEMA_HASH, which invalidates stored blobs automatically.
+ */
+""")
+
+    lines.append("enum setting_id {")
+    for i, s in enumerate(settings):
+        assign = " = 0" if i == 0 else ""
+        lines.append(f"    SETTING_{s['name'].upper()}{assign},")
+    lines.append("    SETTING_COUNT,")
+    lines.append("};\n")
+
+    lines.append("""\
+/** @brief Per-setting bounds and defaults. Indexed by enum setting_id. */
+typedef struct {
+    const char *name;   /**< Identifier from dcu_app.yaml; diagnostics only. */
+    uint8_t     def;    /**< Applied when nothing valid is stored.           */
+    uint8_t     min;    /**< Inclusive lower bound.                          */
+    uint8_t     max;    /**< Inclusive upper bound.                          */
+    bool        can_tx; /**< true → also transmitted in a TX frame.          */
+} setting_desc_t;
+
+extern const setting_desc_t settings_schema[SETTING_COUNT];
+""")
+
+    lines.append("/** @brief Hash over names, order, bounds and defaults of the schema above. */")
+    lines.append(f"#define SETTINGS_SCHEMA_HASH 0x{schema_hash:08X}UL")
+    lines.append("\n#endif /* GENERATED_SETTINGS_SCHEMA_GEN_H */")
+    return "\n".join(lines) + "\n"
+
+
+def emit_settings_schema_source(settings: list[dict]) -> str:
+    lines = [GENERATED_BANNER]
+    lines.append('#include "settings_schema_gen.h"\n')
+    lines.append("const setting_desc_t settings_schema[SETTING_COUNT] = {")
+    for s in settings:
+        lines.append(
+            f"    [SETTING_{s['name'].upper()}] = {{ "
+            f'.name = "{s["name"]}", '
+            f".def = {s['default']}, "
+            f".min = {s['min']}, "
+            f".max = {s['max']}, "
+            f".can_tx = {str(s['can_tx']).lower()} }},"
+        )
+    lines.append("};")
+    return "\n".join(lines) + "\n"
 
 
 def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
@@ -607,16 +980,29 @@ def main() -> None:
     # Stage 2: snapshot struct + RX dispatch + TX periods
     rx_messages = collect_rx_messages(db, cfg)
     tx_messages = collect_tx_messages(db, cfg)
+    tx_signals  = collect_tx_signals(db, cfg)
     (args.out / "can_data_gen.h").write_text(emit_data_header(rx_messages), encoding="utf-8")
     (args.out / "can_rx_gen.h").write_text(emit_rx_dispatch_header(rx_messages), encoding="utf-8")
     (args.out / "can_rx_gen.c").write_text(emit_rx_dispatch_source(rx_messages), encoding="utf-8")
     (args.out / "can_tx_gen.h").write_text(emit_tx_header(tx_messages), encoding="utf-8")
 
-    # Stage 3: LVGL subjects + level-binding helpers
+    # Stage 3: LVGL subjects — RX (CAN → UI) + TX (UI → CAN)
     (args.out / "ui_subjects_gen.h").write_text(
         emit_subjects_header(rx_messages), encoding="utf-8")
     (args.out / "ui_subjects_gen.c").write_text(
         emit_subjects_source(rx_messages), encoding="utf-8")
+    (args.out / "ui_tx_subjects_gen.h").write_text(
+        emit_tx_subjects_header(tx_signals), encoding="utf-8")
+    (args.out / "ui_tx_subjects_gen.c").write_text(
+        emit_tx_subjects_source(tx_signals), encoding="utf-8")
+
+    # Stage 4: persistent settings schema
+    settings = collect_settings(db, cfg)
+    schema_hash = settings_schema_hash(settings)
+    (args.out / "settings_schema_gen.h").write_text(
+        emit_settings_schema_header(settings, schema_hash), encoding="utf-8")
+    (args.out / "settings_schema_gen.c").write_text(
+        emit_settings_schema_source(settings), encoding="utf-8")
 
     total_signals = sum(
         len((m or {}).get("signals") or {}) for m in cfg["messages"].values()
@@ -637,9 +1023,15 @@ def main() -> None:
           f"{range_count} with range defines, {len(tx_messages)} TX period(s)")
     print(f"    RX dispatch: {len(rx_messages)} messages, "
           f"{rx_signal_count} snapshot fields")
+    print(f"    TX subjects: {len(tx_signals)} signals")
+    can_backed = sum(1 for s in settings if s["can_tx"])
+    print(f"    Settings:    {len(settings)} persistent "
+          f"({can_backed} CAN-backed), schema hash 0x{schema_hash:08X}")
     for name in ("dcu_can_gen.c", "dcu_can_gen.h", "can_data_gen.h",
                  "can_rx_gen.c", "can_rx_gen.h", "can_tx_gen.h",
-                 "ui_subjects_gen.c", "ui_subjects_gen.h"):
+                 "ui_subjects_gen.c", "ui_subjects_gen.h",
+                 "ui_tx_subjects_gen.c", "ui_tx_subjects_gen.h",
+                 "settings_schema_gen.c", "settings_schema_gen.h"):
         print(f"  → {args.out / name}")
 
 

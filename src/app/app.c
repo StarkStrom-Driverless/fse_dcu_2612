@@ -66,6 +66,7 @@
 #include "app/app_state.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "services/settings/settings.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -215,7 +216,11 @@ static void handle_ui_input(const struct ui_input_event *evt)
 
     case UI_INPUT_DEBUG_BITS_SELECTED: {
         uint8_t bits = evt->data.debug_bits;
-        app_state_set_debug_bits(bits);
+        /*
+         * The Settings service owns this value: it clamps to the schema range,
+         * persists it, and the CAN module reads it back on the next TX cycle.
+         */
+        (void)settings_set(SETTING_DEBUG_BITS, bits);
         LOG_INF("Debug bits set: %u (0x%02X)", (unsigned)bits, (unsigned)bits);
         break;
     }

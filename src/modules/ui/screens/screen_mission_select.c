@@ -67,6 +67,7 @@
 #include "modules/ui/widgets/ui_header.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "generated/ui_tx_subjects_gen.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -97,6 +98,12 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
     "Autocross\n"               \
     "Manual Driving"            \
 
+/** @brief Mission names indexed by mission_id — mirrors ROLLER_OPTIONS. */
+static const char *const k_mission_names[] = {
+    "None", "Acceleration", "Skidpad", "Trackdrive",
+    "Braketest", "Inspection", "Autocross", "Manual Driving",
+};
+
 /** @brief Number of roller rows visible simultaneously (one above/below the selection). */
 #define ROLLER_VISIBLE_ROWS     3U
 
@@ -122,6 +129,15 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Persistent UI state — survive screen destroy/recreate.
+ *
+ * Initialized once on first create; never re-initialized so the values
+ * carry over across lazy-load cycles.
+ */
+static lv_subject_t s_roller_sel;  /* currently highlighted roller index */
+static bool         s_subjects_init;
 
 /** @brief Mission roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
@@ -154,13 +170,25 @@ static void btn_ok_event_cb(lv_event_t *e);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+static void roller_value_changed_cb(lv_event_t *e)
+{
+    lv_subject_set_int(&s_roller_sel, (int32_t)lv_roller_get_selected(lv_event_get_target_obj(e)));
+}
+
+static void confirmed_mission_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
+{
+    lv_obj_t *lbl = lv_observer_get_target_obj(observer);
+    int32_t   idx = lv_subject_get_int(subject);
+    lv_label_set_text_fmt(lbl, "Current Mission: %s", k_mission_names[idx]);
+}
+
 static void build_roller(lv_obj_t *scr)
 {
     s_roller = lv_roller_create(scr);
 
     lv_roller_set_options(s_roller, ROLLER_OPTIONS, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller, ROLLER_VISIBLE_ROWS);
-    lv_roller_set_selected(s_roller, 0, LV_ANIM_OFF); /* default: MISSION_NONE */
+    lv_roller_set_selected(s_roller, (uint16_t)lv_subject_get_int(&s_roller_sel), LV_ANIM_OFF);
 
     lv_obj_set_width(s_roller, ROLLER_WIDTH);
 
@@ -181,16 +209,15 @@ static void build_roller(lv_obj_t *scr)
 
     /* Vertically centred in the content area below the 15 % header. */
     lv_obj_align(s_roller, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_add_event_cb(s_roller, roller_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    /* ── Curent selected item ───────────────────────────── */
-
-    char buf[32];
-    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
+    /* ── Confirmed mission label (observer-driven) ──────────────────────── */
 
     s_roller_lbl = lv_label_create(scr);
     lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
-    lv_label_set_text_fmt(s_roller_lbl, "Current Mission %s", buf);
     lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, 0, 35);
+    lv_subject_add_observer_obj(&ui_tx_subj_drive_mode, confirmed_mission_observer_cb,
+                                s_roller_lbl, NULL);
 }
 
 static void build_buttons(lv_obj_t *scr)
@@ -241,10 +268,7 @@ static void build_buttons(lv_obj_t *scr)
  */
 static void btn_ok_event_cb(lv_event_t *e)
 {
-    uint16_t  idx    = lv_roller_get_selected(s_roller);
-    char buf[32];
-
-    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
+    uint16_t idx = lv_roller_get_selected(s_roller);
 
     struct ui_input_event evt = {
         .type         = UI_INPUT_MISSION_SELECTED,
@@ -256,7 +280,7 @@ static void btn_ok_event_cb(lv_event_t *e)
         LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
                 (unsigned)idx, ret);
     } else {
-        lv_label_set_text_fmt(s_roller_lbl, "Current Mission %s", buf);
+        lv_subject_set_int(&ui_tx_subj_drive_mode, (int32_t)idx);
         LOG_DBG("Mission selected: %u", (unsigned)idx);
     }
 }
@@ -298,6 +322,11 @@ static void btn_ok_event_cb(lv_event_t *e)
 lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
+
+    if (!s_subjects_init) {
+        lv_subject_init_int(&s_roller_sel, 0);
+        s_subjects_init = true;
+    }
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_remove_style_all(scr);

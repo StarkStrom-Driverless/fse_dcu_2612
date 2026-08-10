@@ -74,6 +74,7 @@
 #include "generated/can_tx_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "services/settings/settings.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -124,6 +125,16 @@ static bool s_hw_ready;
 /** @brief Tick counter incremented once per CAN_TX_PERIOD_MS cycle. Used to
  *         schedule TX messages at their individual period_ms via modulo. */
 static uint32_t s_tx_tick;
+
+/** @brief Last-known CAN bus state; used to detect and publish state changes. */
+static enum can_state s_can_state_prev = CAN_STATE_STOPPED;
+
+/* Verify that enum can_bus_state values (events.h) match enum can_state (Zephyr). */
+_Static_assert((int)CAN_STATE_ERROR_ACTIVE  == (int)CAN_BUS_STATE_ERROR_ACTIVE,  "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_ERROR_WARNING == (int)CAN_BUS_STATE_ERROR_WARNING, "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_ERROR_PASSIVE == (int)CAN_BUS_STATE_ERROR_PASSIVE, "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_BUS_OFF       == (int)CAN_BUS_STATE_BUS_OFF,       "CAN state enum mismatch");
+_Static_assert((int)CAN_STATE_STOPPED       == (int)CAN_BUS_STATE_STOPPED,       "CAN state enum mismatch");
 
 /**
  * @brief RX message queue, filled by the CAN driver ISR for matching frames.
@@ -334,13 +345,39 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
 
         /* ── 2. Transmit scheduled TX messages ──────────────────────── */
         if (s_tx_tick % (CAN_TX_GEN_DCU_2_M_ABX_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) {
+            /*
+             * Volatile state comes from app_state, persistent settings from
+             * the Settings service — one acquisition for all of them.  The
+             * LVGL ui_tx_subj_* subjects are a UI mirror and must not be read
+             * from this thread (see docs/settings_module.md §2).
+             */
+            uint8_t settings[SETTING_COUNT];
+            settings_get_all(settings);
+
             uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
             bool    rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD);
-            uint8_t debug      = app_state_get_debug_bits();
+            uint8_t debug      = settings[SETTING_DEBUG_BITS];
             can_send_dcu2_mabx(drive_mode, rtd_active, debug);
         }
 
-        /* ── 3. Advance tick and wait for next base slot ─────────────── */
+        /* ── 3. Poll CAN bus state; publish to can_status_chan on change ─ */
+        enum can_state cur_state;
+        struct can_bus_err_cnt err_cnt;
+        if (can_get_state(s_can_dev, &cur_state, &err_cnt) == 0 &&
+            cur_state != s_can_state_prev) {
+            s_can_state_prev = cur_state;
+            struct can_status_event state_evt = {
+                .type   = CAN_STATUS_CONNECTED,
+                .msg_id = 0U,
+                .state  = (enum can_bus_state)cur_state,
+            };
+            int rc = zbus_chan_pub(&can_status_chan, &state_evt, K_NO_WAIT);
+            if (rc != 0) {
+                LOG_WRN("can_status_chan (state) publish failed: %d", rc);
+            }
+        }
+
+        /* ── 4. Advance tick and wait for next base slot ─────────────── */
         s_tx_tick++;
         k_msleep(CAN_TX_PERIOD_MS);
     }
@@ -359,10 +396,14 @@ void can_module_init(void)
     } else {
         s_hw_ready = true;
 
+        /* can_start() leaves the controller in ERROR_ACTIVE. */
+        s_can_state_prev = CAN_STATE_ERROR_ACTIVE;
+
         /* Publish initial connected status to the event bus. */
         struct can_status_event status_evt = {
             .type   = CAN_STATUS_CONNECTED,
             .msg_id = 0U,
+            .state  = CAN_BUS_STATE_ERROR_ACTIVE,
         };
         ret = zbus_chan_pub(&can_status_chan, &status_evt, K_NO_WAIT);
         if (ret != 0) {

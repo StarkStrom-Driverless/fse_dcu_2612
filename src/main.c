@@ -15,13 +15,22 @@
  *                 other module begins publishing, so that no events are silently
  *                 dropped.
  *
- *              2. can_module_init()
+ *              2. settings_service_init()
+ *                 Loads persisted settings from NVS (or schema defaults) and
+ *                 publishes SETTINGS_EVT_LOADED.  Must precede CAN and UI so
+ *                 both see the stored values from their very first cycle.
+ *
+ *              3. can_module_init()
  *                 Configures the CAN controller, starts it, publishes
  *                 CAN_STATUS_CONNECTED to can_status_chan, and spawns the CAN
  *                 worker thread.  The App thread (step 1) is already running and
  *                 will receive the status event.
  *
- *              3. ui_module_init()
+ *              4. audio_module_init() / 5. lighting_module_init()
+ *                 Piezo and LED strip; both before the UI so feedback is
+ *                 available from the first screen interaction.
+ *
+ *              6. ui_module_init()
  *                 Creates all LVGL screen objects, loads the boot screen, enables
  *                 the display, and starts the LVGL task thread.  UI is started
  *                 last because it generates user-input events that the App thread
@@ -58,6 +67,7 @@
 #include "modules/can/can.h"
 #include "modules/lighting/lighting.h"
 #include "modules/ui/ui.h"
+#include "services/settings/settings.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -80,7 +90,18 @@ int main(void)
     app_module_init();
 
     /*
-     * Step 2: CAN module
+     * Step 2: Settings service
+     *
+     * Loads persisted settings from NVS, or falls back to schema defaults.
+     * Must precede the CAN module so the first DCU_2_mABX frame carries the
+     * stored values, and precede the UI so screens bind correct values while
+     * being constructed.  Never fails hard — on a storage error the system
+     * continues on defaults.
+     */
+    settings_service_init();
+
+    /*
+     * Step 3: CAN module
      *
      * Configures and starts the CAN controller, then publishes
      * CAN_STATUS_CONNECTED.  The App thread is already running at this
@@ -89,7 +110,7 @@ int main(void)
     can_module_init();
 
     /*
-     * Step 3: Audio module
+     * Step 4: Audio module
      *
      * Configures the piezo GPIO and starts the audio subscriber thread.
      * Initialised before the UI so audio feedback is available from first
@@ -98,7 +119,7 @@ int main(void)
     audio_module_init();
 
     /*
-     * Step 4: Lighting module
+     * Step 5: Lighting module
      *
      * Starts the lighting thread and begins the KITT scanner effect.
      * Must run before the UI module so LEDs are active when the display
@@ -107,7 +128,7 @@ int main(void)
     lighting_module_init();
 
     /*
-     * Step 5: UI module
+     * Step 6: UI module
      *
      * Creates LVGL screen objects, renders the first frame, enables the
      * display, and starts the LVGL task thread.  Started last because

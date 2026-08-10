@@ -51,6 +51,7 @@ lv_style_t ui_style_label_unit;
 lv_style_t ui_style_label_title;
 lv_style_t ui_style_label_caption;
 lv_style_t ui_style_label_value_lg;
+lv_style_t ui_style_label_value_md;
 
 lv_style_t ui_style_btn_default;
 lv_style_t ui_style_btn_checked;
@@ -172,6 +173,11 @@ static void init_label_styles(void)
     lv_style_init(&ui_style_label_value_lg);
     lv_style_set_text_font(&ui_style_label_value_lg,  &BarlowCondensed_BoldItalic_100);
     lv_style_set_text_color(&ui_style_label_value_lg, UI_C_DARK);
+
+    /* value_md — hero numeric display (RPM, SoC …) */
+    lv_style_init(&ui_style_label_value_md);
+    lv_style_set_text_font(&ui_style_label_value_md,  &BarlowCondensed_BoldItalic_80);
+    lv_style_set_text_color(&ui_style_label_value_md, UI_C_DARK);
 }
 
 static void init_button_styles(void)
