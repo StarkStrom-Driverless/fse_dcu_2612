@@ -187,22 +187,53 @@ struct feedback_event {
 };
 
 
+/* ── Cross-Module Status: App → All ─────────────────────────────────────────────────────────── */
+
+/* ---- vehicle_status_chan ------------------------------------------------------------- */
+
+/**
+ * @brief Header status bar device slot identifiers.
+ *
+ * Order matches the visual left-to-right icon order in the header.
+ * UI_DEVICE_SLOT_COUNT is used as array size — keep it last.
+ */
+enum ui_device_slot {
+    UI_DEVICE_KISTLER   = 0,  /**< Kistler measurement system. */
+    UI_DEVICE_DV_PC,          /**< Autonomous Driving PC.      */
+    UI_DEVICE_LOGGER,         /**< Data logger.                */
+    UI_DEVICE_EBS,            /**< Emergency Braking System.   */
+    UI_DEVICE_SLOT_COUNT,
+};
+
+/**
+ * @brief Visual status of a single device slot.
+ *
+ * OK      → green,  solid
+ * WARN    → gold,   solid
+ * FAULT   → red,    blinking
+ * OFFLINE → red,    blinking + X overlay
+ */
+enum ui_device_status {
+    UI_DEVICE_STATUS_OK      = 0,
+    UI_DEVICE_STATUS_WARN    = 1,
+    UI_DEVICE_STATUS_FAULT   = 2,
+    UI_DEVICE_STATUS_OFFLINE = 3,
+};
+
+/** @brief Payload for vehicle_status_chan. */
+struct vehicle_status {
+    enum ui_device_status slots[UI_DEVICE_SLOT_COUNT];
+};
+
+
 /* ── Downward Channels: App → Module ────────────────────────────────────────────────────────── */
 
 /* ---- ui_cmd_chan ---------------------------------------------------------------------- */
 
 /** @brief Command types for the UI module. */
 enum ui_cmd_type {
-    UI_CMD_SET_SCREEN   = 0, /**< Navigate to a named screen.                     */
-    UI_CMD_UPDATE_DATA,      /**< Push a new CAN data snapshot for rendering.      */
-    UI_CMD_SET_STATUS,       /**< Update connection and safety indicator flags.    */
-};
-
-/** @brief Status flags rendered on all screens as persistent indicators. */
-struct ui_status_flags {
-    bool can_connected;
-    bool safety_fault;
-    bool ts_active;
+    UI_CMD_SET_SCREEN   = 0, /**< Navigate to a named screen.                */
+    UI_CMD_UPDATE_DATA,      /**< Push a new CAN data snapshot for rendering. */
 };
 
 /** @brief Payload for ui_cmd_chan. */
@@ -211,7 +242,6 @@ struct ui_cmd {
     union {
         enum screen_id           screen;   /**< UI_CMD_SET_SCREEN  */
         struct can_data_snapshot snapshot; /**< UI_CMD_UPDATE_DATA */
-        struct ui_status_flags   status;   /**< UI_CMD_SET_STATUS  */
     } data;
 };
 

@@ -85,6 +85,7 @@
 #include "modules/ui/screens/screen_debug_tractive_system.h"
 #include "modules/ui/screens/screen_debug_write.h"
 #include "modules/ui/screens/screen_ev_driving.h"
+#include "modules/ui/widgets/ui_header.h"
 #include "generated/ui_subjects_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
@@ -199,12 +200,20 @@ static K_THREAD_STACK_DEFINE(s_ui_stack, UI_THREAD_STACK_SIZE);
  */
 static const struct device *s_disp_dev;
 
+/** @brief LVGL subjects for the four device status slots — subscribed to by header icons. */
+static lv_subject_t s_device_status[UI_DEVICE_SLOT_COUNT];
+
+
 
 /* ── Zbus Subscriber ─────────────────────────────────────────────────────────────────────────── */
 
 /** @brief Subscriber for ui_cmd_chan (App Layer → UI module). */
 ZBUS_SUBSCRIBER_DEFINE(ui_cmd_sub, 4);
 ZBUS_CHAN_ADD_OBS(ui_cmd_chan, ui_cmd_sub, 0);
+
+/** @brief Subscriber for vehicle_status_chan (App Layer → all modules). */
+ZBUS_SUBSCRIBER_DEFINE(vehicle_status_sub, 4);
+ZBUS_CHAN_ADD_OBS(vehicle_status_chan, vehicle_status_sub, 0);
 
 
 /* ── Left Encoder Input Callback ─────────────────────────────────────────────────────────────── */
@@ -241,6 +250,7 @@ static void        set_encoder_group(enum screen_id id);
 static void        ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim);
 static void        carousel_navigate(int32_t delta);
 static void        handle_ui_cmd(const struct ui_cmd *cmd);
+static void        handle_vehicle_status(const struct vehicle_status *status);
 static void        ui_thread_fn(void *p1, void *p2, void *p3);
 
 
@@ -402,14 +412,9 @@ static void carousel_navigate(int32_t delta)
  * UI_CMD_SET_SCREEN  — switches to the requested screen; if the target is
  *                      in the carousel the carousel position is updated so
  *                      subsequent encoder navigation stays consistent.
- *                      For non-carousel screens (SCREEN_RTD, SCREEN_ERROR …)
- *                      a fade-in animation is used.
  *
- * UI_CMD_UPDATE_DATA — forwards a CAN data snapshot to the active screen
- *                      (RTD screen handler, not yet implemented).
- *
- * UI_CMD_SET_STATUS  — updates persistent status indicator widgets
- *                      (not yet implemented).
+ * UI_CMD_UPDATE_DATA — pushes a CAN data snapshot into the generated LVGL
+ *                      subjects; widget bindings update reactively.
  */
 static void handle_ui_cmd(const struct ui_cmd *cmd)
 {
@@ -418,7 +423,6 @@ static void handle_ui_cmd(const struct ui_cmd *cmd)
         enum screen_id target = cmd->data.screen;
         lv_scr_load_anim_t anim = LV_SCR_LOAD_ANIM_NONE;
 
-        /* If the target is in the carousel, use a directional slide */
         for (uint8_t i = 0U; i < (uint8_t)CAROUSEL_LEN; i++) {
             if (k_carousel[i] == target) {
                 s_carousel_pos = i;
@@ -431,22 +435,26 @@ static void handle_ui_cmd(const struct ui_cmd *cmd)
     }
 
     case UI_CMD_UPDATE_DATA:
-        /*
-         * Push the snapshot into the generated LVGL subjects.  Observers
-         * (widget bindings in the screens) fire synchronously here, in the
-         * LVGL thread — and only for values that actually changed.
-         */
         ui_subjects_gen_update(&cmd->data.snapshot);
-        break;
-
-    case UI_CMD_SET_STATUS:
-        /* TODO: update persistent status bar indicators */
-        LOG_DBG("UI_CMD_SET_STATUS received (not yet implemented)");
         break;
 
     default:
         LOG_WRN("Unknown ui_cmd type: %d", (int)cmd->type);
         break;
+    }
+}
+
+/**
+ * @brief Handle a vehicle_status_chan update from the App Layer.
+ *
+ * Sets the per-slot LVGL subjects.  Header icons on any active screen react
+ * automatically via their registered observers.
+ */
+static void handle_vehicle_status(const struct vehicle_status *status)
+{
+    LOG_WRN("New vehicle status");
+    for (int i = 0; i < UI_DEVICE_SLOT_COUNT; i++) {
+        lv_subject_set_int(&s_device_status[i], (int32_t)status->slots[i]);
     }
 }
 
@@ -498,6 +506,14 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
             }
         }
 
+        /* ── Vehicle status updates (non-blocking) ───────────────────────── */
+        while (zbus_sub_wait(&vehicle_status_sub, &chan, K_NO_WAIT) == 0) {
+            struct vehicle_status status;
+            if (zbus_chan_read(chan, &status, K_NO_WAIT) == 0) {
+                handle_vehicle_status(&status);
+            }
+        }
+
         k_msleep(UI_TASK_PERIOD_MS);
     }
 }
@@ -518,16 +534,25 @@ void ui_module_init(void)
      */
     ui_subjects_gen_init();
 
+    /*
+     * ── 1c. Device status subjects ───────────────────────────────────────
+     * Must also precede screen creation: header icons subscribe to these
+     * subjects during ui_header_create() and expect them to be initialised.
+     */
+    for (int i = 0; i < UI_DEVICE_SLOT_COUNT; i++) {
+        lv_subject_init_int(&s_device_status[i], (int32_t)UI_DEVICE_STATUS_OK);
+    }
+
     /* ── 2. Create all MVP screen objects ───────────────────────────────── */
-    s_screens[SCREEN_DEBUG_LV_ACCU]  = screen_debug_lv_accu_create();
-    s_screens[SCREEN_DEBUG_HV_ACCU]  = screen_debug_hv_accu_create();
-    s_screens[SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create();
-    s_screens[SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create();
-    s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create();
-    s_screens[SCREEN_BOOT]           = screen_boot_create();
-    s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create();
-    s_screens[SCREEN_PRE_RTD]        = screen_checklist_create();
-    s_screens[SCREEN_EV_DRIVING]     = screen_ev_driving_create();
+    s_screens[SCREEN_DEBUG_LV_ACCU]  = screen_debug_lv_accu_create(s_device_status);
+    s_screens[SCREEN_DEBUG_HV_ACCU]  = screen_debug_hv_accu_create(s_device_status);
+    s_screens[SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create(s_device_status);
+    s_screens[SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create(s_device_status);
+    s_screens[SCREEN_DEBUG_WRITE]    = screen_debug_write_create(s_device_status);
+    s_screens[SCREEN_BOOT]           = screen_boot_create(s_device_status);
+    s_screens[SCREEN_MISSION_SELECT] = screen_mission_select_create(s_device_status);
+    s_screens[SCREEN_PRE_RTD]        = screen_checklist_create(s_device_status);
+    s_screens[SCREEN_EV_DRIVING]     = screen_ev_driving_create(s_device_status);
 
     /* Additional screens (SCREEN_RTD, SCREEN_DEBUG …) added as implemented. */
 
@@ -539,7 +564,8 @@ void ui_module_init(void)
     }
 
     /* ── 4. Load the boot screen (no animation on cold start) ───────────── */
-    s_active_screen = SCREEN_BOOT; //SCREEN_BOOT;
+    
+    s_active_screen = SCREEN_BOOT;
     s_carousel_pos  = SCREEN_BOOT;
     lv_screen_load(s_screens[s_active_screen]);
 

@@ -59,3 +59,4 @@ src/generated
 
 # Generated documentation
 docs/_build
+docs/_build_manual
