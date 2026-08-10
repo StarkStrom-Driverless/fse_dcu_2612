@@ -1,0 +1,2 @@
+config SHIELD_FSE_DISPLAY_3_5
+	def_bool $(shields_list_contains,fse_display_3_5)

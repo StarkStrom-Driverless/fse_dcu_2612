@@ -2,182 +2,27 @@
  * FSE DCU 2612 – Driver Control Unit, Aufsatzplatine für das fse_pb
  * SPDX-License-Identifier: Apache-2.0
  *
- * Beschreibt alles, was physisch auf der DCU-Platine sitzt:
- *   Display   HX8357 3,5" über SPI2
+ * Beschreibt die Bedienelemente der DCU-Platine:
  *   Backlight TIM1_CH4 auf PA11
  *   Eingaben  2 Drehencoder, 2 Taster
  *   Ausgaben  Piezo, APA102-LED-Streifen über SPI3
  *
+ * Das Display ist steckbar und kommt aus einem eigenen Shield — entweder
+ * fse_display_3_5 oder fse_display_2_8. Beide belegen dieselben zwei
+ * Steckverbinder-Pins vertauscht und bringen daher ihre eigene
+ * SPI2-Pinbelegung mit:
+ *
+ *   west build -b fse_pb --shield "fse_dcu_2612;fse_display_3_5" ...
+ *
  * Nicht hier: CAN-Transceiver, User-LEDs und Konsole — die sitzen auf dem
  * Prozessorboard und gehören ins Board-DTS.
- *
- * GPIO-Verbindungen Display:
- *   CS    → PA9   (GPIO, Active Low)
- *   DC    → PB13  (Data/Command, Active High)
- *   RESET → PD2   (Active Low)
  */
 
-#include <zephyr/dt-bindings/mipi_dbi/mipi_dbi.h>
-#include <zephyr/dt-bindings/display/panel.h>
-#include <zephyr/dt-bindings/dma/stm32_dma.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/dt-bindings/lvgl/lvgl.h>
 #include <zephyr/dt-bindings/led/led.h>
 
 / {
-	chosen {
-		zephyr,display = &hx8357_fse;
-	};
-
-	/*
-	 * MIPI DBI ist der Abstraktionslayer zwischen Zephyr Display-API
-	 * und dem konkreten SPI-Bus. Er managed DC-GPIO und Reset.
-	 */
-	mipi_dbi_fse_dcu_2612: mipi_dbi_fse_dcu_2612 {
-		compatible = "zephyr,mipi-dbi-spi";
-		spi-dev = <&spi2>;
-
-		/* DC-Pin: High = Daten, Low = Command */
-		dc-gpios = <&gpiob 13 GPIO_ACTIVE_HIGH>;
-
-		/* Reset: Low-Puls beim Init */
-		reset-gpios = <&gpiod 2 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-
-		/*
-		 * write-only: HX8357 kann prinzipiell lesen, aber die
-		 * meisten Designs sind write-only verdrahtet (spart MISO-Leitung).
-		 * Entfernen, falls dein Shield MISO durchschleift.
-		 */
-		write-only;
-
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		hx8357_fse: hx8357@0 {
-			compatible = "himax,hx8357";
-			reg = <0>; /* CS-Index: entspricht erstem Eintrag in cs-gpios */
-
-			/*
-			 * HX8357-D SPI-Taktlimit: Datenblatt nennt ≥66 ns Zykluszeit
-			 * (≈ 15,1 MHz) für den parallelen Interface-Modus.
-			 * Im SPI-Modus tolerieren reale Panels deutlich höhere Taktraten:
-			 *   25 MHz – sicher, empfohlener Startwert
-			 *   40 MHz – funktioniert auf kurzen Leitungen (probieren)
-			 *   60 MHz – bei guter Leitungsführung möglich
-			 * Bei Artefakten oder Korruption schrittweise reduzieren.
-			 */
-			mipi-max-frequency = <40000000>;
-			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
-
-			/* Display-Geometrie: HX8357-D nativ 320×480 */
-			width = <320>;
-			height = <480>;
-			pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
-
-			/*
-			 * Orientierung: 0 = Portrait (Hochformat, Standard).
-			 * Weitere Optionen: 90 / 180 / 270.
-			 */
-			rotation = <90>;
-
-			/*
-			 * display-inversion: HX8357-D ist ein "normally-white" Panel.
-			 * Ohne Inversion erscheint Weiß als Dunkelviolett und
-			 * Schwarz als Grünlich. INVON korrigiert die Polarität.
-			 */
-			display-inversion;
-
-			red-blue-swap;
-
-			/* -------------------------------------------------------
-			 * HX8357-D Initialisierungsregister
-			 * Alle Werte entsprechen den Adafruit-validierten Defaults
-			 * aus dem himax,hx8357.yaml Binding und können hier
-			 * board-spezifisch überschrieben werden.
-			 * ------------------------------------------------------- */
-
-			/*
-			 * SETEXTC (0xB9): Unlock-Key für den erweiterten
-			 * Befehlssatz. Nicht ändern.
-			 */
-			setextc = [ff 83 57];
-
-			/*
-			 * SETOSC (0xB0): Interner Oszillator / Bildwiederholrate.
-			 * 0x68 → 70 Hz Normal-Modus, 55 Hz Idle-Modus.
-			 */
-			setosc = [68];
-
-			/*
-			 * SETPWR1 (0xB1): Spannungsversorgung (AVDD, AVEE, VGH, VGL).
-			 * Werte aus dem Hersteller-Initialisierungsbeispiel (16-Bit RGB565):
-			 *   Byte 1: 0x16 (VSPR-Stufe, minimal abweichend vom Adafruit-Default 0x15)
-			 *   Byte 4: 0xC3 (AP – Op-Amp-Biasstrom, höher als Adafruit 0x83)
-			 *   Byte 5: 0x5C (FS – Source-Driver-Frequenzverdoppler, Herstellerdefault)
-			 */
-			setpwr1 = [00 16 1c 1c c3 5c];
-
-			/*
-			 * SETRGB (0xB3): SPI-Interface-Konfiguration.
-			 * Byte 0 Bit 7 (SDO_EN): 0 = SDO/MISO tri-state (write-only,
-			 * konsistent mit der write-only-Eigenschaft des MIPI-DBI-Nodes).
-			 * Auf [80 00 06 06] ändern UND write-only entfernen,
-			 * falls Lesezugriffe auf das Display benötigt werden.
-			 */
-			setrgb = [00 00 06 06];
-
-			/*
-			 * SETCYC (0xB4): Display-Timing (Back-/Front-Porch, Pixel-Takt).
-			 * Byte 0: Inversions-Modus.
-			 *   0x02 = Column-Inversion (Adafruit-Default)
-			 *   0x32 = 2-Dot-Inversion (Hersteller-Beispielcode)
-			 * Falls Flimmern oder Streifenmuster auftreten, auf 0x32 wechseln.
-			 */
-			setcyc = [02 40 00 2a 2a 0d 78];
-
-			/*
-			 * SETCOM (0xB6): VCOM-Spannung.
-			 * 0x40 = Hersteller-Defaultwert aus dem Initialisierungsbeispiel.
-			 * 0x25 = Adafruit-Default (≈ −1,52 V, niedrigere Spannung).
-			 * Bei Ghosting erhöhen; bei ausgewaschenen Farben verringern.
-			 */
-			setcom = [40];
-
-			/*
-			 * SETPANEL (0xCC): Panel-Eigenschaften.
-			 * 0x05 = BGR-Panel, Gate-Scan oben→unten, Source S1→S960.
-			 * Auf [09] ändern, falls Rot und Blau vertauscht erscheinen.
-			 */
-			setpanel = [05];
-
-			/*
-			 * SETSTBA (0xC0): Source-Timing / Balance.
-			 * Byte 0: 0x70 (N_OPON – Normalmodus-Op-Amp-Strom, Herstellerwert)
-			 *         0x50 = Adafruit-Default
-			 * Byte 4: 0xC8 (STBA – Herstellerwert)
-			 *         0x1E = Adafruit-Default
-			 */
-			setstba = [70 50 01 3c c8 08];
-
-			/*
-			 * SETGAMMA (0xE0): Gamma-Korrektur.
-			 * 34 Bytes: 17 Bytes positive + 17 Bytes negative Kurve.
-			 */
-			/*
-			 * SETGAMMA (0xE0): Gamma-Korrektur.
-			 * 34 Bytes: 17 Bytes positive + 17 Bytes negative Kurve.
-			 * Werte aus dem Hersteller-Initialisierungsbeispiel (RGB565-Modus).
-			 * Adafruit-Defaults abweichend bei Bytes 2, 3, 4, 5, 7, 8, 9, 12.
-			 */
-			setgamma = [
-				02 0a 10 1a 22 34 41 4a 4d
-				44 3a 23 19 08 09 03 02 0a
-				10 1a 22 34 41 4a 4d 44 3a
-				23 19 08 09 03 00 01
-			];
-		};
-	};
-
 	/* ── Bedienelemente ──────────────────────────────────────────────────
 	 *
 	 * Drehencoder, Taster, Piezo und Display-Backlight sitzen alle auf der
@@ -269,37 +114,6 @@
 		input-codes = <INPUT_KEY_ENTER>;
 		lvgl-codes = <LV_KEY_ENTER>;
 	};
-};
-
-/*
- * SPI2 Node-Overlay:
- * - Aktiviert den Bus (überschreibt "disabled" aus dem Board-DTS)
- * - Fügt cs-gpios hinzu (Shield-spezifisch)
- * - Konfiguriert DMA für TX und RX (STM32F405RG, DMA1)
- *
- * STM32F405 Reference Manual, Tabelle 43 – DMA1 Request Mapping:
- *   Stream 4, Channel 0 → SPI2_TX
- *   Stream 3, Channel 0 → SPI2_RX
- *
- * RX-DMA wird mitgeführt, damit der STM32-SPI-DMA-Treiber Transaktionen
- * sauber abschließen kann – obwohl das Display write-only betrieben wird.
- */
-&spi2 {
-	cs-gpios = <&gpioa 12 GPIO_ACTIVE_LOW>;
-	/* STM32F405 RM Table 43: DMA1 Stream4 Ch0 = SPI2_TX, Stream3 Ch0 = SPI2_RX
-	 * Cells: <&dmaX stream channel channel-config fifo-threshold>
-	 * STM32_DMA_PERIPH_TX = MEMORY_TO_PERIPH | MEM_INC = 0x440
-	 * STM32_DMA_PERIPH_RX = PERIPH_TO_MEMORY | MEM_INC = 0x480
-	 * STM32_DMA_PRIORITY_HIGH = 0x20000, fifo = 0 (direct mode)
-	 */
-	dmas = <&dma1 4 0 (STM32_DMA_PERIPH_TX | STM32_DMA_PRIORITY_HIGH) 0>,
-	       <&dma1 3 0 (STM32_DMA_PERIPH_RX | STM32_DMA_PRIORITY_HIGH) 0>;
-	dma-names = "tx", "rx";
-	status = "okay";
-};
-
-&dma1 {
-	status = "okay";
 };
 
 /*
