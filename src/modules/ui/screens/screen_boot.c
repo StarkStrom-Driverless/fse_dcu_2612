@@ -34,6 +34,8 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include <app_version.h>
+
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 
@@ -62,9 +64,16 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
     lv_label_set_text(lbl_dcu, "DCU");
     lv_obj_align(lbl_dcu, LV_ALIGN_CENTER, -5, 90);
 
+    /*
+     * Version comes from the VERSION file via app_version.h, so it cannot
+     * drift from the release.  DCU_VEHICLE_ID (CMakeLists.txt) is the public
+     * major number — 2612 — which does not fit in Zephyr's 8-bit
+     * APP_VERSION_MAJOR and is derived from it instead.
+     */
     lv_obj_t *lbl_version = lv_label_create(scr);
     lv_obj_add_style(lbl_version, &ui_style_label_title, 0);
-    lv_label_set_text(lbl_version, "v2612");
+    lv_label_set_text_fmt(lbl_version, "v%d.%d.%d",
+                          DCU_VEHICLE_ID, APP_VERSION_MINOR, APP_PATCHLEVEL);
     lv_obj_align(lbl_version, LV_ALIGN_CENTER, -5, 130);
 
     /* ── Logo ────────────────────────────────────────────────────────────── */
