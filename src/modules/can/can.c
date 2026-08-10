@@ -74,6 +74,7 @@
 #include "generated/can_tx_gen.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "services/settings/settings.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -344,9 +345,18 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
 
         /* ── 2. Transmit scheduled TX messages ──────────────────────── */
         if (s_tx_tick % (CAN_TX_GEN_DCU_2_M_ABX_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) {
+            /*
+             * Volatile state comes from app_state, persistent settings from
+             * the Settings service — one acquisition for all of them.  The
+             * LVGL ui_tx_subj_* subjects are a UI mirror and must not be read
+             * from this thread (see docs/settings_module.md §2).
+             */
+            uint8_t settings[SETTING_COUNT];
+            settings_get_all(settings);
+
             uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
             bool    rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD);
-            uint8_t debug      = app_state_get_debug_bits();
+            uint8_t debug      = settings[SETTING_DEBUG_BITS];
             can_send_dcu2_mabx(drive_mode, rtd_active, debug);
         }
 
