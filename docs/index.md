@@ -1,13 +1,14 @@
-# My Zephyr App {#mainpage}
+# DCU 2612 {#mainpage}
 
-Kurzbeschreibung des Projekts.
+Software of the Driver Control Unit (DCU) for the vehicle from version v2612
+onwards, based on Zephyr RTOS and LVGL.
 
-## Handbuch
+## Manual
 
-- @subpage einstieg
-- @subpage hardware
-- @subpage konfiguration
+- @subpage manual-intro
+  - @ref manual-user — operation for drivers and engineers
+  - @ref manual-developer — toolchain, build, extending
 
-## API-Referenz
+## API reference
 
-Siehe [Modules](modules.html).
+See [Modules](modules.html).
