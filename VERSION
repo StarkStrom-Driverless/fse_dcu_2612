@@ -1,0 +1,31 @@
+# Firmware version.
+#
+# VERSION_MAJOR carries the vehicle index within the generation — 12 for the
+# 12th car. It is NOT the public major number: Zephyr and the MCUboot image
+# header store this field in 8 bits, so the full generation number 2612 does
+# not fit (version.cmake rejects anything above 255).
+#
+# DCU_VEHICLE_YEAR is not a Zephyr key. Zephyr's version.cmake extracts only
+# the keys below it by regex and ignores everything else, so the field can live
+# here and keep all version numbers in one file. CMakeLists.txt reads it and
+# assembles the public number:
+#
+#     DCU_VEHICLE_ID = DCU_VEHICLE_YEAR * 100 + VERSION_MAJOR
+#                    =                26 * 100 + 12          =  2612
+#
+#     VERSION file  12.1.0        (Zephyr, MCUboot image header)
+#     Boot screen   v2612.1.0
+#     Git tag       v2612.1.0
+#
+# Bump VERSION_MINOR for features, PATCHLEVEL for fixes. VERSION_MAJOR and
+# DCU_VEHICLE_YEAR only change together, with a new vehicle.
+#
+# See docs/manual/developer.md, section "Versioning".
+
+DCU_VEHICLE_YEAR = 26
+
+VERSION_MAJOR = 12
+VERSION_MINOR = 1
+PATCHLEVEL = 0
+VERSION_TWEAK = 0
+EXTRAVERSION =

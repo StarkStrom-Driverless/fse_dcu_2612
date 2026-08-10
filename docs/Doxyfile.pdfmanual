@@ -1,5 +1,6 @@
 @INCLUDE = Doxyfile.common
-INPUT            = index.md
+# Nur die Handbuchseiten — die API-Referenz gehört auf die Website, nicht ins PDF.
+INPUT            = manual
 GENERATE_HTML    = NO
 GENERATE_LATEX   = YES
 LATEX_BATCHMODE  = YES

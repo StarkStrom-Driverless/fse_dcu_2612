@@ -7,27 +7,44 @@ This Repository contains the Software for the Driver Control Unit (DCU) Version 
 ## Getting Started
 
 ### Prepare
-First it is needed to load the West Python venv. The platform specific instructions can be found in the Zephyr Documentation. 
+First it is needed to load the West Python venv. The platform specific instructions can be found in the Zephyr Documentation.
+
+Clone with submodules — the Doxygen theme (`docs/doxygen-awesome-css`) is one:
+
+``` sh
+git clone --recurse-submodules https://github.com/StarkStrom-Driverless/fse_dcu_2612
+# already cloned without the flag:
+git submodule update --init --recursive
+```
 
 
 ### Build and Flash to Prozessorboard
 ``` sh
-west build -o=-j4 -p always -b fse_pb --shield fse_display_3_5 ./FSE_DCU_2612/samples/inputs_and_outputs
+west build -p always -o=-j4 -b fse_pb --shield fse_dcu_2612
 west flash --runner openocd
 ```
 
 ### Build and Run on QEMU Cortex A53 Emulator
 It is also possible to run the firmware on the local computer by using the QEMU Cortex A53 Target. 
 ``` sh
-west build -o=-j4 -p always -b qemu_cortex_a53 ./FSE_DCU_2612/samples/inputs_and_outputs
+west build -p always -b qemu_cortex_a53
 west build -t run
 ```
 
 ### Fast Recompile
 It is possible to only compile changed files if the build directory is clean by ommiting the `-p always` parameter. 
 
+## CAN Signal generation
+
+Switch to the zephyr folder and run: 
+`python fse_dcu_2612/tools/codegen/gen_can.py`
+
 ## Documentation
-Powered by Doxygen. 
+Powered by Doxygen.
+
+The manual under `docs/manual/` covers operation (drivers, engineers) and
+development (toolchain, build, extending). Architecture details live in the
+other documents under `docs/`.
 
 ### Build Docs locally
 
