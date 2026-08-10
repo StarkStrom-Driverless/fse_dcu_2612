@@ -1,5 +1,13 @@
 
-if SHIELD_FSE_DISPLAY_3_5
+if SHIELD_FSE_DCU_2612
+
+# Display und LED-Streifen hängen beide am SPI, das Backlight an einem Timer.
+# Beides ist Shield-Hardware, deshalb hier statt in prj.conf.
+config SPI
+	default y
+
+config PWM
+	default y
 
 # DMA-Transfers für SPI2 (STM32F405RG).
 # Entlastet die CPU komplett vom Pixel-Transfer – größter Einzelgewinn
@@ -10,6 +18,10 @@ config SPI_STM32_DMA
 if DISPLAY
 
 if LVGL
+
+# Drehencoder der DCU-Platine an LVGL anbinden.
+config LV_Z_ENCODER_INPUT
+	default y
 
 config LV_Z_BITS_PER_PIXEL
 	default 16

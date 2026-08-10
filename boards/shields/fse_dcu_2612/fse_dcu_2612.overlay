@@ -1,17 +1,28 @@
 /*
- * FSE Display Shield 3,5" – HX8357 via SPI2
+ * FSE DCU 2612 – Driver Control Unit, Aufsatzplatine für das fse_pb
  * SPDX-License-Identifier: Apache-2.0
  *
- * GPIO-Verbindungen:
+ * Beschreibt alles, was physisch auf der DCU-Platine sitzt:
+ *   Display   HX8357 3,5" über SPI2
+ *   Backlight TIM1_CH4 auf PA11
+ *   Eingaben  2 Drehencoder, 2 Taster
+ *   Ausgaben  Piezo, APA102-LED-Streifen über SPI3
+ *
+ * Nicht hier: CAN-Transceiver, User-LEDs und Konsole — die sitzen auf dem
+ * Prozessorboard und gehören ins Board-DTS.
+ *
+ * GPIO-Verbindungen Display:
  *   CS    → PA9   (GPIO, Active Low)
  *   DC    → PB13  (Data/Command, Active High)
  *   RESET → PD2   (Active Low)
-
  */
 
 #include <zephyr/dt-bindings/mipi_dbi/mipi_dbi.h>
 #include <zephyr/dt-bindings/display/panel.h>
 #include <zephyr/dt-bindings/dma/stm32_dma.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/lvgl/lvgl.h>
+#include <zephyr/dt-bindings/led/led.h>
 
 / {
 	chosen {
@@ -22,7 +33,7 @@
 	 * MIPI DBI ist der Abstraktionslayer zwischen Zephyr Display-API
 	 * und dem konkreten SPI-Bus. Er managed DC-GPIO und Reset.
 	 */
-	mipi_dbi_fse_display_3_5: mipi_dbi_fse_display_3_5 {
+	mipi_dbi_fse_dcu_2612: mipi_dbi_fse_dcu_2612 {
 		compatible = "zephyr,mipi-dbi-spi";
 		spi-dev = <&spi2>;
 
@@ -166,6 +177,98 @@
 			];
 		};
 	};
+
+	/* ── Bedienelemente ──────────────────────────────────────────────────
+	 *
+	 * Drehencoder, Taster, Piezo und Display-Backlight sitzen alle auf der
+	 * DCU-Platine, nicht auf dem Prozessorboard.
+	 */
+
+	aliases {
+		qdec-input-left = &qdec_input0;
+		qdec-input-right = &lvgl_encoder1;
+		keypad-left = &keypad_left;
+		keypad-right = &keypad_right;
+		piezo = &piezo_gpio;
+		pwm-display-bright = &pwm_display_bright;
+		led-strip = &apa102;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		pwm_display_bright: pwm_display_bright {
+			gpios = <&gpioa 11 GPIO_ACTIVE_HIGH>;
+		};
+		piezo_gpio: piezo_gpio {
+			gpios = <&gpiob 1 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	/* Linker Drehencoder: Screen-Karussell */
+	qdec_input0: qdec-encoder0 {
+		compatible = "gpio-qdec";
+		gpios = <&gpioc 6 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpioc 7 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		steps-per-period = <2>;
+		zephyr,axis = <INPUT_REL_WHEEL>;
+		sample-time-us = <2000>;
+		idle-timeout-ms = <200>;
+		status = "okay";
+	};
+
+	/* Rechter Drehencoder: Widget-Navigation im Screen */
+	qdec_input1: qdec-encoder1 {
+		compatible = "gpio-qdec";
+		gpios = <&gpioa 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpioa 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		steps-per-period = <2>;
+		zephyr,axis = <INPUT_REL_HWHEEL>;
+		sample-time-us = <2000>;
+		idle-timeout-ms = <200>;
+		status = "okay";
+	};
+
+	lvgl_encoder0: lvgl-encoder0 {
+		compatible = "zephyr,lvgl-encoder-input";
+		rotation-input-code = <INPUT_REL_WHEEL>;
+		status = "okay";
+	};
+
+	lvgl_encoder1: lvgl-encoder1 {
+		compatible = "zephyr,lvgl-encoder-input";
+		rotation-input-code = <INPUT_REL_HWHEEL>;
+		status = "okay";
+	};
+
+	buttons0: gpio_keys0 {
+		compatible = "gpio-keys";
+		left_button: button_1 {
+			gpios = <&gpioc 13 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	buttons1: gpio_keys1 {
+		compatible = "gpio-keys";
+		right_button: button_2 {
+			gpios = <&gpioc 14 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	keypad_left: keypad0 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons0>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+
+	keypad_right: keypad1 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons1>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
 };
 
 /*
@@ -197,4 +300,44 @@
 
 &dma1 {
 	status = "okay";
+};
+
+/*
+ * Display-Backlight über TIM1_CH4 auf PA11.
+ *
+ * TIM3 wird abgeschaltet: Zephyrs PWM-LED-Treiber würde sonst eine zweite
+ * Instanz anlegen, die auf dieser Platine nicht verdrahtet ist.
+ */
+&timers3 {
+	status = "disabled";
+};
+
+&timers1 {
+	status = "okay";
+
+	pwm1: pwm {
+		pinctrl-0 = <&tim1_ch4_pa11>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
+
+/*
+ * APA102-LED-Streifen im Sichtfeld über dem Display.
+ *
+ * Der Bus ist im Board-DTS mit Pinctrl hinterlegt, aber deaktiviert — welche
+ * Funktion die Steckverbinder-Pins tragen, entscheidet erst das Shield.
+ */
+&spi3 {
+	pinctrl-0 = <&spi3_sck_pc10 &spi3_mosi_pc12>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	apa102: apa102@0 {
+		compatible = "apa,apa102";
+		reg = <0>;
+		spi-max-frequency = <5250000>;
+		chain-length = <31>;
+		color-mapping = <LED_COLOR_ID_BLUE LED_COLOR_ID_GREEN LED_COLOR_ID_RED>;
+	};
 };

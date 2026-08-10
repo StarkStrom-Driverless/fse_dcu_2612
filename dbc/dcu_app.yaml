@@ -1,0 +1,354 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# dcu_app.yaml — Applikations-Intent für den CAN-Code-Generator
+#
+# Regeln:
+#   * Die DBC (dcu_can.dbc) ist die einzige Wahrheit für das Bit-Layout.
+#     Diese Datei referenziert DBC-Namen, dupliziert aber nichts daraus.
+#   * Nur Messages, die hier gelistet sind, werden generiert (Whitelist).
+#   * limits sind in physikalischen Einheiten (nach DBC-Faktor/Offset).
+#     Semantik (alle Grenzen optional):
+#       value <  critical_low                  → CRITICAL
+#       value <  warning_low                   → WARNING
+#       warning_low <= value <= warning_high   → OK
+#       value >  warning_high                  → WARNING
+#       value >  critical_high                 → CRITICAL
+#     Validierung: critical_low <= warning_low <= warning_high <= critical_high
+#   * range gibt den absoluten Anzeigebereich in physikalischen Einheiten an.
+#     Wird als UI_<NAME>_RANGE_MIN / UI_<NAME>_RANGE_MAX in ui_subjects_gen.h
+#     generiert. Verwendung z.B.: lv_bar_set_range(bar, UI_X_RANGE_MIN, UI_X_RANGE_MAX)
+#     min und max sind jeweils optional; wenn beide angegeben, muss min < max sein.
+#   * persist markiert ein TX-Signal als über Neustart hinweg speicherbar.
+#     Erzeugt einen Eintrag in settings_schema_gen.h. Pflichtfeld: default.
+#     min/max sind optional — ohne Angabe gilt der Bereich aus der DBC-Bitbreite
+#     (N Bit unsigned → [0, 2^N-1]) bzw. das explizite DBC-Minimum/Maximum.
+#     Siehe docs/settings_module.md.
+#
+# Regenerieren: python3 tools/codegen/gen_can.py   (west-venv aktiv)
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: 1
+
+# ── Persistente Einstellungen ohne CAN-Signal ────────────────────────────────
+#
+# CAN-gebundene Settings werden am Signal per `persist:` markiert (siehe
+# messages: unten). Dieser Block ist für Werte, hinter denen kein CAN-Signal
+# steht. Beide Quellen landen in derselben enum setting_id.
+#
+settings:
+  display_brightness:
+    default: 80
+    min: 0
+    max: 100
+
+messages:
+
+  # ── TX: DCU → mABX ─────────────────────────────────────────────────────────
+
+  DCU_2_mABX:
+    direction: tx
+    period_ms: 100
+    signals:
+      Debug_SETTING:
+        app_name: debug_bits
+        persist: { default: 0 }
+      DV_Drive_Mode_SETTING:
+        app_name: drive_mode
+      RTD_Button:
+        app_name: rtd_button
+      DCU_RESERVE_BUTTON:
+        app_name: reserve_button
+      ASR_SETTING:
+        app_name: asr_setting
+        persist: { default: 0 }
+      Rekuperation_SETTING:
+        app_name: rekup_setting
+        persist: { default: 0 }
+      Torque_Vectoring_SETTING:
+        app_name: torquevect_setting
+        persist: { default: 0 }
+      Power_Limit_SETTING:
+        app_name: pwrlimit_setting
+        persist: { default: 0 }
+
+
+  # ── RX: mABX → DCU ─────────────────────────────────────────────────────────
+
+  mABX_2_DCU_1:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      LED_1:
+        app_name: dv_receiving
+        ui: { label: "Incoming ROS signals" }
+      LED_2:
+        app_name: dv_ready
+        ui: { label: "Incoming valid DV signals" }
+      LED_3:
+        app_name: sdc_open
+        ui: { label: "SDC Open" }
+      LED_4:
+        app_name: datalogger_ready
+        ui: { label: "Logger Ready" }
+      LED_5:
+        app_name: datalogger_recording
+        ui: { label: "Logger Recording" }
+      LED_6:
+        app_name: rtd_possible
+        ui: { label: "RTD Requirements met" }
+      LED_7:
+        app_name: startup_finish
+        ui: { label: "Startup finish" }
+      LED_8:
+        app_name: kistler_timeout
+        ui: { label: "Kistler Timeout" }
+      DCU_RGB_LED_Themperatur:
+        app_name: temperature_generic
+      DCU_RESERVE_LED:
+        app_name: led_reserved_0
+      Leistung_Durschnitt:
+        app_name: power_average
+        ui: { label: "Power Avg", precision: 0 }
+        limits: { warning_high: 60, critical_high: 75 }
+        range: { min: 0, max: 80 }
+
+  mABX_2_DCU_2:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      DCU_Temperatur_Akku:
+        app_name: temperature_accu_hv
+        ui: { label: "Accu Temp", precision: 0 }
+        # Beispielwerte — an reale Fahrzeugdaten anpassen!
+        limits: { warning_high: 50, critical_high: 60 }
+        range: { min: 0, max: 80 }
+      DCU_Temperatur_Umrichter:
+        app_name: temperature_inverter
+        ui: { label: "Inverter Temp", precision: 0 }
+        limits: { warning_high: 70, critical_high: 90 }
+        range: { min: 0, max: 120 }
+      DCU_Temperatur_Motor:
+        app_name: temperature_motor
+        ui: { label: "Motor Temp", precision: 0 }
+        limits: { warning_high: 80, critical_high: 100 }
+        range: { min: 0, max: 120 }
+      HV_VOLT_AKKU:
+        app_name: voltage_accu_hv
+        ui: { label: "HV Accu", precision: 0 }
+        limits: { critical_low: 470, warning_low: 488 }
+        range: { min: 400, max: 600 }
+      HV_VOLT_TS:
+        app_name: voltage_tractive_system
+        ui: { label: "HV TS", precision: 0 }
+      DCU_Custom_Wert_1:
+        app_name: custom_2
+      DCU_Custom_Wert_2:
+        app_name: custom_1
+
+  M01_Brake_Pressure_Front:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      Brake_Pressure_Front:
+        app_name: brake_pressure_front
+        ui: { label: "Brake Pressure Front", precision: 0 }
+        limits: { warning_high: 50, critical_high: 60 }
+
+  M01_Brake_Pressure_Rear:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      Brake_Pressure_Rear:
+        app_name: brake_pressure_rear
+        ui: { label: "Brake Pressure Rear", precision: 0 }
+        limits: { warning_high: 50, critical_high: 60 }
+
+  Air_Pressure_front:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      Pressure:
+        app_name: air_pressure_front
+        ui: { label: "Air Pressure Front", precision: 0 }
+        limits: { warning_high: 50, critical_high: 60 }
+
+  Air_Pressure_rear:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      Pressure:
+        app_name: air_pressure_rear
+        ui: { label: "Air Pressure Rear", precision: 0 }
+        limits: { warning_high: 50, critical_high: 60 }
+
+  RFC4800_APPS_L:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      APPS_L_Position:
+        app_name: apps_left_position
+        ui: { label: "Left Accelerator Pedal Position", precision: 0 }
+        limits: { warning_high: 50, critical_high: 60 }
+        range: { min: 0, max: 100 }
+
+  RFC4800_APPS_R:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      APPS_R_Position:
+        app_name: apps_right_position
+        ui: { label: "Right Accelerator Pedal Position", precision: 0 }
+        limits: { warning_high: 50, critical_high: 60 }
+        range: { min: 0, max: 100 }
+
+  RFC4800_BPPS:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      BPPS_Position:
+        app_name: bpps_position
+        ui: { label: "Break Pedal Position", precision: 0 }
+        limits: { warning_high: 50, critical_high: 60 }
+        range: { min: 0, max: 100 }
+
+  SensorUnitRear_2_Vehicle:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      SDC_MON_BSPD:
+        app_name: sdc_bspd
+        ui: { label: "", precision: 0 }
+      SDC_MON_SDB_COCKPIT:
+        app_name: sdc_cockpit
+        ui: { label: "", precision: 0 }
+      SDC_MON_ASCU:
+        app_name: sdc_ascu
+        ui: { label: "", precision: 0 }
+      SDC_MON_MOTOREN_RL:
+        app_name: sdc_motor_rl
+        ui: { label: "", precision: 0 }
+      SDC_MON_HVD:
+        app_name: sdc_hvd
+        ui: { label: "", precision: 0 }
+      SDC_MON_MOTOREN_RR:
+        app_name: sdc_motor_rr
+        ui: { label: "", precision: 0 }
+      SDC_MON_SDB_MH:
+        app_name: sdc_sdb_mh
+        ui: { label: "", precision: 0 }
+      LV_Akku:
+        app_name: lv_accu_voltage
+        ui: { label: "", precision: 0 }
+        limits: { warning_low: 22, critical_low: 21 }
+
+  SensorUnitFront_2_Vehicle:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      SDC_MON_RES:
+        app_name: sdc_res
+        ui: { label: "", precision: 0 }
+      SDC_MON_MOTOREN_FL:
+        app_name: sdc_motor_fl
+        ui: { label: "", precision: 0 }
+      SDC_MON_BOTS:
+        app_name: sdc_bots
+        ui: { label: "", precision: 0 }
+      SDC_MON_MOTOREN_FR:
+        app_name: sdc_motor_fr
+        ui: { label: "", precision: 0 }
+      SDC_MON_Inertia:
+        app_name: sdc_inertia
+        ui: { label: "", precision: 0 }
+
+  MABX_2_Vehicle:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      RTD_Sound:
+        app_name: rtd_sound
+        ui: { label: "", precision: 0 }
+      RTD_State:
+        app_name: rtd_state
+        ui: { label: "", precision: 0 }
+      AMS_error:
+        app_name: ams_error
+        ui: { label: "", precision: 0 }
+      IMD_error:
+        app_name: imd_error
+        ui: { label: "", precision: 0 }
+
+  DV_system_status:
+    direction: rx
+    timeout_ms: 500
+    signals:
+      AS_state:
+        app_name: as_state
+        ui: { label: "", precision: 0 }
+
+# BO_ 390 SensorUnitRear_2_Vehicle: 3 SensorUnit_Rear
+#  SG_ Brakelight_ON : 7|1@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ SDC_MON_BSPD : 2|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ SDC_MON_SDB_COCKPIT : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ SDC_MON_ASCU : 6|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku : 14|10@1+ (0.1,0) [0|0] "V" Vector__XXX
+#  SG_ SDC_MON_MOTOREN_RL : 3|1@1+ (1,0) [0|1] ""  Hauptsteuereinheit
+#  SG_ SDC_MON_HVD : 5|1@1+ (1,0) [0|1] ""  Hauptsteuereinheit
+#  SG_ SDC_MON_MOTOREN_RR : 4|1@1+ (1,0) [0|1] ""  Hauptsteuereinheit
+#  SG_ SDC_MON_SDB_MH : 1|1@1+ (1,0) [0|1] ""  Hauptsteuereinheit
+
+# BO_ 391 SensorUnitFront_2_Vehicle: 1 SensorUnit_Front
+#  SG_ SDC_MON_RES : 4|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ SDC_MON_MOTOREN_FL : 3|1@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ SDC_MON_BOTS : 2|1@1+ (1,0) [0|1] ""  Hauptsteuereinheit
+#  SG_ SDC_MON_MOTOREN_FR : 1|1@1+ (1,0) [0|1] ""  Hauptsteuereinheit
+#  SG_ SDC_MON_Inertia : 0|1@1+ (1,0) [0|1] ""  Hauptsteuereinheit
+
+
+# BO_ 816 LV_Akku_2_Vehicle: 5 LV_BMS
+#  SG_ LV_Akku_Error_Overcurrent : 36|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Error_IVT : 35|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Charging : 34|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_ID : 32|2@1+ (1,0) [0|3] "" Vector__XXX
+#  SG_ LV_Akku_Error_Chip : 31|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Output_Active : 30|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Error_Open_Wire : 29|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Error_Undervoltage : 28|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Error_Overvoltage : 27|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Error_Temperature : 26|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Error_Temp_Sensor : 25|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Error_latched : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+#  SG_ LV_Akku_Current : 16|8@1- (0.5,0) [-64|63.5] "A" Vector__XXX
+#  SG_ LV_Akku_LTC_Temp : 8|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+#  SG_ LV_Akku_Voltage : 0|8@1+ (0.05,20) [20|32.75] "V" Vector__XXX
+
+# BO_ 848 LV_Akku_2_Vehicle_Voltage: 7 LV_BMS
+#  SG_ LV_Akku_Zell_7 : 48|8@1+ (0.01,2) [0|0] "V" Vector__XXX
+#  SG_ LV_Akku_Zell_6 : 40|8@1+ (0.01,2) [0|0] "V" Vector__XXX
+#  SG_ LV_Akku_Zell_5 : 32|8@1+ (0.01,2) [0|0] "V" Vector__XXX
+#  SG_ LV_Akku_Zell_4 : 24|8@1+ (0.01,2) [0|0] "V" Vector__XXX
+#  SG_ LV_Akku_Zell_3 : 16|8@1+ (0.01,2) [0|0] "V" Vector__XXX
+#  SG_ LV_Akku_Zell_2 : 8|8@1+ (0.01,2) [0|0] "V" Vector__XXX
+#  SG_ LV_Akku_Zell_1 : 0|8@1+ (0.01,2) [0|0] "V" Vector__XXX
+
+# BO_ 832 LV_Akku_2_Vehicle_Temp: 8 LV_BMS
+#  SG_ LV_Akku_Heatsink_Temp : 56|8@1+ (0.6,0) [0|153] "�C" Vector__XXX
+#  SG_ LV_Akku_Temp_7 : 48|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+#  SG_ LV_Akku_Temp_6 : 40|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+#  SG_ LV_Akku_Temp_5 : 32|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+#  SG_ LV_Akku_Temp_4 : 24|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+#  SG_ LV_Akku_Temp_3 : 16|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+#  SG_ LV_Akku_Temp_2 : 8|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+#  SG_ LV_Akku_Temp_1 : 0|8@1+ (0.4,0) [0|102] "�C" Vector__XXX
+
+# BO_ 415 MABX_2_Pirat: 1 Hauptsteuereinheit
+#  SG_ Set_Marker : 0|1@1+ (1,0) [0|0] "" Vector__XXX
+
+# BO_ 1282 DV_system_status: 5 Vector__XXX
+#  SG_ Cones_count_actual : 15|8@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ Cones_count_all : 23|17@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ steering_state : 8|1@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ Service_brake_state : 9|2@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ Lap_counter : 11|4@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ EBS_state : 3|2@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ AS_state : 0|3@1+ (1,0) [0|0] "" Vector__XXX
+#  SG_ AMI_state : 5|3@1+ (1,0) [0|0] "" Vector__XXX
