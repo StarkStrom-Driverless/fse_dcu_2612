@@ -53,3 +53,9 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Generated source code
+src/generated
+
+# Generated documentation
+docs/_build
