@@ -85,27 +85,17 @@ jobs:
         working-directory: docs
         run: |
           doxygen Doxyfile.pdfmanual
-          # pdflatex writes the real reason into refman.log and make only
-          # reports "Error 1". Without this the job fails with no usable
-          # message — a missing .sty looks exactly like a broken document.
+          # make propagates a pdflatex failure — including LaTeX errors such
+          # as a character with no glyph in the default fonts (box-drawing
+          # glyphs U+2500-U+257F and geometric shapes U+25A0-U+25FF are the
+          # usual offenders). make itself only reports "Error 1", so print
+          # the log: that is where the actual reason is.
           if ! make -C _build_manual/latex; then
             echo "::error::LaTeX build failed. Last 60 lines of refman.log:"
             tail -n 60 _build_manual/latex/refman.log || true
             exit 1
           fi
-
-      - name: Check LaTeX log for rejected Unicode
-        working-directory: docs
-        run: |
-          # LATEX_BATCHMODE keeps pdflatex from stopping on these, and the
-          # generated Makefile can still exit 0 — so check explicitly.
-          if grep -aq "Unicode character" _build_manual/latex/refman.log; then
-            echo "::error::LaTeX rejected Unicode characters in the manual sources:"
-            grep -a "Unicode character" _build_manual/latex/refman.log | sort -u
-            echo "Box-drawing glyphs (U+2500-U+257F) and geometric shapes"
-            echo "(U+25A0-U+25FF) have no glyph in the default LaTeX fonts."
-            exit 1
-          fi
+          # A successful make should have produced the file.
           test -f _build_manual/latex/refman.pdf
 
       - name: Upload PDF
