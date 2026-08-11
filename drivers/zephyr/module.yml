@@ -6,6 +6,11 @@
 # Kconfig upstream — modifications no workspace clone would carry.
 #
 # Pulled in by CMakeLists.txt via ZEPHYR_EXTRA_MODULES.
+#
+# Note that `settings` belongs inside `build`, not at the top level:
+# zephyr_module.py reads it as meta['build']['settings']. Placed one level
+# up it is silently ignored — the module still builds, but the bindings are
+# not found and every DT_PROP() on the node fails to compile.
 
 name: fse_dcu_drivers
 
@@ -13,8 +18,7 @@ build:
   cmake: .
   kconfig: Kconfig
 
-settings:
-  # Makes dts/bindings/ here visible to the devicetree compiler.  Without it
-  # the himax,hx8357 node gets no property macros and every DT_PROP() on it
-  # fails to compile.
-  dts_root: .
+  settings:
+    # Makes dts/bindings/ here visible to the devicetree compiler.  Without it
+    # the himax,hx8357 node gets no property macros.
+    dts_root: .
