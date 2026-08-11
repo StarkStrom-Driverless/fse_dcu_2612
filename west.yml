@@ -45,7 +45,7 @@ manifest:
     # Also holds the MCUboot configuration for the processor board.
     - name: fse_pb_bootloader
       remote: starkstrom
-      revision: main
+      revision: feat-zephyr-modul
 
   self:
     path: fse_dcu_2612
