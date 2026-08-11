@@ -119,36 +119,90 @@ protected.
 
 ## Setting up the working environment
 
-### Installing Zephyr
+### Prerequisites
 
-Follow the [Zephyr installation guide](https://docs.zephyrproject.org/latest/develop/getting_started/index.html)
-for your platform. In addition you need:
+From the
+[Zephyr Getting Started Guide](https://docs.zephyrproject.org/latest/develop/getting_started/index.html),
+follow **only these two chapters**:
 
-- **OpenOCD** — for flashing via the `openocd` runner
-- **cantools** and **PyYAML** — for the CAN code generator
+1. *Select and Update OS*
+2. *Install dependencies*
+
+**Stop there.** The guide continues with getting Zephyr, the Python
+dependencies and the SDK — all of that happens below instead, because this
+project uses its own west manifest rather than Zephyr's.
+
+One more host tool is needed: **OpenOCD**, for flashing via the `openocd`
+runner.
+
+### Creating the workspace
+
+The virtual environment is created **inside the workspace, before**
+`west init`. That keeps the Python environment tied to this workspace: a
+second workspace gets its own, and neither borrows `west` or the build
+dependencies from the other.
+
+Use **Python 3.12** explicitly. Zephyr strongly recommends it, and newer
+releases can fail while installing the required packages — on Windows in
+particular. A plain `python3` may well point at something newer.
 
 ```sh
-# Inside the activated West venv
+mkdir fse-workspace && cd fse-workspace
+python3.12 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+pip install west
+west init -m https://github.com/StarkStrom-Driverless/fse_dcu_2612 .
+west update
+west zephyr-export
+
+# Zephyr's own build dependencies, plus the CAN code generator's
+pip install -r zephyr/scripts/requirements.txt
 pip install cantools pyyaml
+
+# Cross toolchain, into the workspace
+west sdk install
 ```
 
-### Cloning the repository
-
-The repository is placed as an application directory inside the Zephyr
-workspace:
+Check afterwards that the environment really is the workspace's own:
 
 ```sh
-cd zephyrproject/zephyr
-git clone --recurse-submodules https://github.com/StarkStrom-Driverless/fse_dcu_2612 fse_dcu_2612
+python --version        # 3.12.x
+which west              # .../fse-workspace/.venv/bin/west
 ```
 
-`--recurse-submodules` is required: the Doxygen theme
-(`docs/doxygen-awesome-css`) is a submodule. Without it the directory stays
-empty and the generated website falls back to the default Doxygen styling.
-
-If the repository was cloned without the flag, fetch the submodule afterwards:
+`west zephyr-export` registers Zephyr as a CMake package so
+`find_package(Zephyr)` resolves. Every later `west build` needs the virtual
+environment activated:
 
 ```sh
+source .venv/bin/activate
+```
+
+The result:
+
+| Directory | Contents |
+|---|---|
+| `fse_dcu_2612/` | this repository — application, shields, drivers, manifest |
+| `zephyr/` | upstream Zephyr, pinned in `west.yml` |
+| `modules/` | Zephyr modules |
+| `fse_pb_bootloader/` | provides the `fse_pb` board definition |
+
+Nothing is copied into the Zephyr tree. The board is found through the
+`zephyr/module.yml` in `fse_pb_bootloader`, which declares a `board_root`; the
+`fse_dcu_2612` shield through the `BOARD_ROOT` entry in our `CMakeLists.txt`.
+
+The Zephyr revision is pinned to a commit in `west.yml` so everyone builds
+against the same tree. Changing it is a one-line edit plus `west update`.
+
+### Fetching the Doxygen theme
+
+`west init` does not fetch git submodules of the manifest repository, and the
+Doxygen theme (`docs/doxygen-awesome-css`) is one. Without it the generated
+website falls back to the default Doxygen styling — silently:
+
+```sh
+cd fse_dcu_2612
 git submodule update --init --recursive
 ```
 
@@ -192,16 +246,68 @@ error message if something does not match. It produces the following under
 ### Building the firmware
 
 ```sh
-west build -p always -o=-j4 -b fse_pb --shield fse_dcu_2612
+west build -p always -o=-j4 -b fse_pb --shield "fse_dcu_2612;fse_display_3_5" fse_dcu_2612
 ```
 
-The shield lives in this repository under `boards/shields/`. Zephyr only
+Two shields, because the display is pluggable — see @ref manual-developer-shields.
+
+The shields live in this repository under `boards/shields/`. Zephyr only
 searches `BOARD_ROOT` plus `ZEPHYR_BASE`, so `CMakeLists.txt` appends the
 application directory to `BOARD_ROOT` before `find_package(Zephyr)` — no
 command-line flag is needed.
 
 Omitting `-p always` recompiles only changed files, provided the build
 directory is consistent.
+
+### Shields {#manual-developer-shields}
+
+The hardware is split so that each board is described exactly once:
+
+| Shield | Describes |
+|---|---|
+| `fse_dcu_2612` | The DCU board: rotary encoders, buttons, piezo, backlight, LED strip |
+| `fse_display_3_5` | HX8357 3.5" panel |
+| `fse_display_2_8` | ST7789V 2.8" panel |
+
+The DCU board takes either display, so exactly one display shield is combined
+with `fse_dcu_2612`:
+
+```sh
+--shield "fse_dcu_2612;fse_display_2_8"     # the 2.8" panel instead
+```
+
+The two panels use the same two connector pins with **swapped functions**:
+
+| | Data/Command | Serial Clock |
+|---|---|---|
+| 3.5" | PB13 | PB10 |
+| 2.8" | PB10 | PB13 |
+
+Each display shield therefore brings its own `pinctrl-0` for `&spi2` and
+overrides the board default. This is why `&spi2` and `&spi3` are declared
+`disabled` in the board devicetree: which function a connector pin carries is
+decided by what is plugged in, not by the processor board.
+
+### Out-of-tree drivers
+
+The HX8357 driver is not part of Zephyr. It lives in `drivers/` as a Zephyr
+module, pulled in by `ZEPHYR_EXTRA_MODULES` in `CMakeLists.txt`:
+
+| Path under `drivers/` | Contents |
+|---|---|
+| `zephyr/module.yml` | `build.cmake`, `build.kconfig`, `build.settings.dts_root` |
+| `CMakeLists.txt`, `Kconfig` | module entry points |
+| `display/` | driver, header, `Kconfig.hx8357` |
+| `dts/bindings/display/` | `himax,hx8357.yaml` |
+
+`dts_root` is what makes the binding visible to the devicetree compiler.
+Without it the node is created but gets no property macros, and every
+`DT_PROP()` on it fails to compile with a message about an undeclared
+`DT_N_S_..._P_width`.
+
+Note that in `module.yml` the `settings` block belongs **inside** `build` —
+`zephyr_module.py` reads it as `meta['build']['settings']`. One level up it is
+silently ignored: the module still compiles, but the bindings are not found.
 
 ### Flashing
 
