@@ -8,6 +8,11 @@ cmake_minimum_required(VERSION 3.20.0)
 # Must precede find_package(Zephyr), which is where the roots are evaluated.
 list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Out-of-tree drivers (HX8357 display) and their devicetree bindings.  Keeping
+# them here rather than patched into the Zephyr tree is what makes a fresh
+# `west init` workspace build without manual file copying.
+list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/drivers)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(fse_dcu_2612)
 

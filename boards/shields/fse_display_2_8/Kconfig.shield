@@ -1,0 +1,5 @@
+# config SHIELD_FSE_DISPLAY_2_8
+# 	bool "FSE Display Shield (ST7789V)"
+
+config SHIELD_FSE_DISPLAY_2_8
+	def_bool $(shields_list_contains,fse_display_2_8)

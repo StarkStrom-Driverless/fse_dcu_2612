@@ -1,0 +1,106 @@
+# Copyright (c) 2025
+# SPDX-License-Identifier: Apache-2.0
+
+title: Himax HX8357 display controller
+
+description: |
+  The Himax HX8357-D is a 16.7M colour TFT-LCD single-chip controller with a
+  maximum 320RGBx480 resolution. It communicates via a 4-wire SPI (MIPI DBI
+  Type C) interface.
+
+  The controller is initialised by the common ILI9xxx MIPI-DBI framework.
+  Standard MIPI DCS commands (SLPOUT, DISPON, CASET, PASET, RAMWR, MADCTL,
+  COLMOD) are handled automatically; all manufacturer-specific registers are
+  configured through the properties below.
+
+  Default values are taken from the Adafruit HX8357D reference initialisation
+  sequence and have been validated on real hardware.
+
+compatible: "himax,hx8357"
+
+include: ilitek,ili9xxx-common.yaml
+
+properties:
+  setextc:
+    type: uint8-array
+    default: [0xff, 0x83, 0x57]
+    description: |
+      Extension command enable key (SETEXTC, 0xB9).
+      Unlocks the manufacturer-specific register set.  Must remain
+      {0xFF, 0x83, 0x57} for HX8357-D; changing this will break
+      initialisation.
+
+  setosc:
+    type: uint8-array
+    default: [0x68]
+    description: |
+      Internal oscillator / frame-rate control (SETOSC, 0xB0).
+      0x68 selects 70 Hz in normal mode and 55 Hz in idle mode.
+      Higher values increase refresh rate at the cost of power consumption.
+
+  setpwr1:
+    type: uint8-array
+    default: [0x00, 0x15, 0x1c, 0x1c, 0x83, 0xaa]
+    description: |
+      Power control 1 (SETPWR1, 0xB1).
+      Six bytes controlling AVDD, AVEE, VGH, VGL and related power rails.
+      Consult the HX8357-D datasheet section "SETPWR1" for bit-field details.
+
+  setrgb:
+    type: uint8-array
+    default: [0x80, 0x00, 0x06, 0x06]
+    description: |
+      RGB / SPI interface control (SETRGB, 0xB3).
+      Byte 0 bit 7 (SDO_EN): 1 = drive SDO/MISO pin (enables display readback),
+      0 = tri-state (write-only, saves power).
+      Bytes 1-3 control interface timing; leave at defaults unless explicitly
+      documented by your panel vendor.
+
+  setcyc:
+    type: uint8-array
+    default: [0x02, 0x40, 0x00, 0x2a, 0x2a, 0x0d, 0x78]
+    description: |
+      Display timing / cycle control (SETCYC, 0xB4).
+      Seven bytes controlling back-porch, front-porch and pixel clock settings.
+
+  setcom:
+    type: uint8-array
+    default: [0x25]
+    description: |
+      VCOM voltage control (SETCOM, 0xB6).
+      A single byte; 0x25 corresponds to approximately −1.52 V.
+      Increase to reduce ghosting; decrease if colours appear washed out.
+
+  setpanel:
+    type: uint8-array
+    default: [0x05]
+    description: |
+      Panel characteristics (SETPANEL, 0xCC).
+      Controls the gate-scan direction and BGR/RGB colour order of the
+      physical panel connection.
+      0x05 = BGR panel, gate top-to-bottom, source S1→S960 (common default).
+      0x09 = RGB panel, gate top-to-bottom, source S1→S960.
+      Change to 0x09 if red and blue channels appear swapped on your display.
+
+  setstba:
+    type: uint8-array
+    default: [0x50, 0x50, 0x01, 0x3c, 0x1e, 0x08]
+    description: |
+      Source timing / balance control (SETSTBA, 0xC0).
+      Six bytes for source amplifier bias, pre-charge timing and related
+      analogue parameters.
+
+  setgamma:
+    type: uint8-array
+    default: [
+      0x02, 0x0a, 0x11, 0x1d, 0x23, 0x35, 0x41, 0x4b, 0x4b,
+      0x42, 0x3a, 0x27, 0x1b, 0x08, 0x09, 0x03, 0x02, 0x0a,
+      0x11, 0x1d, 0x23, 0x35, 0x41, 0x4b, 0x4b, 0x42, 0x3a,
+      0x27, 0x1b, 0x08, 0x09, 0x03, 0x00, 0x01
+    ]
+    description: |
+      Gamma correction curve (SETGAMMA, 0xE0).
+      34 bytes: the first 17 bytes define the positive gamma curve and the
+      second 17 bytes define the negative gamma curve.
+      The defaults reproduce the Adafruit-validated table for standard
+      HX8357-D panels.

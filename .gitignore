@@ -60,3 +60,12 @@ src/generated
 # Generated documentation
 docs/_build
 docs/_build_manual
+
+# Build files
+build
+
+# macOS specific files
+.DS_Store
+
+# DBC files
+*.dbc
