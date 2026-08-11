@@ -78,6 +78,11 @@ jobs:
           fi
 
       - name: Install Doxygen and LaTeX
+        env:
+          # Keeps debconf from asking interactively — tzdata is the usual
+          # offender and would hang the job forever. `-y` only answers apt's
+          # own prompts, not debconf's.
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \

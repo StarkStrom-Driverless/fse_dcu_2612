@@ -469,8 +469,14 @@ git submodule update --remote docs/doxygen-awesome-css
 
 Without a local installation, use a container:
 
+`DEBIAN_FRONTEND=noninteractive` is not optional here: a bare `ubuntu` image
+has no configured `tzdata`, and installing the LaTeX packages pulls it in.
+Without it, debconf stops and asks for a geographic area — `apt-get -y` does
+not help, because it only answers apt's own prompts, not debconf's.
+
 ```sh
 docker run --volume ./fse_dcu_2612/docs:/etc/doxygen/docs --volume ./fse_dcu_2612/src:/etc/doxygen/src \
+           -e DEBIAN_FRONTEND=noninteractive \
            -it --name dcu_doxygen ubuntu:latest
 ```
 
@@ -479,17 +485,24 @@ Inside the container:
 ```sh
 apt-get update
 # HTML only
-apt-get install doxygen graphviz
+apt-get install -y doxygen graphviz
 # Additionally for PDF
-apt-get install texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-                texlive-fonts-recommended texlive-font-utils texlive-lang-german \
-                ghostscript make
+apt-get install -y texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+                   texlive-fonts-recommended texlive-font-utils texlive-lang-german \
+                   ghostscript make
 
 cd /etc/doxygen/docs
 
 doxygen Doxyfile.website          # Website
 doxygen Doxyfile.pdfmanual        # Manual
 make -C _build_manual/latex
+```
+
+If the container was already started without that variable, set it inside
+before installing:
+
+```sh
+export DEBIAN_FRONTEND=noninteractive
 ```
 
 Results: website under `docs/_build`, PDF under
