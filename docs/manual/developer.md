@@ -619,9 +619,9 @@ builds both outputs and uploads them as artifacts, so a reviewer can download
 the PDF and look at the rendered result instead of reading raw Markdown.
 
 Its purpose is to surface a broken documentation build on the pull request
-rather than when a release tag is pushed. In particular it fails on Unicode
-characters that LaTeX cannot typeset, which are easy to introduce and produce
-no warning locally until the PDF build runs.
+rather than when a release tag is pushed — a Unicode character LaTeX cannot
+typeset, for instance, is easy to introduce and stays invisible until the PDF
+build runs.
 
 ## Releasing
 
@@ -643,13 +643,17 @@ increment — you decide the number when you tag. A tag containing a hyphen
    present
 2. Derives `PROJECT_VERSION` from the tag, which Doxygen picks up as
    `PROJECT_NUMBER` — the version on the generated pages matches the release
-3. Builds the HTML website and the PDF manual
-4. Aborts if LaTeX rejected any Unicode characters — box-drawing glyphs
-   (U+2500 to U+257F) and geometric shapes (U+25A0 to U+25FF) have no glyph in
-   the default LaTeX fonts and would otherwise produce a broken PDF
-5. Publishes the HTML to GitHub Pages
-6. Creates the GitHub release with the PDF attached, named
+3. Builds the HTML website and the PDF manual, printing the tail of
+   `refman.log` if LaTeX fails
+4. Publishes the HTML to GitHub Pages
+5. Creates the GitHub release with the PDF attached, named
    `dcu-manual-v1.2.0.pdf`
+
+A LaTeX failure needs no separate guard: `make` propagates a non-zero exit from
+`pdflatex`, so a character with no glyph in the default fonts fails the job on
+its own. Box-drawing glyphs (U+2500 to U+257F) and geometric shapes (U+25A0 to
+U+25FF) are the usual offenders — avoid them in the manual sources and use
+tables instead of ASCII-art trees.
 
 Source archives (zip and tar.gz) are attached by GitHub automatically. They do
 **not** contain submodules — the theme is a build-time dependency of the

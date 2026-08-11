@@ -28,17 +28,16 @@ manifest:
       url-base: https://github.com/StarkStrom-Driverless
 
   projects:
-    # Pinned to the exact commit the firmware is known to build against —
-    # 1780 commits past v4.4.0 on main, which reports itself as 4.4.99
-    # (Zephyr's in-development version, not a release).
+    # Pinned to a release tag rather than a commit: v4.4.x is the maintenance
+    # line, so it receives fixes but no new features — the tree stays stable
+    # for the season.
     #
-    # Moving to a release tag is a one-line change plus a test build. Note
-    # that v4.4.x tags live on the v4.4-branch maintenance line, not on main,
-    # so it is a branch switch rather than just a pin. Verify availability
-    # first:  git ls-remote --tags <zephyr-url> 'v4.4.*'
+    # LVGL is pinned to the same revision here as on main (85aa60d1), so the
+    # UI code sees an unchanged library. Bumping this is a one-line edit plus
+    # `west update` and a test build.
     - name: zephyr
       remote: zephyrproject
-      revision: 7d0ba33997d5d18cbb1f393423bbabaae24258c4
+      revision: v4.4.2
       import: true
 
     # Supplies boards/ss/fse_pb via its zephyr/module.yml (board_root).
