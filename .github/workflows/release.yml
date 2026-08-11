@@ -85,7 +85,11 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
+          # No --no-install-recommends: the texlive packages pull a good part
+          # of what pdflatex needs through Recommends. Stripping them makes
+          # the LaTeX run die while parsing refman.tex, with the reason only
+          # visible in refman.log.
+          sudo apt-get install -y \
             doxygen graphviz \
             texlive-latex-base texlive-latex-recommended texlive-latex-extra \
             texlive-fonts-recommended texlive-font-utils texlive-lang-german \
@@ -99,7 +103,14 @@ jobs:
         working-directory: docs
         run: |
           doxygen Doxyfile.pdfmanual
-          make -C _build_manual/latex
+          # pdflatex writes the real reason into refman.log and make only
+          # reports "Error 1". Without this the job fails with no usable
+          # message — a missing .sty looks exactly like a broken document.
+          if ! make -C _build_manual/latex; then
+            echo "::error::LaTeX build failed. Last 60 lines of refman.log:"
+            tail -n 60 _build_manual/latex/refman.log || true
+            exit 1
+          fi
 
       - name: Check LaTeX log for rejected Unicode
         working-directory: docs
