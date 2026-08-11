@@ -68,7 +68,7 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 #endif
 
 /** @brief Thread stack size for the lighting thread. */
-#define LIGHTING_THREAD_STACK_SIZE  4096U
+#define LIGHTING_THREAD_STACK_SIZE  2048U
 
 /** @brief Scheduling priority for the lighting thread. */
 #define LIGHTING_THREAD_PRIORITY    7
@@ -83,6 +83,40 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
  * the scanner came from, each dimmer than the previous.
  */
 static const uint8_t k_kitt_trail[] = {255, 100, 35, 10};
+
+/* ── Gear animation ──────────────────────────────────────────────────────── */
+
+/** @brief Number of gear teeth distributed across the strip. */
+#define GEAR_NUM_TEETH      6U
+
+/** @brief Time per animation step in ms. One full rotation = LUT_SIZE steps. */
+#define GEAR_STEP_MS        40U
+
+/** @brief LUT size; must be a power of 2 for the modulo to stay cheap. */
+#define GEAR_LUT_SIZE       64U
+
+/* Orange 0xfa6e00 */
+#define GEAR_R  255U
+#define GEAR_G   60U
+#define GEAR_B    0U
+
+/*
+ * sin^4(2π·i/64) · 255  for i = 0..31, then 0 for i = 32..63.
+ *
+ * sin^4 gives narrower, sharper peaks than sin^2, which better
+ * resembles distinct gear teeth.  The negative half of the sine wave
+ * is clamped to 0, creating a dark valley between each tooth.
+ */
+static const uint8_t k_gear_lut[GEAR_LUT_SIZE] = {
+      0,   0,   0,   2,   5,  13,  24,  41,
+     64,  91, 122, 154, 186, 214, 236, 250,
+    255, 250, 236, 214, 186, 154, 122,  91,
+     64,  41,  24,  13,   5,   2,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,
+};
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -133,18 +167,50 @@ static void kitt_step(int32_t *cursor, int32_t *dir)
     }
 }
 
+/**
+ * @brief Render one gear animation frame and advance the phase.
+ *
+ * Maps each LED index to a LUT entry via:
+ *   idx = (i * TEETH * LUT_SIZE / NUM_LEDS + phase) % LUT_SIZE
+ *
+ * Incrementing phase by 1 each step rotates all teeth by 1/LUT_SIZE
+ * of a full strip-width, giving smooth motion without float arithmetic.
+ *
+ * @param phase  Current animation phase (0 … GEAR_LUT_SIZE-1).
+ */
+static void gear_step(uint8_t *phase)
+{
+    for (int32_t i = 0; i < (int32_t)LIGHTING_NUM_PIXELS; i++) {
+        uint8_t idx = (uint8_t)(
+            ((uint32_t)i * (GEAR_LUT_SIZE * GEAR_NUM_TEETH) / LIGHTING_NUM_PIXELS
+             + *phase)
+            % GEAR_LUT_SIZE
+        );
+        uint8_t v = k_gear_lut[idx];
+        s_pixels[i].r = (uint8_t)((uint32_t)GEAR_R * v / 255U);
+        s_pixels[i].g = (uint8_t)((uint32_t)GEAR_G * v / 255U);
+        s_pixels[i].b = 0U;
+    }
+
+    int ret = led_strip_update_rgb(s_strip, s_pixels, LIGHTING_NUM_PIXELS);
+    if (ret != 0) {
+        LOG_ERR("led_strip_update_rgb failed: %d", ret);
+    }
+
+    *phase = (*phase + 1U) % GEAR_LUT_SIZE;
+}
+
 static void lighting_thread_fn(void *p1, void *p2, void *p3)
 {
     ARG_UNUSED(p1);
     ARG_UNUSED(p2);
     ARG_UNUSED(p3);
 
-    int32_t cursor = 0;
-    int32_t dir    = +1;
+    uint8_t phase = 0U;
 
     while (true) {
-        kitt_step(&cursor, &dir);
-        k_msleep(LIGHTING_STEP_MS);
+        gear_step(&phase);
+        k_msleep(GEAR_STEP_MS);
     }
 }
 

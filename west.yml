@@ -1,0 +1,51 @@
+# West manifest for the FSE DCU 2612 workspace.
+#
+# This repository is both the application and the manifest repository, so a
+# complete, reproducible workspace is two commands:
+#
+#     west init -m https://github.com/StarkStrom-Driverless/fse_dcu_2612
+#     west update
+#
+# Resulting layout:
+#
+#     workspace/
+#     ├── fse_dcu_2612/        this repository (application + manifest)
+#     ├── zephyr/              pinned upstream Zephyr
+#     ├── modules/             Zephyr modules, pulled in by the import below
+#     └── fse_pb_bootloader/   provides the fse_pb board definition
+#
+# Nothing is copied into the Zephyr tree. The board is found through the
+# module.yml in fse_pb_bootloader, the fse_dcu_2612 shield through the
+# BOARD_ROOT entry in our CMakeLists.txt.
+
+manifest:
+  version: "1.0"
+
+  remotes:
+    - name: zephyrproject
+      url-base: https://github.com/zephyrproject-rtos
+    - name: starkstrom
+      url-base: https://github.com/StarkStrom-Driverless
+
+  projects:
+    # Pinned to the exact commit the firmware is known to build against —
+    # 1780 commits past v4.4.0 on main, which reports itself as 4.4.99
+    # (Zephyr's in-development version, not a release).
+    #
+    # Moving to a release tag is a one-line change plus a test build. Note
+    # that v4.4.x tags live on the v4.4-branch maintenance line, not on main,
+    # so it is a branch switch rather than just a pin. Verify availability
+    # first:  git ls-remote --tags <zephyr-url> 'v4.4.*'
+    - name: zephyr
+      remote: zephyrproject
+      revision: 7d0ba33997d5d18cbb1f393423bbabaae24258c4
+      import: true
+
+    # Supplies boards/ss/fse_pb via its zephyr/module.yml (board_root).
+    # Also holds the MCUboot configuration for the processor board.
+    - name: fse_pb_bootloader
+      remote: starkstrom
+      revision: feat-zephyr-modul
+
+  self:
+    path: fse_dcu_2612

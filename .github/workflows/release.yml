@@ -1,0 +1,183 @@
+# Release workflow
+#
+# Triggered by pushing a version tag.  The tag is the single source of truth
+# for the version — it feeds Doxygen's PROJECT_NUMBER, the PDF filename and
+# the GitHub release.  There is no automatic increment; you decide the version
+# when you tag:
+#
+#   git tag v1.2.0
+#   git push origin v1.2.0
+#
+# A tag containing a hyphen (v1.2.0-rc1) is published as a pre-release.
+#
+# One-time setup: Settings > Pages > Source must be set to "GitHub Actions",
+# otherwise the deploy job fails with "Pages site not found".
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # The Doxygen theme (docs/doxygen-awesome-css) is a submodule.
+          # Without it the HTML falls back to default styling — silently.
+          submodules: recursive
+
+      - name: Derive version from tag
+        run: echo "PROJECT_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Check tag against VERSION file
+        run: |
+          # The tag is the public version (2612.1.0); the VERSION file carries
+          # the vehicle index (12.1.0) because Zephyr and the MCUboot image
+          # header only give the major field 8 bits. Verify they agree so a
+          # release can never ship firmware that reports a different version
+          # than the tag it was built from.
+          set -u
+
+          tag="${GITHUB_REF_NAME#v}"
+          tag="${tag%%-*}"                 # drop a pre-release suffix
+          tag_major="${tag%%.*}"
+          rest="${tag#*.}"
+          tag_minor="${rest%%.*}"
+          tag_patch="${rest#*.}"
+
+          v_major=$(sed -n 's/^VERSION_MAJOR *= *\([0-9][0-9]*\).*/\1/p' VERSION)
+          v_minor=$(sed -n 's/^VERSION_MINOR *= *\([0-9][0-9]*\).*/\1/p' VERSION)
+          v_patch=$(sed -n 's/^PATCHLEVEL *= *\([0-9][0-9]*\).*/\1/p' VERSION)
+          year=$(sed -n 's/^DCU_VEHICLE_YEAR *= *\([0-9][0-9]*\).*/\1/p' VERSION)
+
+          if [ -z "$v_major" ] || [ -z "$v_minor" ] || [ -z "$v_patch" ] || [ -z "$year" ]; then
+            echo "::error::Could not parse VERSION"
+            exit 1
+          fi
+
+          expected_major=$(( year * 100 + v_major ))
+          expected="${expected_major}.${v_minor}.${v_patch}"
+
+          echo "tag:      $tag"
+          echo "VERSION:  ${v_major}.${v_minor}.${v_patch}  (year ${year})"
+          echo "expected: $expected"
+
+          if [ "$tag" != "$expected" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match the VERSION file (expected v${expected})."
+            echo "Update VERSION and CMakeLists.txt before tagging, or retag."
+            exit 1
+          fi
+
+      - name: Install Doxygen and LaTeX
+        env:
+          # Keeps debconf from asking interactively — tzdata is the usual
+          # offender and would hang the job forever. `-y` only answers apt's
+          # own prompts, not debconf's.
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          # No --no-install-recommends: the texlive packages pull a good part
+          # of what pdflatex needs through Recommends. Stripping them makes
+          # the LaTeX run die while parsing refman.tex, with the reason only
+          # visible in refman.log.
+          sudo apt-get install -y \
+            doxygen graphviz \
+            texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-font-utils texlive-lang-german \
+            ghostscript make
+
+      - name: Build HTML
+        working-directory: docs
+        run: doxygen Doxyfile.website
+
+      - name: Build PDF
+        working-directory: docs
+        run: |
+          doxygen Doxyfile.pdfmanual
+          # make propagates a pdflatex failure — including LaTeX errors such
+          # as a character with no glyph in the default fonts (box-drawing
+          # glyphs U+2500-U+257F and geometric shapes U+25A0-U+25FF are the
+          # usual offenders). make itself only reports "Error 1", so print
+          # the log: that is where the actual reason is.
+          if ! make -C _build_manual/latex; then
+            echo "::error::LaTeX build failed. Last 60 lines of refman.log:"
+            tail -n 60 _build_manual/latex/refman.log || true
+            exit 1
+          fi
+          # A successful make should have produced the file.
+          test -f _build_manual/latex/refman.pdf
+
+      - name: Name the PDF after the tag
+        run: cp docs/_build_manual/latex/refman.pdf "dcu-manual-${GITHUB_REF_NAME}.pdf"
+
+      - name: Upload PDF for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual-pdf
+          path: dcu-manual-*.pdf
+          if-no-files-found: error
+
+      - name: Upload HTML for the Pages job
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  pages:
+    name: Publish to GitHub Pages
+    needs: docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    # Pages allows one deployment at a time; never cancel a running one.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  release:
+    name: Create GitHub release
+    needs: docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download PDF
+        uses: actions/download-artifact@v4
+        with:
+          name: manual-pdf
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A hyphen in the tag marks a pre-release: v1.2.0-rc1, v0.9.0-beta
+          prerelease=""
+          case "$GITHUB_REF_NAME" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+
+          # Source archives (zip/tar.gz) are attached by GitHub automatically.
+          # Note: they do not contain submodules — the theme is a build-time
+          # dependency of the docs only, so that is intentional.
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DCU $GITHUB_REF_NAME" \
+            --generate-notes \
+            $prerelease \
+            dcu-manual-*.pdf

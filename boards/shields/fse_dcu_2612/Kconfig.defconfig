@@ -1,0 +1,58 @@
+
+if SHIELD_FSE_DCU_2612
+
+# Display und LED-Streifen hängen beide am SPI, das Backlight an einem Timer.
+# Beides ist Shield-Hardware, deshalb hier statt in prj.conf.
+config SPI
+	default y
+
+config PWM
+	default y
+
+# DMA-Transfers für SPI2 (STM32F405RG).
+# Entlastet die CPU komplett vom Pixel-Transfer – größter Einzelgewinn
+# bei Full-Refresh-Geschwindigkeit.
+config SPI_STM32_DMA
+	default y
+
+if DISPLAY
+
+if LVGL
+
+# Drehencoder der DCU-Platine an LVGL anbinden.
+config LV_Z_ENCODER_INPUT
+	default y
+
+config LV_Z_BITS_PER_PIXEL
+	default 16
+
+choice LV_COLOR_DEPTH
+	default LV_COLOR_DEPTH_16
+endchoice
+
+# RGB565 über 8-Bit-SPI: LVGL muss Bytes vorab tauschen (Big-Endian für Display).
+config LV_COLOR_16_SWAP
+	default y
+
+# Zeichenpuffergröße als Prozentsatz der Displayfläche (320×480 = 307.200 Byte).
+# Größerer Puffer → weniger SPI-Transaktionen pro Frame → schnelleres Rendering.
+#   10 % ≈  30 KB  (Zephyr-Default, Minimum)
+#   20 % ≈  60 KB  (guter Kompromiss für STM32F4 mit ≥128 KB RAM)
+#   50 % ≈ 150 KB  (empfohlen wenn RAM vorhanden, z. B. STM32H7)
+#  100 % ≈ 300 KB  (vollständiger Framebuffer, kein Tearing möglich)
+config LV_Z_VDB_SIZE
+	default 20
+
+# Double-Buffering: LVGL rendert in Puffer A, während DMA Puffer B sendet.
+# Setzt SPI_STM32_DMA voraus (oben aktiviert). Verdoppelt den RAM-Bedarf
+# des Zeichenpuffers (2 × LV_Z_VDB_SIZE % der Displayfläche).
+# STM32F405RG hat 192 KB SRAM – bei VDB_SIZE=20 werden 2 × 60 KB = 120 KB
+# für die Zeichenpuffer belegt; das passt, solange Stack/Heap klein bleiben.
+# config LV_Z_DOUBLE_VDB
+# 	default y if SPI_STM32_DMA
+
+endif # LVGL
+
+endif # DISPLAY
+
+endif # SHIELD_FSE_DCU_2612

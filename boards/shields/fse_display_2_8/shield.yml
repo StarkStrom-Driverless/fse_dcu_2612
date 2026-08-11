@@ -1,0 +1,6 @@
+shields:
+  - name: fse_display_2_8
+    full_name: FSE Display 2.8" (ST7789V)
+    vendor: StarkStrom Augsburg e.V.
+    supported_features:
+      - display

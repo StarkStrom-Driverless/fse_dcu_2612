@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Application-level configuration for the FSE DCU 2612.
+
+menu "FSE DCU 2612"
+
+config DCU_SETTINGS_PERSIST
+	bool "Persist settings to non-volatile storage"
+	default n
+	select FLASH
+	select FLASH_MAP
+	select NVS
+	select SETTINGS
+	# The backend is not selected here: SETTINGS_NVS belongs to the
+	# SETTINGS_BACKEND choice, and select has no effect on choice symbols.
+	# That choice already carries "default SETTINGS_NVS if NVS", so pulling
+	# in NVS above is what picks the backend.
+	help
+	  Store the settings blob in NVS so it survives a power cycle.
+
+	  Disabled until the external SPI NOR flash is populated on the board.
+	  With it off the settings service keeps its complete API — screens and
+	  the CAN layer are unaffected — but holds values in RAM only, so every
+	  boot starts from the schema defaults generated out of dbc/dcu_app.yaml.
+
+	  Enabling this requires a storage_partition in the devicetree. On the
+	  internal STM32F405 flash that costs 256 KB of application space,
+	  because NVS needs two 128 KB erase sectors. See docs/settings_module.md.
+
+endmenu
+
+source "Kconfig.zephyr"

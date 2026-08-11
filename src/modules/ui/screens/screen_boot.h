@@ -75,6 +75,6 @@
  *
  * @return  Pointer to the created screen object.  Never NULL.
  */
-lv_obj_t *screen_boot_create(void);
+lv_obj_t *screen_boot_create(lv_subject_t *status_subjects);
 
 #endif /* MODULES_UI_SCREENS_SCREEN_BOOT_H */

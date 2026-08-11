@@ -87,7 +87,7 @@
  *
  * @return  Pointer to the top-level screen object.  Never NULL.
  */
-lv_obj_t *screen_mission_select_create(void);
+lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects);
 
 /**
  * @brief Return the LVGL input group for the right encoder.

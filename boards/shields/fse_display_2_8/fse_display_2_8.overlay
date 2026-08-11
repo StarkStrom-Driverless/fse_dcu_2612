@@ -1,0 +1,98 @@
+/*
+ * FSE Display Shield – ST7789V via SPI2
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * GPIO-Verbindungen:
+ *   CS    → PA9   (GPIO, Active Low)
+ *   DC    → PB13  (Data/Command, Active High)
+ *   RESET → PD2   (Active Low)
+
+ */
+
+#include <zephyr/dt-bindings/mipi_dbi/mipi_dbi.h>
+#include <zephyr/dt-bindings/display/panel.h>
+
+/ {
+	chosen {
+		zephyr,display = &st7789v_fse;
+	};
+
+	/*
+	 * MIPI DBI ist der Abstraktionslayer zwischen Zephyr Display-API
+	 * und dem konkreten SPI-Bus. Er managed DC-GPIO und Reset.
+	 */
+	mipi_dbi_fse_display_2_8: mipi_dbi_fse_display_2_8 {
+		compatible = "zephyr,mipi-dbi-spi";
+		spi-dev = <&spi2>;
+
+		/* DC-Pin: High = Daten, Low = Command */
+		dc-gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>;
+
+		/* Reset: Low-Puls beim Init */
+		reset-gpios = <&gpiod 2 GPIO_ACTIVE_LOW>;
+
+		/*
+		 * write-only: ST7789V kann prinzipiell lesen, aber die
+		 * meisten Designs sind write-only verdrahtet (spart MISO-Leitung).
+		 * Entfernen, falls dein Shield MISO durchschleift.
+		 */
+		write-only;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		st7789v_fse: st7789v@0 {
+			compatible = "sitronix,st7789v";
+			reg = <0>; /* CS-Index: entspricht erstem Eintrag in cs-gpios */
+
+			/* SPI-Taktlimit des ST7789V: 20 MHz (Datenblatt: bis 64 MHz,
+			 * aber 20 MHz ist ein konservativer, stabiler Wert) */
+			mipi-max-frequency = <20000000>;
+			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+
+			/* Display-Geometrie */
+			width = <240>;
+			height = <320>;
+			x-offset = <0>;
+			y-offset = <0>;
+			pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
+
+			/* Initialisierungsparameter (aus deinem bestehenden Overlay) */
+			vcom = <0x2b>;
+			gctrl = <0x35>;
+			vrhs = <0x0b>;
+			vdvs = <0x20>;
+			mdac = <0x00>;
+			lcm = <0x2c>;
+			gamma = <0x01>;
+			porch-param = [05 05 00 33 33];
+			cmd2en-param = [5a 69 02 01];
+			pwctrl1-param = [a4 a1];
+			pvgam-param = [d0 06 0b 0a 09 05 2e 43 44 09 16 15 23 27];
+			nvgam-param = [d0 06 0b 09 08 06 2e 44 44 3a 15 15 23 26];
+			ram-param = [00 f8];
+			rgb-param = [cd 08 14];
+		};
+	};
+};
+
+/*
+ * SPI2 Node-Overlay:
+ * - Aktiviert den Bus (überschreibt "disabled" aus dem Board-DTS)
+ * - Fügt cs-gpios hinzu (Shield-spezifisch)
+ *
+ * cs-gpios ist ein Array – bei mehreren SPI-Geräten am selben Bus
+ * kommen hier mehrere Einträge rein, reg = <0>, <1>, ... im Device.
+ */
+&spi2 {
+	/*
+	 * 2,8": Steckverbinder-Pin 31 = SCK -> PB13, Pin 32 = DC -> PB10.
+	 * Beim 3,5"-Display sind die beiden Pins genau vertauscht, deshalb
+	 * bringt jedes Display-Shield seine eigene Pinbelegung mit und
+	 * überschreibt damit die Voreinstellung aus dem Board-DTS.
+	 */
+	pinctrl-0 = <&spi2_sck_pb13 &spi2_mosi_pc3 &spi2_miso_pc2>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioa 12 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};

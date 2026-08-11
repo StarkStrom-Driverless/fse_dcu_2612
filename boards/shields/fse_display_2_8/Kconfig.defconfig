@@ -1,0 +1,20 @@
+
+if SHIELD_FSE_DISPLAY_2_8
+
+if DISPLAY
+
+if LVGL
+
+config LV_Z_BITS_PER_PIXEL
+	default 16 if SHIELD_FSE_DISPLAY_2_8
+
+choice LV_COLOR_DEPTH
+	default LV_COLOR_DEPTH_16 if SHIELD_FSE_DISPLAY_2_8
+endchoice
+
+
+endif # LVGL
+
+endif # DISPLAY
+
+endif # SHIELD_FSE_DISPLAY_2_8

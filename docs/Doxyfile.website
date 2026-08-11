@@ -1,0 +1,5 @@
+@INCLUDE = Doxyfile.common
+INPUT           = index.md manual ../src
+GENERATE_HTML   = YES
+GENERATE_LATEX  = NO
+OUTPUT_DIRECTORY = _build

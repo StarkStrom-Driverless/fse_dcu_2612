@@ -63,8 +63,10 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "modules/ui/ui_styles.h"
+#include "modules/ui/widgets/ui_header.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "generated/ui_tx_subjects_gen.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -121,6 +123,9 @@ LOG_MODULE_REGISTER(screen_debug_write, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
+static lv_subject_t s_roller_sel;  /* currently highlighted roller index */
+static bool         s_subjects_init;
+
 /** @brief Mission roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
 
@@ -144,7 +149,6 @@ static lv_group_t *s_right_button_group;
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static void build_header(lv_obj_t *scr);
 static void build_roller(lv_obj_t *scr);
 static void build_buttons(lv_obj_t *scr);
 static void btn_ok_event_cb(lv_event_t *e);
@@ -153,22 +157,15 @@ static void btn_ok_event_cb(lv_event_t *e);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
-static void build_header(lv_obj_t *scr)
+static void roller_value_changed_cb(lv_event_t *e)
 {
-    lv_obj_t *header = lv_obj_create(scr);
-    lv_obj_remove_style_all(header);
-    lv_obj_add_style(header, &ui_style_header, 0);
-    lv_obj_set_width(header,  lv_pct(100));
-    lv_obj_set_height(header, lv_pct(15));
-    lv_obj_align(header, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
+    lv_subject_set_int(&s_roller_sel, (int32_t)lv_roller_get_selected(lv_event_get_target_obj(e)));
+}
 
-    lv_obj_t *title = lv_label_create(header);
-    lv_obj_add_style(title, &ui_style_label_title, 0);
-    /* White text: gradient ends in UI_C_DARK, dark-on-dark would be illegible. */
-    // lv_obj_set_style_text_color(title, UI_C_WHITE, 0);
-    lv_label_set_text(title, "DBG TX");
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);
+static void confirmed_bits_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
+{
+    lv_obj_t *lbl = lv_observer_get_target_obj(observer);
+    lv_label_set_text_fmt(lbl, "Current Debug Bits: %d", (int)lv_subject_get_int(subject));
 }
 
 static void build_roller(lv_obj_t *scr)
@@ -177,7 +174,7 @@ static void build_roller(lv_obj_t *scr)
 
     lv_roller_set_options(s_roller, ROLLER_OPTIONS, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller, ROLLER_VISIBLE_ROWS);
-    lv_roller_set_selected(s_roller, 0, LV_ANIM_OFF); /* default: MISSION_NONE */
+    lv_roller_set_selected(s_roller, (uint16_t)lv_subject_get_int(&s_roller_sel), LV_ANIM_OFF);
 
     lv_obj_set_width(s_roller, ROLLER_WIDTH);
 
@@ -198,16 +195,15 @@ static void build_roller(lv_obj_t *scr)
 
     /* Vertically centred in the content area below the 15 % header. */
     lv_obj_align(s_roller, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_add_event_cb(s_roller, roller_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    /* ── Curent selected item ───────────────────────────── */
-
-    char buf[32];
-    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
+    /* ── Confirmed bits label (observer-driven) ─────────────────────────── */
 
     s_roller_lbl = lv_label_create(scr);
     lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
-    lv_label_set_text_fmt(s_roller_lbl, "Current Debug Bits %s", buf);
     lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, 0, 35);
+    lv_subject_add_observer_obj(&ui_tx_subj_debug_bits, confirmed_bits_observer_cb,
+                                s_roller_lbl, NULL);
 }
 
 static void build_buttons(lv_obj_t *scr)
@@ -260,10 +256,6 @@ static void build_buttons(lv_obj_t *scr)
 static void btn_ok_event_cb(lv_event_t *e)
 {
     ARG_UNUSED(e);
-    char buf[32];
-
-    lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
-
     uint16_t idx = lv_roller_get_selected(s_roller);
 
     struct ui_input_event evt = {
@@ -273,11 +265,11 @@ static void btn_ok_event_cb(lv_event_t *e)
 
     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
     if (ret != 0) {
-        LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
+        LOG_WRN("UI_INPUT_DEBUG_BITS_SELECTED publish failed (bits=%u): %d",
                 (unsigned)idx, ret);
     } else {
-        lv_label_set_text_fmt(s_roller_lbl, "Current Debug Bits %s", buf);
-        LOG_DBG("Mission selected: %u", (unsigned)idx);
+        lv_subject_set_int(&ui_tx_subj_debug_bits, (int32_t)idx);
+        LOG_DBG("Debug bits selected: %u", (unsigned)idx);
     }
 }
 
@@ -314,9 +306,14 @@ static void btn_ok_event_cb(lv_event_t *e)
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
-lv_obj_t *screen_debug_write_create(void)
+lv_obj_t *screen_debug_write_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
+
+    if (!s_subjects_init) {
+        lv_subject_init_int(&s_roller_sel, 0);
+        s_subjects_init = true;
+    }
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_remove_style_all(scr);
@@ -325,7 +322,7 @@ lv_obj_t *screen_debug_write_create(void)
 
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
-    build_header(scr);
+    ui_header_create(scr, "DBG TX", status_subjects);
     build_roller(scr);
     build_buttons(scr);
 
@@ -364,3 +361,4 @@ lv_group_t *screen_debug_write_get_right_button_group(void)
 {
     return s_right_button_group;
 }
+

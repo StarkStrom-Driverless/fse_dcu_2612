@@ -18,7 +18,6 @@
  *              ui_input_chan   — driver interactions (mission selection, RTD, …)
  *              can_status_chan — CAN bus connectivity and error state
  *              can_data_chan   — decoded CAN signal snapshots
- *              safety_chan     — safety-critical signal changes
  *              settings_chan   — settings load / update events  (TODO)
  *              feedback_chan   — effect completion feedback      (TODO)
  *
@@ -67,6 +66,7 @@
 #include "app/app_state.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "services/settings/settings.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -107,7 +107,6 @@ ZBUS_SUBSCRIBER_DEFINE(app_sub, 8);
 ZBUS_CHAN_ADD_OBS(ui_input_chan,   app_sub, 0);
 ZBUS_CHAN_ADD_OBS(can_status_chan, app_sub, 0);
 ZBUS_CHAN_ADD_OBS(can_data_chan,   app_sub, 0);
-ZBUS_CHAN_ADD_OBS(safety_chan,     app_sub, 0);
 ZBUS_CHAN_ADD_OBS(settings_chan,   app_sub, 0);
 ZBUS_CHAN_ADD_OBS(feedback_chan,   app_sub, 0);
 
@@ -118,7 +117,6 @@ static void pub_ui_cmd(const struct ui_cmd *cmd);
 static void handle_ui_input(const struct ui_input_event *evt);
 static void handle_can_status(const struct can_status_event *evt);
 static void handle_can_data(const struct can_data_snapshot *snap);
-static void handle_safety(const struct safety_event *evt);
 static void app_thread_fn(void *p1, void *p2, void *p3);
 
 
@@ -185,32 +183,24 @@ static void handle_ui_input(const struct ui_input_event *evt)
         break;
     }
 
-    case UI_INPUT_RTD_REQUEST: {
-        /* Lock the mission so the driver cannot change it mid-run */
-        struct app_state_mission mission;
-        app_state_get_mission(&mission);
-        mission.active = true;
-        mission.locked = true;
-        app_state_set_mission(&mission);
-
+    case UI_INPUT_RTD_REQUEST:
         /*
-         * Setting the mode to RTD is sufficient: the CAN module checks
-         * app_state_get_mode() == OPERATING_MODE_RTD each cycle and sets
-         * RTD_Button = 1 automatically.
+         * RTD button pressed — activate RTD signal.
+         * The CAN module reads app_state_get_mode() every cycle; setting
+         * OPERATING_MODE_RTD causes it to set RTD_Button = 1 immediately.
          */
         app_state_set_mode(OPERATING_MODE_RTD);
-
-        /* Navigate to the RTD screen — ui.c logs a warning if not yet built */
-        struct ui_cmd ui_nav = {
-            .type        = UI_CMD_SET_SCREEN,
-            .data.screen = SCREEN_RTD,
-        };
-        pub_ui_cmd(&ui_nav);
-
-        LOG_INF("RTD request sent — operating mode: RTD, mission: %d",
-                (int)mission.selected);
+        LOG_INF("RTD pressed — RTD=1");
         break;
-    }
+
+    case UI_INPUT_RTD_RELEASE:
+        /*
+         * RTD button released — deactivate RTD signal.
+         * Return to DEBUG so the CAN module sends RTD_Button = 0.
+         */
+        app_state_set_mode(OPERATING_MODE_DEBUG);
+        LOG_INF("RTD released — RTD=0");
+        break;
 
     case UI_INPUT_BACK: {
         /* ESC button: return to boot screen unconditionally */
@@ -226,7 +216,11 @@ static void handle_ui_input(const struct ui_input_event *evt)
 
     case UI_INPUT_DEBUG_BITS_SELECTED: {
         uint8_t bits = evt->data.debug_bits;
-        app_state_set_debug_bits(bits);
+        /*
+         * The Settings service owns this value: it clamps to the schema range,
+         * persists it, and the CAN module reads it back on the next TX cycle.
+         */
+        (void)settings_set(SETTING_DEBUG_BITS, bits);
         LOG_INF("Debug bits set: %u (0x%02X)", (unsigned)bits, (unsigned)bits);
         break;
     }
@@ -235,6 +229,8 @@ static void handle_ui_input(const struct ui_input_event *evt)
         LOG_INF("Timestamp: %lld ms", (long long)k_uptime_get());
         break;
 
+    case UI_INPUT_TORQUE_VECT_ON:
+    case UI_INPUT_TORQUE_VECT_OFF:
     case UI_INPUT_CONFIRM:
     case UI_INPUT_ENCODER_UP:
     case UI_INPUT_ENCODER_DOWN:
@@ -330,59 +326,6 @@ static void handle_can_data(const struct can_data_snapshot *snap)
  * Safety event handler
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
 
-/**
- * @brief Update safety flags in app_state based on incoming CAN safety events.
- *
- * The current system sub-state is read first so unrelated flags are not
- * inadvertently cleared during a delta update.
- *
- * @note Full safety response (SCREEN_ERROR, lighting/audio override) is
- *       deferred to a future implementation phase.  Lighting and Audio modules
- *       already subscribe directly to safety_chan for immediate override.
- */
-static void handle_safety(const struct safety_event *evt)
-{
-    struct app_state_system sys;
-    app_state_get_system(&sys);
-
-    switch (evt->type) {
-    case SAFETY_EVT_IMD_FAULT:
-        app_state_set_safety_flags(false, sys.ams_ok, sys.ts_active);
-        app_state_set_system_flags(true, sys.warning_active);
-        LOG_ERR("Safety: IMD fault");
-        break;
-
-    case SAFETY_EVT_AMS_FAULT:
-        app_state_set_safety_flags(sys.imd_ok, false, sys.ts_active);
-        app_state_set_system_flags(true, sys.warning_active);
-        LOG_ERR("Safety: AMS fault");
-        break;
-
-    case SAFETY_EVT_SHUTDOWN_OPEN:
-        app_state_set_safety_flags(sys.imd_ok, sys.ams_ok, false);
-        LOG_WRN("Safety: shutdown circuit open");
-        break;
-
-    case SAFETY_EVT_SHUTDOWN_CLOSED:
-        LOG_INF("Safety: shutdown circuit closed");
-        break;
-
-    case SAFETY_EVT_TS_OFF:
-        app_state_set_safety_flags(sys.imd_ok, sys.ams_ok, false);
-        LOG_INF("Safety: TS off");
-        break;
-
-    case SAFETY_EVT_TS_ACTIVE:
-        app_state_set_safety_flags(sys.imd_ok, sys.ams_ok, true);
-        LOG_INF("Safety: TS active");
-        break;
-
-    default:
-        LOG_WRN("Unknown safety event type: %d", (int)evt->type);
-        break;
-    }
-}
-
 /* ──────────────────────────────────────────────────────────────────────────────────────────────
  * App thread
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -446,12 +389,6 @@ static void app_thread_fn(void *p1, void *p2, void *p3)
             struct can_data_snapshot snap;
             if (zbus_chan_read(&can_data_chan, &snap, K_MSEC(10)) == 0) {
                 handle_can_data(&snap);
-            }
-
-        } else if (chan == &safety_chan) {
-            struct safety_event evt;
-            if (zbus_chan_read(&safety_chan, &evt, K_MSEC(10)) == 0) {
-                handle_safety(&evt);
             }
 
         } else if (chan == &settings_chan) {

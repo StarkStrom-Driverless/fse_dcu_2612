@@ -7,11 +7,12 @@
  *              to or subscribes from a channel.
  *
  *              Channel directions:
- *                Upward   (Module → App) : can_status_chan, can_data_chan,
- *                                          ui_input_chan, safety_chan,
- *                                          settings_chan, feedback_chan
- *                Downward (App → Module) : ui_cmd_chan, lighting_cmd_chan,
- *                                          audio_cmd_chan, can_tx_cmd_chan
+ *                Upward      (Module → App)  : can_status_chan, can_data_chan,
+ *                                              ui_input_chan, settings_chan,
+ *                                              feedback_chan
+ *                Cross-module (App → All)    : vehicle_status_chan
+ *                Downward    (App → Module)  : ui_cmd_chan, lighting_cmd_chan,
+ *                                              audio_cmd_chan, can_tx_cmd_chan
  *
  *              Subscribers register themselves using ZBUS_CHAN_ADD_OBS in
  *              their own source files. See docs/event_system.md for the
@@ -59,20 +60,17 @@ ZBUS_CHAN_DECLARE(can_data_chan);
 /** Semantic driver input events (published by UI module). */
 ZBUS_CHAN_DECLARE(ui_input_chan);
 
-/**
- * Safety-critical events decoded from CAN.
- *
- * @note Subscribed by App, Lighting, and Audio modules. Lighting and Audio
- *       react directly for immediate override without waiting for App
- *       (safety fast-path). See docs/event_system.md for rationale.
- */
-ZBUS_CHAN_DECLARE(safety_chan);
-
 /** Settings lifecycle events (published by Settings module). */
 ZBUS_CHAN_DECLARE(settings_chan);
 
 /** Effect completion signals from Lighting and Audio modules. */
 ZBUS_CHAN_DECLARE(feedback_chan);
+
+
+/* ── Cross-Module Channel Declarations: App → All ───────────────────────────────────────────── */
+
+/** Vehicle device health status (published by App; UI, Audio, Lighting may subscribe). */
+ZBUS_CHAN_DECLARE(vehicle_status_chan);
 
 
 /* ── Downward Channel Declarations: App → Module ─────────────────────────────────────────────── */

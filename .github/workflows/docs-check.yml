@@ -1,0 +1,115 @@
+# Documentation check
+#
+# Builds the website and the PDF manual without publishing anything, so a
+# broken documentation build surfaces on the pull request instead of when a
+# release tag is pushed.
+#
+# Both outputs are uploaded as artifacts — reviewers can download the PDF and
+# look at the rendered result rather than reading raw Markdown.
+#
+# The release workflow (.github/workflows/release.yml) runs the same build.
+# Keep the install and build steps here in sync with it.
+
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "src/**"
+      - ".github/workflows/docs-check.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "src/**"
+      - ".github/workflows/docs-check.yml"
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the running check obsolete.
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build website and PDF
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # The Doxygen theme (docs/doxygen-awesome-css) is a submodule.
+          # Without it the HTML falls back to default styling — silently.
+          submodules: recursive
+
+      - name: Derive a version label
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          # No tag here, so label the build by its origin. Keeps
+          # PROJECT_NUMBER from rendering empty on the generated pages.
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            label="PR ${PR_NUMBER} (${GITHUB_SHA:0:7})"
+          else
+            label="${GITHUB_REF_NAME} (${GITHUB_SHA:0:7})"
+          fi
+          echo "PROJECT_VERSION=$label" >> "$GITHUB_ENV"
+
+      - name: Install Doxygen and LaTeX
+        env:
+          # Keeps debconf from asking interactively — tzdata is the usual
+          # offender and would hang the job forever. `-y` only answers apt's
+          # own prompts, not debconf's.
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          # No --no-install-recommends: the texlive packages pull a good part
+          # of what pdflatex needs through Recommends. Stripping them makes
+          # the LaTeX run die while parsing refman.tex, with the reason only
+          # visible in refman.log.
+          sudo apt-get install -y \
+            doxygen graphviz \
+            texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-font-utils texlive-lang-german \
+            ghostscript make
+
+      - name: Build HTML
+        working-directory: docs
+        run: doxygen Doxyfile.website
+
+      - name: Build PDF
+        working-directory: docs
+        run: |
+          doxygen Doxyfile.pdfmanual
+          # make propagates a pdflatex failure — including LaTeX errors such
+          # as a character with no glyph in the default fonts (box-drawing
+          # glyphs U+2500-U+257F and geometric shapes U+25A0-U+25FF are the
+          # usual offenders). make itself only reports "Error 1", so print
+          # the log: that is where the actual reason is.
+          if ! make -C _build_manual/latex; then
+            echo "::error::LaTeX build failed. Last 60 lines of refman.log:"
+            tail -n 60 _build_manual/latex/refman.log || true
+            exit 1
+          fi
+          # A successful make should have produced the file.
+          test -f _build_manual/latex/refman.pdf
+
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual-pdf
+          path: docs/_build_manual/latex/refman.pdf
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload website
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-html
+          path: docs/_build/html
+          if-no-files-found: error
+          retention-days: 14

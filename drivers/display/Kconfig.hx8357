@@ -1,0 +1,15 @@
+# Copyright (c) 2025
+# SPDX-License-Identifier: Apache-2.0
+
+config HX8357
+	bool "HX8357 display controller driver"
+	default y
+	depends on DT_HAS_HIMAX_HX8357_ENABLED
+	select MIPI_DBI
+	help
+	  Enable driver for the Himax HX8357-D TFT-LCD controller (320x480).
+	  This is a standalone MIPI-DBI (4-wire SPI) driver with a complete,
+	  self-contained initialisation sequence that respects the HX8357-D
+	  datasheet timing requirements (120 ms post-reset wait, 300 ms after
+	  SETEXTC, 150 ms after SLPOUT).
+	  Supports RGB565 and RGB888 pixel formats and all four orientations.

@@ -68,14 +68,6 @@ ZBUS_CHAN_DEFINE(ui_input_chan,
     ZBUS_MSG_INIT(.type = UI_INPUT_CONFIRM, .data.mission = MISSION_NONE)
 );
 
-ZBUS_CHAN_DEFINE(safety_chan,
-    struct safety_event,
-    NULL,
-    NULL,
-    ZBUS_OBSERVERS_EMPTY,
-    ZBUS_MSG_INIT(0)
-);
-
 ZBUS_CHAN_DEFINE(settings_chan,
     struct settings_event,
     NULL,
@@ -90,6 +82,17 @@ ZBUS_CHAN_DEFINE(feedback_chan,
     NULL,
     ZBUS_OBSERVERS_EMPTY,
     ZBUS_MSG_INIT(.type = FEEDBACK_LIGHTING_DONE)
+);
+
+
+/* ── Cross-Module Channel Definitions: App → All ────────────────────────────────────────────── */
+
+ZBUS_CHAN_DEFINE(vehicle_status_chan,
+    struct vehicle_status,
+    NULL,
+    NULL,
+    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_MSG_INIT(.slots = {0})
 );
 
 

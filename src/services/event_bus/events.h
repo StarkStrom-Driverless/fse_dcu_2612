@@ -74,7 +74,8 @@ enum screen_id {
     SCREEN_DEBUG_WRITE,       /**< Send generic debug Bits.                        */
     SCREEN_BOOT,              /**< Initial splash; starting position in carousel.  */
     SCREEN_MISSION_SELECT,    /**< Mission roller + OK + RTD buttons.              */
-    SCREEN_PRE_RTD,           /**< Pre-drive checklist (future).                   */
+    SCREEN_SDC,               /**< Shutdown circuits.                              */
+    SCREEN_PRE_RTD,           /**< Pre-drive checklist.                            */
     SCREEN_RTD,               /**< Live telemetry during mission.                  */
     SCREEN_EV_DRIVING,        /**< Show telemetry and adjust vehicle in EV driving */
     SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
@@ -94,10 +95,25 @@ enum can_status_type {
     CAN_STATUS_BUS_OFF,          /**< CAN controller entered bus-off state.             */
 };
 
+/**
+ * @brief CAN controller bus state for UI reporting.
+ *
+ * Numeric values intentionally match Zephyr's @c enum can_state so that
+ * a direct cast is valid in can.c (verified by _Static_assert there).
+ */
+enum can_bus_state {
+    CAN_BUS_STATE_ERROR_ACTIVE  = 0, /**< Normal operation — error counters low.    */
+    CAN_BUS_STATE_ERROR_WARNING = 1, /**< Warning — TX or RX error counter ≥ 96.    */
+    CAN_BUS_STATE_ERROR_PASSIVE = 2, /**< Error-passive — error counter ≥ 128.      */
+    CAN_BUS_STATE_BUS_OFF       = 3, /**< Bus-off — controller silent until recover. */
+    CAN_BUS_STATE_STOPPED       = 4, /**< Controller stopped (not started).          */
+};
+
 /** @brief Payload for can_status_chan. */
 struct can_status_event {
     enum can_status_type type;
-    uint32_t             msg_id; /**< Non-zero only for CAN_STATUS_TIMEOUT. */
+    uint32_t             msg_id;     /**< Non-zero only for CAN_STATUS_TIMEOUT.     */
+    enum can_bus_state   state;      /**< Current CAN controller bus state.         */
 };
 
 /* ---- can_data_chan -------------------------------------------------------------------- */
@@ -137,7 +153,8 @@ enum ui_input_type {
     UI_INPUT_ENCODER_DOWN,         /**< Right encoder: CCW (spare/fallback).       */
     UI_INPUT_ENCODER_CLICK,        /**< Right encoder button press.                */
     UI_INPUT_MISSION_SELECTED,     /**< Driver confirmed a mission via OK button.  */
-    UI_INPUT_RTD_REQUEST,          /**< RTD button pressed: request Ready-to-Drive.*/
+    UI_INPUT_RTD_REQUEST,          /**< RTD button pressed: activate RTD signal.   */
+    UI_INPUT_RTD_RELEASE,          /**< RTD button released: deactivate RTD signal.*/
     UI_INPUT_TORQUE_VECT_ON,       /**< Driver activated Torque Vectoring          */
     UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled Torque Vectoring          */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Engineer set debug bits via OK button.     */
@@ -156,23 +173,6 @@ struct ui_input_event {
          */
         uint8_t debug_bits;
     } data;
-};
-
-/* ---- safety_chan ---------------------------------------------------------------------- */
-
-/** @brief Safety-critical event types decoded from CAN or GPIO. */
-enum safety_event_type {
-    SAFETY_EVT_IMD_FAULT       = 0,
-    SAFETY_EVT_AMS_FAULT,
-    SAFETY_EVT_SHUTDOWN_OPEN,
-    SAFETY_EVT_SHUTDOWN_CLOSED,
-    SAFETY_EVT_TS_OFF,
-    SAFETY_EVT_TS_ACTIVE,
-};
-
-/** @brief Payload for safety_chan. */
-struct safety_event {
-    enum safety_event_type type;
 };
 
 /* ---- settings_chan -------------------------------------------------------------------- */
@@ -203,22 +203,56 @@ struct feedback_event {
 };
 
 
+/* ── Cross-Module Status: App → All ─────────────────────────────────────────────────────────── */
+
+/* ---- vehicle_status_chan ------------------------------------------------------------- */
+
+/**
+ * @brief Header status bar device slot identifiers.
+ *
+ * Order matches the visual left-to-right icon order in the header.
+ * UI_DEVICE_SLOT_COUNT is used as array size — keep it last.
+ */
+enum ui_device_slot {
+    UI_DEVICE_LOGGER = 0,     /**< Data logger                */
+    UI_DEVICE_ROS,            /**< Autonomous Driving ROS     */
+    UI_DEVICE_DV_PC,          /**< Autonomous Driving PC      */
+    UI_DEVICE_KISTLER,        /**< Kistler measurement system */
+    UI_DEVICE_MABX,           /**< MABX control system        */
+    UI_DEVICE_SDCS,           /**< Shutdown circuits          */
+    UI_DEVICE_CAN,            /**< CAN network                */
+    UI_DEVICE_SLOT_COUNT,
+};
+
+/**
+ * @brief Visual status of a single device slot.
+ *
+ * OK      → green,  solid
+ * WARN    → gold,   solid
+ * FAULT   → red,    blinking
+ * OFFLINE → red,    blinking + X overlay
+ */
+enum ui_device_status {
+    UI_DEVICE_STATUS_OK      = 0,
+    UI_DEVICE_STATUS_WARN    = 1,
+    UI_DEVICE_STATUS_FAULT   = 2,
+    UI_DEVICE_STATUS_ACTIVE = 3,
+};
+
+/** @brief Payload for vehicle_status_chan. */
+struct vehicle_status {
+    enum ui_device_status slots[UI_DEVICE_SLOT_COUNT];
+};
+
+
 /* ── Downward Channels: App → Module ────────────────────────────────────────────────────────── */
 
 /* ---- ui_cmd_chan ---------------------------------------------------------------------- */
 
 /** @brief Command types for the UI module. */
 enum ui_cmd_type {
-    UI_CMD_SET_SCREEN   = 0, /**< Navigate to a named screen.                     */
-    UI_CMD_UPDATE_DATA,      /**< Push a new CAN data snapshot for rendering.      */
-    UI_CMD_SET_STATUS,       /**< Update connection and safety indicator flags.    */
-};
-
-/** @brief Status flags rendered on all screens as persistent indicators. */
-struct ui_status_flags {
-    bool can_connected;
-    bool safety_fault;
-    bool ts_active;
+    UI_CMD_SET_SCREEN   = 0, /**< Navigate to a named screen.                */
+    UI_CMD_UPDATE_DATA,      /**< Push a new CAN data snapshot for rendering. */
 };
 
 /** @brief Payload for ui_cmd_chan. */
@@ -227,7 +261,6 @@ struct ui_cmd {
     union {
         enum screen_id           screen;   /**< UI_CMD_SET_SCREEN  */
         struct can_data_snapshot snapshot; /**< UI_CMD_UPDATE_DATA */
-        struct ui_status_flags   status;   /**< UI_CMD_SET_STATUS  */
     } data;
 };
 
