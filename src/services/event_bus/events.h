@@ -205,13 +205,10 @@ enum ui_input_type {
  * The union member is selected by @c type; event types not listed below carry
  * no payload and leave @c data unread.
  *
- * @warning screen_debug_write.c fills @c data.mission but app.c reads
- *          @c data.debug_bits for UI_INPUT_DEBUG_BITS_SELECTED. It happens to
- *          work — the roller index is 0–7 and the target is little-endian, so
- *          the low byte of the enum is the value — but it is type punning
- *          through a union, and it breaks the moment the value exceeds a byte
- *          or the build moves to a big-endian target. Write the member that
- *          matches the event type.
+ * @note Publisher and subscriber must name the same member. Writing one and
+ *       reading another happens to work for small values on a little-endian
+ *       target, but it is type punning through a union and breaks silently as
+ *       soon as either assumption changes.
  */
 struct ui_input_event {
     enum ui_input_type type; /**< Which intent; selects the union member. */
