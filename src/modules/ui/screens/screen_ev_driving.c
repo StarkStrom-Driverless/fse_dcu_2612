@@ -2,49 +2,51 @@
  * @file        screen_ev_driving.c
  * @brief       EV driving screen implementation
  *
- * @details     Builds the ev driving screen with:
+ * @ingroup     dcu_ui_screens
  *
- *                – Roller  : lists all seven FS disciplines; controlled by the
- *                            right encoder via an lv_group_t.  Rolling does NOT
- *                            publish any Zbus event — the selection is only
- *                            transmitted when OK or RTD is pressed.
+ * @details     Builds the EV driving screen with:
  *
- *                – OK button  : confirms the roller's current selection and
- *                               publishes UI_INPUT_MISSION_SELECTED to
- *                               ui_input_chan.  The App Layer then calls
- *                               app_state_set_mission() and sends the mission
- *                               over CAN (CAN_TX_CMD_SEND_MISSION).
+ *                – Three sliders : torque gain front (left edge) and rear
+ *                                  (right edge), plus a horizontal HV
+ *                                  accumulator voltage slider along the bottom.
  *
- *                – RTD button : requests Ready-to-Drive by publishing
- *                               UI_INPUT_RTD_REQUEST to ui_input_chan.  The
- *                               App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                               using the last-known drive mode.  Can be
- *                               pressed without having first confirmed a mission
- *                               (MISSION_NONE drive mode = 0 is then used).
+ *                – Three readouts: HV accumulator, inverter and motor
+ *                                  temperature, bound to their generated
+ *                                  subjects through the ui_unit_label widget.
  *
- *              Right encoder interaction (LVGL group)
- *              ───────────────────────────────────────
- *              Tab order: [Roller] → [OK] → [RTD] (wraps around)
+ *                – PWR Limit     : checkable button mirroring
+ *                                  ui_tx_subj_pwrlimit_setting.
  *
- *              Roller focused, NAVIGATE mode  : encoder moves focus to next obj
- *              Roller focused, EDIT mode       : encoder scrolls mission list
- *              Toggle NAVIGATE ↔ EDIT          : physical OK button (LV_KEY_ENTER)
- *              Button focused                  : LV_KEY_ENTER → LV_EVENT_CLICKED
+ *                – TQ Vect       : checkable button mirroring
+ *                                  ui_tx_subj_torquevect_setting; also
+ *                                  publishes UI_INPUT_TORQUE_VECT_ON/_OFF.
+ *
+ *              ### Buttons follow the value, not the press
+ *              Each button observes its TX subject, and the click handler only
+ *              writes to that subject. The visual state therefore reflects the
+ *              stored value rather than the last press — the same pattern the
+ *              other screens use for their confirmed-value labels.
+ *
+ *              ### What is not wired up
+ *              The torque-gain sliders keep their positions across visits, in
+ *              s_sldr_left_val and s_sldr_right_val, but nothing reads those
+ *              subjects: the values reach neither a setting nor a CAN signal.
+ *              The left slider is in no input group at all, so it cannot be
+ *              moved. Both are placeholders for the torque-gain settings.
+ *
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-15  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -85,10 +87,11 @@ LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
 #define BTN_HEIGHT              50
 
 /**
- * @brief Half the centre-to-centre distance between the two buttons.
+ * @brief Half the centre-to-centre distance between the two buttons, in pixels.
  *
- * Layout: |←BTN_WIDTH→| 10px gap |←BTN_WIDTH→|
- *          centre-to-centre = BTN_WIDTH + 10 = 110 px → half = 55 px
+ * The buttons are placed at -BTN_HALF_SPACING and +BTN_HALF_SPACING from the
+ * screen centre, so they sit 2 × 100 = 200 px apart centre to centre, leaving
+ * a 100 px gap between two BTN_WIDTH-wide buttons.
  */
 #define BTN_HALF_SPACING        100
 
@@ -98,37 +101,46 @@ LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
-static lv_subject_t s_sldr_left_val;  /* TQG F slider value */
-static lv_subject_t s_sldr_right_val; /* TQG R slider value */
+/**
+ * @brief Torque-gain slider positions — survive screen destroy/recreate.
+ *
+ * Initialised once, guarded by s_subjects_init, so the sliders come back where
+ * the driver left them. Nothing outside this file reads them yet.
+ */
+static lv_subject_t s_sldr_left_val;  /**< TQG F slider value. */
+static lv_subject_t s_sldr_right_val; /**< TQG R slider value. */
+
+/** @brief Guard so the two subjects above are initialised exactly once. */
 static bool         s_subjects_init;
 
-/** @brief Left slider */
+/** @brief Torque gain front — vertical slider at the left edge. Not reachable. */
 static lv_obj_t   *s_sldr_left;
 
-/** @brief Right slider */
+/** @brief Torque gain rear — vertical slider at the right edge, on the encoder. */
 static lv_obj_t   *s_sldr_right;
 
-/** @brief Middle slider */
+/** @brief HV accumulator voltage — horizontal, bound to a received signal. */
 static lv_obj_t   *s_sldr_middle;
 
-
-/** @brief OK button */
+/** @brief TQ Vect button — toggles torque vectoring. */
 static lv_obj_t   *s_btn_right;
 
+/** @brief "ON"/"OFF" text inside the TQ Vect button. */
 static lv_obj_t   *s_lbl_btn_right_value;
 
-/** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
+/** @brief PWR Limit button — toggles the power limit. */
 static lv_obj_t   *s_btn_left;
 
+/** @brief Reserved: value text for the PWR Limit button. Never created. */
 static lv_obj_t   *s_lbl_btn_left_value;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right encoder — holds the TQG R slider. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the left encoder. */
+/** @brief Input group for the left button pad — holds the PWR Limit button. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right button. */
+/** @brief Input group for the right button pad — holds the TQ Vect button. */
 static lv_group_t *s_right_button_group;
 
 
@@ -143,18 +155,36 @@ static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Mirror the TQG F slider into its subject so it survives a rebuild.
+ * @param e  LV_EVENT_VALUE_CHANGED from the slider.
+ */
 static void sldr_left_value_changed_cb(lv_event_t *e)
 {
     lv_subject_set_int(&s_sldr_left_val,
                        lv_slider_get_value(lv_event_get_target_obj(e)));
 }
 
+/**
+ * @brief Mirror the TQG R slider into its subject so it survives a rebuild.
+ * @param e  LV_EVENT_VALUE_CHANGED from the slider.
+ */
 static void sldr_right_value_changed_cb(lv_event_t *e)
 {
     lv_subject_set_int(&s_sldr_right_val,
                        lv_slider_get_value(lv_event_get_target_obj(e)));
 }
 
+/**
+ * @brief Apply the stored torque-vectoring setting to the TQ Vect button.
+ *
+ * Sets the button's checked state and its ON/OFF caption, recoloring the
+ * caption because the checked style paints the button green and dark text
+ * would disappear on it.
+ *
+ * @param observer  Observer whose target object is the button.
+ * @param subject   ui_tx_subj_torquevect_setting.
+ */
 static void tq_vect_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *btn = lv_observer_get_target_obj(observer);
@@ -170,6 +200,14 @@ static void tq_vect_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
                                 on ? UI_C_WHITE : UI_C_DARK, 0);
 }
 
+/**
+ * @brief Apply the stored power-limit setting to the PWR Limit button.
+ *
+ * State only — the button has no value caption.
+ *
+ * @param observer  Observer whose target object is the button.
+ * @param subject   ui_tx_subj_pwrlimit_setting.
+ */
 static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *btn = lv_observer_get_target_obj(observer);
@@ -180,6 +218,14 @@ static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject
     }
 }
 
+/**
+ * @brief Build the three sliders and the HV voltage readout.
+ *
+ * The two torque-gain sliders are restored from their subjects; the HV
+ * voltage slider is bound to a received signal and is display-only.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_sliders(lv_obj_t *scr)
 {
     /* ── Slider Left ────────────────────────────────────────────────────── */
@@ -245,6 +291,16 @@ static void build_sliders(lv_obj_t *scr)
     
 }
 
+/**
+ * @brief Build the three temperature readouts across the middle of the screen.
+ *
+ * Each is a ui_unit_label bound to its generated subject. The level styles
+ * are attached but the state bindings are commented out, so none of the three
+ * changes color yet — the thresholds they were bound to belonged to the HV
+ * voltage signal, not to a temperature.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_labels(lv_obj_t *scr)
 {
     /* ── Label HV Accu Temp ─────────────────────────────────────────────── */
@@ -329,6 +385,11 @@ static void build_labels(lv_obj_t *scr)
     // lv_obj_align(lbl_hv_volt_ts, LV_ALIGN_LEFT_MID, 300, 0);
 }
 
+/**
+ * @brief Build the PWR Limit and TQ Vect buttons and subscribe them to their subjects.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_buttons(lv_obj_t *scr)
 {
     /* ── Power Limit button ─────────────────────────────────────────────── */
@@ -397,13 +458,16 @@ static void build_buttons(lv_obj_t *scr)
 }
 
 /**
- * @brief ESC button click handler.
+ * @brief PWR Limit click handler — store the new power-limit state.
  *
- * Publishes UI_INPUT_ESC_REQUEST.  The App Layer responds by sending
- * CAN_TX_CMD_SEND_ESC_REQUEST using the last-known drive mode.
+ * Writes the button's checked state to ui_tx_subj_pwrlimit_setting; the
+ * observer then applies it back to the button.
  *
- * Can be pressed without having first confirmed a mission; in that case the
- * CAN module uses drive mode 0 (MISSION_NONE).
+ * @note Local only. Unlike the TQ Vect button this publishes no ui_input
+ *       event, so the App Layer never learns about it and the value reaches
+ *       neither the settings service nor the CAN bus.
+ *
+ * @param e  LV_EVENT_CLICKED from the button.
  */
 static void btn_left_event_cb(lv_event_t *e)
 {
@@ -413,13 +477,19 @@ static void btn_left_event_cb(lv_event_t *e)
 }
 
 /**
- * @brief OK button click handler.
+ * @brief TQ Vect click handler — publish and store the new torque-vectoring state.
  *
- * Reads the current roller selection and publishes UI_INPUT_MISSION_SELECTED.
- * The App Layer responds by updating the mission state and sending the
- * selected mission over CAN (CAN_TX_CMD_SEND_MISSION).
+ * Publishes UI_INPUT_TORQUE_VECT_ON or _OFF, then writes the value to
+ * ui_tx_subj_torquevect_setting so the button's appearance follows.
  *
- * No CAN frame is sent here — this screen only raises the intent.
+ * The subject is only updated once the publish succeeded, so a dropped event
+ * cannot leave the button claiming a state the rest of the system does not
+ * share.
+ *
+ * @note The App Layer currently ignores both events, so the setting stays
+ *       inside the UI.
+ *
+ * @param e  LV_EVENT_VALUE_CHANGED from the checkable button.
  */
 static void btn_right_event_cb(lv_event_t *e)
 {

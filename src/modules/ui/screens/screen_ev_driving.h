@@ -2,67 +2,59 @@
  * @file        screen_ev_driving.h
  * @brief       EV driving screen factory
  *
- * @details     Provides a factory function and a group accessor for the ev driving screen.
+ * @ingroup     dcu_ui_screens
  *
- *              Screen layout (480 × 320)
- *              ─────────────────────────
+ * @details     The driver's screen while the car is moving under electric
+ *              drive: live temperatures and accumulator voltage, plus the two
+ *              settings that may be changed on the move.
  *
- *                ┌──────────────────────────────────────┐
- *                │  MISSION                 ← gradient header (15 %)
- *                ├──────────────────────────────────────┤
- *                │                                      │
- *                │         ┌─────────────────┐          │
- *                │         │  Acceleration   │          │ ← Roller
- *                │         │▶ Skidpad       ◀│          │   right encoder
- *                │         │  Autocross      │          │
- *                │         └─────────────────┘          │
- *                │                                      │
- *                │    ┌───────────┐  ┌───────────┐      │
- *                │    │    OK     │  │    RTD    │      │
- *                │    └───────────┘  └───────────┘      │
- *                └──────────────────────────────────────┘
+ *              ### Screen layout (480 × 320)
  *
- *              Encoder / button assignment
- *              ────────────────────────────
- *              Left  encoder  →  screen carousel (managed by ui.c, not this screen)
- *              Right encoder  →  assigned to this screen's LVGL group by ui.c
- *                                Tab order:  [Roller] → [OK] → [RTD]
+ *              ```
+ *              ┌──────────────────────────────────────┐
+ *              │ EV DRIVING                    ▪▪▪▪▪▪ │ ← shared header
+ *              ├──────────────────────────────────────┤
+ *              │ ▓  HV Accu   Inverter   Motor      ▓ │
+ *              │ ▓   42°C      38°C      52°C       ▓ │ ← left/right sliders
+ *              │ ▓                                  ▓ │   TQG F / TQG R
+ *              │ ▓  HV SoC                  488 V   ▓ │
+ *              │ ▓  ▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░   ▓ │
+ *              │  ┌───────────┐      ┌───────────┐    │
+ *              │  │ PWR Limit │      │  TQ Vect  │    │
+ *              │  └───────────┘      └───────────┘    │
+ *              └──────────────────────────────────────┘
+ *              ```
  *
- *              Physical buttons on this screen:
- *                ESC  →  ui.c handles navigation back to boot screen
- *                OK   →  LV_KEY_ENTER → click focused widget (toggle roller
- *                         edit-mode or confirm OK / RTD button)
- *                RTD  →  publishes UI_INPUT_RTD_REQUEST directly (input module)
- *                TS   →  not used on this screen
+ *              ### Input assignment
  *
- *              Two distinct user actions
- *              ──────────────────────────
- *              OK  button widget  →  publishes UI_INPUT_MISSION_SELECTED
- *                                    carrying the roller's current selection.
- *                                    App Layer updates mission state and sends
- *                                    CAN_TX_CMD_SEND_MISSION.
+ *              | Input         | Drives                                      |
+ *              |---------------|---------------------------------------------|
+ *              | Left encoder  | Screen carousel — handled in ui.c, not here |
+ *              | Right encoder | The right torque-gain slider (TQG R)        |
+ *              | Left buttons  | The PWR Limit button                        |
+ *              | Right buttons | The TQ Vect button                          |
  *
- *              RTD button widget  →  publishes UI_INPUT_RTD_REQUEST (no payload).
- *                                    App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                                    with the last-known drive mode.
+ *              Both buttons are checkable and mirror a generated TX subject
+ *              through an observer, so their visual state follows the value
+ *              rather than the press.
  *
- *              Rolling the roller does NOT trigger any CAN transmission; only
- *              pressing OK or RTD does.
+ *              @note The torque-gain sliders are display-only so far: their
+ *              positions are remembered across visits but are not written to
+ *              any setting or CAN signal, and the left slider is not reachable
+ *              by any input device.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-15  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -79,33 +71,43 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the mission selection screen.
+ * @brief Create the EV driving screen.
  *
- * Builds the header, roller, OK button, RTD button, and the LVGL input group.
+ * Builds the header, the three sliders, the temperature readouts, the two
+ * setting buttons and the three input groups.
  * Must be called after ui_styles_init().
  *
- * @return  Pointer to the top-level screen object.  Never NULL.
+ * @param status_subjects  Device-status subjects for the header widget.
+ * @return                 Pointer to the top-level screen object. Never NULL.
  */
 lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects);
 
 /**
  * @brief Return the LVGL input group for the right encoder.
  *
- * Tab order: roller → OK button → RTD button.
- * ui.c assigns this group to the RIGHT encoder input device whenever this
- * screen becomes active, and removes it when navigating away:
+ * Contains the right torque-gain slider, in edit mode, so a turn changes its
+ * value instead of moving focus.
  *
- * @code
- *   // on screen enter:
- *   lv_indev_set_group(right_encoder_indev, screen_ev_driving_get_group());
- *   // on screen leave:
- *   lv_indev_set_group(right_encoder_indev, NULL);
- * @endcode
- *
- * @return  Pointer to the lv_group_t.  Valid after screen_ev_driving_create().
+ * @return  The group. Valid only after screen_ev_driving_create().
  */
 lv_group_t *screen_ev_driving_get_right_encoder_group(void);
+
+/**
+ * @brief Return the LVGL input group for the left button pad.
+ *
+ * Contains the PWR Limit button.
+ *
+ * @return  The group. Valid only after screen_ev_driving_create().
+ */
 lv_group_t *screen_ev_driving_get_left_button_group(void);
+
+/**
+ * @brief Return the LVGL input group for the right button pad.
+ *
+ * Contains the TQ Vect button.
+ *
+ * @return  The group. Valid only after screen_ev_driving_create().
+ */
 lv_group_t *screen_ev_driving_get_right_button_group(void);
 
 #endif /* MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H */

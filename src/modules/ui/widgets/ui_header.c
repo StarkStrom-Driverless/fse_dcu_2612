@@ -2,26 +2,77 @@
  * @file        ui_header.c
  * @brief       Reusable header widget — title bar with device status icons
  *
+ * @ingroup     dcu_ui_widgets
+ *
+ * @details     Implementation of the header bar; the contract is in
+ *              ui_header.h.
+ *
+ *              ### Object tree built here
+ *              ```
+ *              header                       styled with ui_style_header
+ *                ├─ title label
+ *                └─ icon row (flex, right-aligned)
+ *                     └─ one 24×24 container per device slot
+ *                          └─ icon label in FontAwesome_Solid_18
+ *              ```
+ * 
+ *              The per-slot container exists so blinking can change the
+ *              container's opacity while the icon label keeps its own color,
+ *              and so the flex row keeps a fixed cell size no matter which
+ *              glyph is in it.
+ *
+ *              ### Blinking
+ *              All blinking slots observe one shared phase subject driven by a
+ *              single LVGL timer, so they blink in step and cannot drift apart.
+ *              The timer only exists while at least one slot is blinking.
+ *
+ *              Opacity is used rather than LV_OBJ_FLAG_HIDDEN because hiding
+ *              an object removes it from the flex layout, which would make the
+ *              neighbouring icons jump sideways twice a second.
+ *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-04
+ *
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
+ *              SPDX-License-Identifier: Apache-2.0
  */
+
+/* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
 
 #include "modules/ui/widgets/ui_header.h"
 
+/* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
+
 #include <lvgl.h>
+
+/* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "modules/ui/ui_styles.h"
 #include "services/event_bus/events.h"
 
 /* ── Layout constants ────────────────────────────────────────────────────── */
 
+/** @brief Header height as a percentage of the screen height. */
 #define HEADER_HEIGHT_PCT   15
+
+/** @brief Right margin of the icon row, in pixels. */
 #define ICON_ROW_MARGIN_R   4
+
+/** @brief Gap between two icons, in pixels. */
 #define ICON_COL_GAP        6
+
+/** @brief Half period of the blink cycle — one full cycle is twice this. */
 #define BLINK_HALF_MS       400U
 
 /* ── Per-slot icon configuration ─────────────────────────────────────────── */
 
+/**
+ * @brief Icon for each device slot.
+ *
+ * Designated initialisers keep the table tied to enum ui_device_slot rather
+ * than to a hand-counted order; the loop below indexes it with the same value
+ * it uses for the status subject.
+ */
 static const ui_header_slot_cfg_t k_slot_cfg[UI_DEVICE_SLOT_COUNT] = {
     [UI_DEVICE_LOGGER]  = { .symbol = FA_SYMBOL_VIDEO         },
     [UI_DEVICE_ROS]     = { .symbol = FA_SYMBOL_ROBOT         },
@@ -34,6 +85,15 @@ static const ui_header_slot_cfg_t k_slot_cfg[UI_DEVICE_SLOT_COUNT] = {
 
 /* ── Private helpers ─────────────────────────────────────────────────────── */
 
+/**
+ * @brief Map a device status to its icon color.
+ *
+ * FAULT and ACTIVE share the same red; they are told apart by the blinking,
+ * not by the color.
+ *
+ * @param s  Device status.
+ * @return   Color for the icon label. Unknown values fall back to green.
+ */
 static lv_color_t status_to_color(enum ui_device_status s)
 {
     switch (s) {
@@ -51,14 +111,26 @@ static lv_color_t status_to_color(enum ui_device_status s)
  * shared timer.  This guarantees perfect sync (same subject notification round)
  * and zero drift (one timer, no per-slot phase offset).
  *
- * Opacity is used instead of LV_OBJ_FLAG_HIDDEN so the flex row does not
- * reflow when a slot disappears, which would shift neighbouring icons.
+ * The state is file-scope rather than per-header: only one screen is loaded at
+ * a time, so at most one header exists, and the counter is what keeps the
+ * timer's lifetime tied to actual demand across screen changes.
  */
 
-static lv_subject_t s_blink_phase;  /* 0 = opaque, 1 = transparent */
-static lv_timer_t  *s_blink_timer;
-static uint32_t     s_blink_count;  /* nr of actively blinking containers */
+/** @brief Shared blink phase: 0 = opaque, 1 = transparent. */
+static lv_subject_t s_blink_phase;
 
+/** @brief The one timer toggling s_blink_phase; NULL while nothing blinks. */
+static lv_timer_t  *s_blink_timer;
+
+/** @brief Number of containers currently blinking; the timer's reference count. */
+static uint32_t     s_blink_count;
+
+/**
+ * @brief Observer on the blink phase — applies it to one slot container.
+ *
+ * @param observer  Observer whose target object is the slot container.
+ * @param subject   The shared phase subject.
+ */
 static void blink_phase_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *cont = lv_observer_get_target_obj(observer);
@@ -66,12 +138,25 @@ static void blink_phase_cb(lv_observer_t *observer, lv_subject_t *subject)
     lv_obj_set_style_opa(cont, opa, 0);
 }
 
+/**
+ * @brief Timer callback — flip the shared blink phase.
+ *
+ * @param timer  Unused.
+ */
 static void blink_tick_cb(lv_timer_t *timer)
 {
     (void)timer;
     lv_subject_set_int(&s_blink_phase, !lv_subject_get_int(&s_blink_phase));
 }
 
+/**
+ * @brief LV_EVENT_DELETE handler — release a blinking container's timer share.
+ *
+ * Registered only on containers that are blinking, so a screen change while an
+ * icon blinks cannot leak the timer.
+ *
+ * @param e  Unused.
+ */
 static void blink_delete_event_cb(lv_event_t *e)
 {
     (void)e;
@@ -87,6 +172,15 @@ static void blink_delete_event_cb(lv_event_t *e)
     }
 }
 
+/**
+ * @brief Start blinking one slot container.
+ *
+ * Creates the shared timer if this is the first blinking container, subscribes
+ * the container to the phase subject, and stores the observer in the
+ * container's user data — which doubles as the "is blinking" flag.
+ *
+ * @param cont  Slot container.
+ */
 static void blink_start(lv_obj_t *cont)
 {
     if (lv_obj_get_user_data(cont) != NULL) {
@@ -104,6 +198,13 @@ static void blink_start(lv_obj_t *cont)
     lv_obj_add_event_cb(cont, blink_delete_event_cb, LV_EVENT_DELETE, NULL);
 }
 
+/**
+ * @brief Stop blinking one slot container and restore full opacity.
+ *
+ * Deletes the shared timer once the last blinking container has gone.
+ *
+ * @param cont  Slot container. Doing this on a non-blinking one is a no-op.
+ */
 static void blink_stop(lv_obj_t *cont)
 {
     lv_observer_t *obs = lv_obj_get_user_data(cont);
@@ -120,12 +221,20 @@ static void blink_stop(lv_obj_t *cont)
 }
 
 /**
- * @brief Observer callback — fired by LVGL whenever a device status subject
- *        changes value.  The target object is the slot container (cont).
+ * @brief Observer callback — apply a device status to its slot.
  *
- *        Child layout inside cont (fixed insertion order from ui_header_create):
- *          child[0] → img     (device icon)
- *          child[1] → overlay (offline X)
+ * Fired by LVGL whenever the slot's status subject changes, and once on
+ * subscription so the initial state needs no separate call.
+ *
+ * Recolors the icon, then starts or stops blinking. Comparing against the
+ * subject's previous value keeps that a transition, so the blink counter is
+ * incremented and decremented exactly once per state change.
+ *
+ * Child layout inside cont (fixed insertion order from ui_header_create()):
+ *   child[0] → icon label
+ *
+ * @param observer  Observer whose target object is the slot container.
+ * @param subject   The slot's status subject; holds a @ref ui_device_status.
  */
 static void slot_status_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {

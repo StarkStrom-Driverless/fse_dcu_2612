@@ -2,32 +2,44 @@
  * @file        ui_styles.c
  * @brief       LVGL style initialisations for the DCU UI
  *
- * @details     Allocates and initialises every shared lv_style_t instance
- *              declared in ui_styles.h. All styles are file-scope statics
- *              exported via the extern declarations in the header.
+ * @ingroup     dcu_ui_styles
  *
- *              Header gradient
- *              ───────────────
- *              The horizontal ACCENT → DARK gradient requires a
- *              lv_grad_dsc_t that must outlive the style that references it.
- *              It is kept as a static variable in this translation unit.
- *              The end x-coordinate is set to the display's horizontal
- *              resolution, queried from the default LVGL display at init time.
+ * @details     Allocates and initialises every shared lv_style_t instance
+ *              declared in ui_styles.h. The instances have external linkage;
+ *              the header declares them extern.
+ *
+ *              One init function per style family keeps ui_styles_init() a
+ *              readable list and gives each group of related settings a place
+ *              to grow.
+ *
+ *              ### Header gradient
+ *              The ACCENT → DARK gradient requires a lv_grad_dsc_t that must
+ *              outlive the style that references it — lv_style_set_bg_grad()
+ *              stores the pointer, not a copy — so it is a static in this
+ *              translation unit.
+ *
+ *              Its stops currently span a single pixel, which turns the
+ *              gradient into a hard color edge. The commented-out lines in
+ *              init_header_style() show the original intent: a fade across the
+ *              full display width, queried from the default LVGL display.
+ *
+ *              The colors are repeated as literals there because
+ *              lv_grad_init_stops() needs a compile-time constant array, which
+ *              the lv_color_hex() macros in the palette cannot provide. Keep
+ *              them in sync with UI_C_ACCENT and UI_C_DARK by hand.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -83,6 +95,10 @@ static lv_grad_dsc_t s_header_grad;
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
+/*
+ * One initialiser per style family. Each is called exactly once, from
+ * ui_styles_init(), and has no dependency on the others.
+ */
 static void init_screen_styles(void);
 static void init_header_style(void);
 static void init_card_style(void);
@@ -95,6 +111,7 @@ static void init_level_styles(void);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/** @brief Screen background: flat off-white, edge to edge, no decoration. */
 static void init_screen_styles(void)
 {
     lv_style_init(&ui_style_screen);
@@ -105,15 +122,18 @@ static void init_screen_styles(void)
     lv_style_set_pad_all(&ui_style_screen,   0);
 }
 
+/** @brief Header bar: ACCENT → DARK gradient, square, no padding. */
 static void init_header_style(void)
 {
     /*
-     * Horizontal gradient: UI_C_ACCENT (gold) on the left fades to
-     * UI_C_DARK on the right.
+     * Horizontal gradient: UI_C_ACCENT (gold) on the left, UI_C_DARK on the
+     * right.  EXTEND_PAD fills everything outside the stop range with the
+     * nearer endpoint color.
      *
-     * The end x-coordinate is set to the display's horizontal resolution
-     * so the transition spans the full width regardless of screen size.
-     * EXTEND_PAD fills any overflow with the nearest endpoint colour.
+     * The commented-out pair below is the original full-width fade: the end
+     * x-coordinate came from the display's horizontal resolution, so it
+     * adapted to either panel.  The active call places both stops one pixel
+     * apart, so EXTEND_PAD turns the fade into a hard split at x = 209.
      */
     static const lv_color_t grad_colors[2] = {
         LV_COLOR_MAKE(0xDD, 0xCC, 0x00),   /* UI_C_ACCENT */
@@ -136,6 +156,7 @@ static void init_header_style(void)
     lv_style_set_pad_all(&ui_style_header,    0);
 }
 
+/** @brief Card panel: white surface with a thin border, for grouped content. */
 static void init_card_style(void)
 {
     lv_style_init(&ui_style_card);
@@ -147,6 +168,7 @@ static void init_card_style(void)
     lv_style_set_pad_all(&ui_style_card,      8);
 }
 
+/** @brief Label styles: one per typographic role, all in UI_C_DARK. */
 static void init_label_styles(void)
 {
     /* subtitle — widget captions and slider / button titles */
@@ -180,6 +202,12 @@ static void init_label_styles(void)
     lv_style_set_text_color(&ui_style_label_value_md, UI_C_DARK);
 }
 
+/**
+ * @brief Button styles for the three visual states.
+ *
+ * Outline rather than border, so the frame does not eat into the button's
+ * content area and the three states stay the same size.
+ */
 static void init_button_styles(void)
 {
     /* Default — white bg, dark outline, dark text */
@@ -213,6 +241,12 @@ static void init_button_styles(void)
     lv_style_set_pad_all(&ui_style_btn_focused,       2);
 }
 
+/**
+ * @brief Slider and bar styles: track (LV_PART_MAIN) and fill (LV_PART_INDICATOR).
+ *
+ * Callers must lv_obj_remove_style_all() first — these replace the LVGL
+ * defaults rather than layering on top of them.
+ */
 static void init_slider_styles(void)
 {
     /* Track (LV_PART_MAIN) — white bg with dark outline */
@@ -230,6 +264,7 @@ static void init_slider_styles(void)
     lv_style_set_radius(&ui_style_slider_indicator,   0);
 }
 
+/** @brief Circular status dots. Currently unused; see ui_styles.h. */
 static void init_status_styles(void)
 {
     /* OK indicator — green circle */
@@ -254,6 +289,16 @@ static void init_status_styles(void)
     lv_style_set_radius(&ui_style_status_fault,   LV_RADIUS_CIRCLE);
 }
 
+/**
+ * @brief Warning and critical level styles, for text and for indicator fills.
+ *
+ * Applied together with lv_obj_bind_state_if_lt/gt() and the threshold defines
+ * generated into ui_subjects_gen.h, which is what makes a value color itself
+ * without any per-frame code.
+ *
+ * Text and fill are separate styles because a spangroup needs text_color while
+ * a bar needs bg_color on LV_PART_INDICATOR.
+ */
 static void init_level_styles(void)
 {
     /* Warning text — gold/accent (UI_STATE_WARN, labels/spans) */

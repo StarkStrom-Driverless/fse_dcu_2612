@@ -1,50 +1,47 @@
 /**
  * @file        screen_debug_write.c
- * @brief       Mission selection screen implementation
+ * @brief       Debug-bits transmit screen implementation
  *
- * @details     Builds the mission selection screen with:
+ * @ingroup     dcu_ui_screens
  *
- *                – Roller  : lists all seven FS disciplines; controlled by the
- *                            right encoder via an lv_group_t.  Rolling does NOT
- *                            publish any Zbus event — the selection is only
- *                            transmitted when OK or RTD is pressed.
+ * @details     Builds the debug-bits screen with:
  *
- *                – OK button  : confirms the roller's current selection and
- *                               publishes UI_INPUT_MISSION_SELECTED to
- *                               ui_input_chan.  The App Layer then calls
- *                               app_state_set_mission() and sends the mission
- *                               over CAN (CAN_TX_CMD_SEND_MISSION).
+ *                – Roller     : the values 0…7, scrolled by the right encoder.
+ *                               Scrolling publishes nothing.
  *
- *                – RTD button : requests Ready-to-Drive by publishing
- *                               UI_INPUT_RTD_REQUEST to ui_input_chan.  The
- *                               App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                               using the last-known drive mode.  Can be
- *                               pressed without having first confirmed a mission
- *                               (MISSION_NONE drive mode = 0 is then used).
+ *                – Label      : "Current Debug Bits: …", driven by an observer
+ *                               on ui_tx_subj_debug_bits, so it shows the last
+ *                               confirmed value rather than the highlighted one.
  *
- *              Right encoder interaction (LVGL group)
- *              ───────────────────────────────────────
- *              Tab order: [Roller] → [OK] → [RTD] (wraps around)
+ *                – SET BITS   : publishes UI_INPUT_DEBUG_BITS_SELECTED with the
+ *                               highlighted value.  The App Layer forwards it to
+ *                               the settings service, which clamps and owns it;
+ *                               the CAN module reads it back on its next cycle.
  *
- *              Roller focused, NAVIGATE mode  : encoder moves focus to next obj
- *              Roller focused, EDIT mode       : encoder scrolls mission list
- *              Toggle NAVIGATE ↔ EDIT          : physical OK button (LV_KEY_ENTER)
- *              Button focused                  : LV_KEY_ENTER → LV_EVENT_CLICKED
+ *              ### Range and ownership
+ *              The roller offers 0…7 because Debug_SETTING is three bits wide
+ *              in the DBC.  The bound is not enforced here — the settings
+ *              service clamps against the generated schema, so the roller only
+ *              has to avoid offering values that would be rejected.
+ *
+ *              ### State across visits
+ *              The screen is destroyed on leaving, so the roller position is
+ *              kept in the file-scope subject s_roller_sel and restored on the
+ *              next visit.  The confirmed value needs no such handling — it
+ *              lives in the generated TX subject.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-09
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-09  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -76,16 +73,10 @@ LOG_MODULE_REGISTER(screen_debug_write, CONFIG_LOG_DEFAULT_LEVEL);
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Roller option string.
+ * @brief Roller option string — the selectable debug values.
  *
- * Index maps directly to enum mission_id (both start at 0):
- *   0 → MISSION_NONE          "---"
- *   1 → MISSION_ACCELERATION
- *   2 → MISSION_SKIDPAD
- *   3 → MISSION_AUTOCROSS
- *   4 → MISSION_ENDURANCE
- *   5 → MISSION_INSPECTION
- *   6 → MISSION_MANUAL_DRIVING
+ * The index is the value: line 0 is 0, line 7 is 7. Eight entries, because
+ * Debug_SETTING is three bits wide in the DBC.
  */
 #define ROLLER_OPTIONS \
     "0\n"              \
@@ -110,10 +101,12 @@ LOG_MODULE_REGISTER(screen_debug_write, CONFIG_LOG_DEFAULT_LEVEL);
 #define BTN_HEIGHT              50
 
 /**
- * @brief Half the centre-to-centre distance between the two buttons.
+ * @brief Horizontal offset of the button from the screen centre, in pixels.
  *
- * Layout: |←BTN_WIDTH→| 10px gap |←BTN_WIDTH→|
- *          centre-to-centre = BTN_WIDTH + 10 = 110 px → half = 55 px
+ * The name is a leftover from the two-button layout this screen was copied
+ * from, where it was half the centre-to-centre distance. With one button it is
+ * simply how far right of centre that button sits — the second, negative
+ * offset is used only by the commented-out counterpart below.
  */
 #define BTN_HALF_SPACING        55
 
@@ -123,27 +116,33 @@ LOG_MODULE_REGISTER(screen_debug_write, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
-static lv_subject_t s_roller_sel;  /* currently highlighted roller index */
+/**
+ * @brief Currently highlighted roller index — survives screen destroy/recreate.
+ *
+ * Initialised once, guarded by s_subjects_init, and never re-initialised: that
+ * is what carries the highlight across the create/delete cycle.
+ */
+static lv_subject_t s_roller_sel;
+
+/** @brief Guard so the subject above is initialised exactly once. */
 static bool         s_subjects_init;
 
-/** @brief Mission roller — user scrolls with the right encoder. */
+/** @brief Debug-value roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
 
+/** @brief "Current Debug Bits: …" label; driven by an observer on the TX subject. */
 static lv_obj_t   *s_roller_lbl;
 
-/** @brief OK button — confirms the roller selection (sends mission over CAN). */
+/** @brief SET BITS button — confirms the highlighted value. */
 static lv_obj_t   *s_btn_ok;
 
-/** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
-// static lv_obj_t   *s_btn_esc;
-
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right encoder — holds the roller. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the left button pad. Never created; stays NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right button pad — holds SET BITS. */
 static lv_group_t *s_right_button_group;
 
 
@@ -157,17 +156,33 @@ static void btn_ok_event_cb(lv_event_t *e);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Mirror the roller's position into s_roller_sel so it survives a rebuild.
+ *
+ * @param e  LV_EVENT_VALUE_CHANGED from the roller.
+ */
 static void roller_value_changed_cb(lv_event_t *e)
 {
     lv_subject_set_int(&s_roller_sel, (int32_t)lv_roller_get_selected(lv_event_get_target_obj(e)));
 }
 
+/**
+ * @brief Update the "Current Debug Bits" label from the confirmed value.
+ *
+ * @param observer  Observer whose target object is the label.
+ * @param subject   ui_tx_subj_debug_bits.
+ */
 static void confirmed_bits_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *lbl = lv_observer_get_target_obj(observer);
     lv_label_set_text_fmt(lbl, "Current Debug Bits: %d", (int)lv_subject_get_int(subject));
 }
 
+/**
+ * @brief Build the value roller and the confirmed-value label.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_roller(lv_obj_t *scr)
 {
     s_roller = lv_roller_create(scr);
@@ -206,6 +221,11 @@ static void build_roller(lv_obj_t *scr)
                                 s_roller_lbl, NULL);
 }
 
+/**
+ * @brief Build the SET BITS button.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_buttons(lv_obj_t *scr)
 {
     /* ── OK button ─────────────────────────────────────────────────────── */
@@ -245,13 +265,21 @@ static void build_buttons(lv_obj_t *scr)
 }
 
 /**
- * @brief OK button click handler.
+ * @brief SET BITS click handler — confirm the highlighted debug value.
  *
- * Reads the current roller selection and publishes UI_INPUT_MISSION_SELECTED.
- * The App Layer responds by updating the mission state and sending the
- * selected mission over CAN (CAN_TX_CMD_SEND_MISSION).
+ * Publishes UI_INPUT_DEBUG_BITS_SELECTED. The App Layer hands the value to the
+ * settings service; the CAN module reads it from there on its next TX cycle.
+ * No CAN frame is built here.
  *
- * No CAN frame is sent here — this screen only raises the intent.
+ * The TX subject — which drives the label — is only updated once the publish
+ * succeeded, so a dropped event cannot leave the display claiming a value the
+ * vehicle was never sent.
+ *
+ * The roller index is the value, so it goes into the event unchanged. Narrowing
+ * it to uint8_t is safe for the same reason the roller offers exactly eight
+ * entries: Debug_SETTING is three bits wide.
+ *
+ * @param e  LV_EVENT_CLICKED from the button. Unused.
  */
 static void btn_ok_event_cb(lv_event_t *e)
 {
@@ -259,8 +287,8 @@ static void btn_ok_event_cb(lv_event_t *e)
     uint16_t idx = lv_roller_get_selected(s_roller);
 
     struct ui_input_event evt = {
-        .type         = UI_INPUT_DEBUG_BITS_SELECTED,
-        .data.mission = (enum mission_id)idx,
+        .type            = UI_INPUT_DEBUG_BITS_SELECTED,
+        .data.debug_bits = (uint8_t)idx,
     };
 
     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
@@ -273,14 +301,10 @@ static void btn_ok_event_cb(lv_event_t *e)
     }
 }
 
-/**
- * @brief RTD button click handler.
- *
- * Publishes UI_INPUT_RTD_REQUEST.  The App Layer responds by sending
- * CAN_TX_CMD_SEND_RTD_REQUEST using the last-known drive mode.
- *
- * Can be pressed without having first confirmed a mission; in that case the
- * CAN module uses drive mode 0 (MISSION_NONE).
+/*
+ * Retained: a second, checkable button that published only while checked.
+ * Left over from the screen this file was copied from; the code below refers
+ * to mission selection, not to debug bits.
  */
 // static void btn_rtd_event_cb(lv_event_t *e)
 // {
@@ -326,15 +350,12 @@ lv_obj_t *screen_debug_write_create(lv_subject_t *status_subjects)
     build_roller(scr);
     build_buttons(scr);
 
-    /* ── Input group (right encoder) ─────────────────────────────────────── */
+    /* ── Input groups ────────────────────────────────────────────────────── */
 
     /*
-     * Tab order: roller → OK → RTD.
-     *
-     * ui.c assigns this group to the right encoder indev on screen entry:
-     *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group())
-     * and removes it on screen leave:
-     *   lv_indev_set_group(right_encoder_indev, NULL)
+     * One member each, so there is nothing to tab between and both groups stay
+     * in edit mode: a turn of the encoder scrolls the roller, a press of the
+     * right pad clicks the button.
      */
     s_right_encoder_group = lv_group_create();
     lv_group_add_obj(s_right_encoder_group, s_roller);

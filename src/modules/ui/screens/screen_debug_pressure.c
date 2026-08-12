@@ -1,23 +1,28 @@
 /**
  * @file        screen_debug_pressure.c
- * @brief       Debug screen for air and break pressure
+ * @brief       Debug screen for air and brake pressure
  *
- * @details     
+ * @ingroup     dcu_ui_screens
+ *
+ * @details     Implementation; the contract is in screen_debug_pressure.h.
+ *
+ *              Builds four bar-plus-readout pairs: brake pressure front and
+ *              rear, air pressure front and rear. Each is bound to its
+ *              generated subject; the readouts print two decimals because the
+ *              signals carry scaled values.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-24
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-24  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -58,6 +63,16 @@ static void build_bars(lv_obj_t *scr);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Build every bar and its numeric readout.
+ *
+ * One block per value, each following the same shape: create the bar,
+ * strip the LVGL defaults, apply the shared slider styles, set the range,
+ * bind it to its subject, then add the caption above and the readout to
+ * its right.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_bars(lv_obj_t *scr)
 {
     /* ── Brake Pressure Front ───────────────────────────────────────────── */

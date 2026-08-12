@@ -2,13 +2,22 @@
  * @file        ui_unit_label.h
  * @brief       Composite value+unit display widget based on lv_spangroup
  *
+ * @ingroup     dcu_ui_widgets
+ *
  * @details     Creates a spangroup with two spans:
  *                span 0 — numeric value, large font
  *                span 1 — unit suffix, small font
  *
+ *              A spangroup rather than two labels, because the unit then flows
+ *              directly after the digits with correct baseline alignment and
+ *              no manual positioning as the value's width changes.
+ *
  *              Both spans inherit text_color from the parent spangroup object,
  *              so UI_STATE_WARN / UI_STATE_CRIT level styles applied to the
- *              spangroup affect both spans automatically.
+ *              spangroup affect both spans automatically.  Combined with the
+ *              threshold defines from ui_subjects_gen.h, a value colors
+ *              itself out of range without a line of per-frame code — see the
+ *              example below.
  *
  *              Usage:
  *              @code
@@ -20,7 +29,7 @@
  *
  *                ui_unit_label_bind_float(w, &ui_subj_power_average, "%.0f");
  *
- *                // Optional level colouring:
+ *                // Optional level coloring:
  *                lv_obj_add_style(w, &ui_style_level_warn, UI_STATE_WARN);
  *                lv_obj_add_style(w, &ui_style_level_crit, UI_STATE_CRIT);
  *                lv_obj_bind_state_if_gt(w, &ui_subj_power_average,
@@ -34,15 +43,14 @@
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
  * 
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-16  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -57,12 +65,18 @@
 /**
  * @brief Create a value+unit spangroup widget.
  *
+ * The value span is right-aligned, so the unit stays put as the number of
+ * digits changes.
+ *
  * @param parent      Parent LVGL object.
  * @param value_font  Font for the numeric value span (e.g. BarlowCondensed_BoldItalic_32).
+ *                    Must outlive the widget; the font objects are static.
  * @param unit_font   Font for the unit suffix span  (e.g. BarlowCondensed_Italic_20).
  * @param unit_str    Unit text shown after the value (e.g. "W", "°C", "V").
+ *                    Pass "" for a bare number.
  * @return            The lv_spangroup object. Use lv_obj_set_size / lv_obj_align
- *                    to position it. Initial value text is "---".
+ *                    to position it. The value reads "0" until the first
+ *                    ui_unit_label_bind_value() update arrives.
  */
 lv_obj_t *ui_unit_label_create(lv_obj_t *parent,
                                 const lv_font_t *value_font,
@@ -73,13 +87,18 @@ lv_obj_t *ui_unit_label_create(lv_obj_t *parent,
  * @brief Bind a subject to the value span.
  *
  * Delegates to lv_spangroup_bind_span_text, which handles both int and float
- * subjects internally. Use a printf-style @p fmt matching the subject type
- * (e.g. "%.0f" for float, "%d" for int). The format string must remain valid
- * for the lifetime of the widget (string literals are fine).
+ * subjects internally. From here on the widget updates itself whenever the
+ * subject changes; there is no unbind — the binding dies with the widget.
+ *
+ * @warning The format specifier must match the subject's actual type. The
+ *          generated RX subjects are int subjects, so "%d" is the usual
+ *          choice; "%.2f" appears where a signal carries a scaled value.
+ *          A mismatch is not diagnosed and prints garbage.
  *
  * @param obj      Spangroup returned by ui_unit_label_create().
  * @param subject  lv_subject_t to observe (int or float).
- * @param fmt      printf format string for the value.
+ * @param fmt      printf format string for the value. Must remain valid for
+ *                 the lifetime of the widget (string literals are fine).
  */
 void ui_unit_label_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fmt);
 

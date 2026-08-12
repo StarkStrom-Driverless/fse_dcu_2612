@@ -2,27 +2,31 @@
  * @file        screen_boot.c
  * @brief       Boot (splash) screen implementation
  *
- * @details     Builds the first screen shown after firmware start.  The screen
- *              contains a single centred label displaying the product identifier.
+ * @ingroup     dcu_ui_screens
  *
- *              There are no interactive widgets and no runtime data bindings —
- *              the content is entirely static.  Navigation away from this screen
- *              is handled externally by ui.c (encoder input → lv_screen_load_anim).
+ * @details     Builds the first screen shown after firmware start: the shared
+ *              header, the StarkStrom gear logo, the product name and the
+ *              firmware version.
+ *
+ *              There are no interactive widgets and no data bindings.  The one
+ *              dynamic element is an LVGL animation that rotates the outer gear
+ *              continuously; it is owned by the object and dies with it, so
+ *              nothing has to stop it when the screen is deleted.
+ *
+ *              Navigation away from this screen is handled by ui.c.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -55,7 +59,7 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
 
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
-    ui_header_create(scr, "BOOT", status_subjects);
+    ui_header_create(scr, "START", status_subjects);
 
     /* ── Product label ───────────────────────────────────────────────────── */
 
@@ -78,6 +82,14 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
 
     /* ── Logo ────────────────────────────────────────────────────────────── */
 
+    /*
+     * Both gears are A8 images — alpha only, no color of their own — so the
+     * recolor below is what gives them the StarkStrom orange and red. Storing
+     * one channel instead of three is what keeps them affordable in flash.
+     *
+     * Only the outer ring turns; the inner gear is drawn on top of it and
+     * stays put.
+     */
     LV_IMAGE_DECLARE(outer_gear_a8);
 
     lv_obj_t *img_outer_gear = lv_image_create(scr);
@@ -90,6 +102,10 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
                        outer_gear_a8.header.w / 2,
                        outer_gear_a8.header.h / 2);
 
+    /*
+     * 0 … 3600 in tenths of a degree is one full turn every 6 s, repeating
+     * forever.  lv_anim_start() copies the descriptor, so the local is fine.
+     */
     lv_anim_t anim;
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, img_outer_gear);

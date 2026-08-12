@@ -1,23 +1,27 @@
 /**
  * @file        screen_debug_lv_accu.c
- * @brief       Debug screen for low voltage accumulator
+ * @brief       Debug screen for the low-voltage accumulator
  *
- * @details     
+ * @ingroup     dcu_ui_screens
+ *
+ * @details     Implementation; the contract is in screen_debug_lv_accu.h.
+ *
+ *              Builds one bar-plus-readout pair for the low-voltage accumulator
+ *              voltage, bound to ui_subj_lv_accu_voltage. 
+ *
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-25
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-25  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -58,6 +62,16 @@ static void build_bars(lv_obj_t *scr);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Build every bar and its numeric readout.
+ *
+ * One block per value, each following the same shape: create the bar,
+ * strip the LVGL defaults, apply the shared slider styles, set the range,
+ * bind it to its subject, then add the caption above and the readout to
+ * its right.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_bars(lv_obj_t *scr)
 {
     /* ── LV Accu Voltage ────────────────────────────────────────────────── */

@@ -1,30 +1,37 @@
 /**
  * @file        ui_styles.h
- * @brief       Shared LVGL styles, colours, and font declarations for the DCU UI
+ * @brief       Shared LVGL styles, colors, and font declarations for the DCU UI
+ *
+ * @ingroup     dcu_ui_styles
  *
  * @details     Defines the visual design language used across all screens:
  *
- *              Colour palette
- *              ──────────────
- *              UI_C_BG      Warm off-white — screen background
- *              UI_C_DARK    Near-black     — text, borders, header gradient end
- *              UI_C_ACCENT  FSE gold       — header gradient start, focus highlight
- *              UI_C_GREEN   Racing green   — OK state, active indicator, progress fill
- *              UI_C_RED     Fault red      — error / safety-fault indicator
- *              UI_C_WHITE   Pure white     — widget backgrounds
- *              UI_C_BAR_BG  Warm beige     — progress-bar track background
- *              UI_C_BORDER  Dark grey      — border lines
+ *              ### Color palette
  *
- *              Typography  (Barlow Condensed font family)
- *              ──────────────────────────────────────────
- *              BarlowCondensed_BoldItalic_18   subtitle / widget captions
- *              BarlowCondensed_Italic_20        unit suffixes (%, rpm, V …)
- *              BarlowCondensed_BoldItalic_32    screen titles, medium values
- *              BarlowCondensed_Italic_44        screen sub-headings
- *              BarlowCondensed_BoldItalic_100   hero numeric display
+ *              | Constant    | Color        | Used for                        |
+ *              |-------------|---------------|---------------------------------|
+ *              | UI_C_BG     | Warm off-white| Screen background               |
+ *              | UI_C_DARK   | Near-black    | Text, borders, gradient end     |
+ *              | UI_C_ACCENT | FSE gold      | Gradient start, focus highlight |
+ *              | UI_C_GREEN  | Racing green  | OK state, active, progress fill |
+ *              | UI_C_RED    | Fault red     | Errors and safety faults        |
+ *              | UI_C_WHITE  | Pure white    | Widget backgrounds              |
+ *              | UI_C_BAR_BG | Warm beige    | Progress-bar track              |
+ *              | UI_C_BORDER | Dark grey     | Border lines                    |
  *
- *              Styles
- *              ──────
+ *              ### Typography (Barlow Condensed family)
+ *
+ *              | Font                          | Used for                  |
+ *              |-------------------------------|---------------------------|
+ *              | BarlowCondensed_BoldItalic_18 | Widget captions, buttons  |
+ *              | BarlowCondensed_Italic_20     | Unit suffixes (%, V, °C)  |
+ *              | BarlowCondensed_BoldItalic_32 | Screen titles, mid values |
+ *              | BarlowCondensed_Italic_44     | Large unit suffixes       |
+ *              | BarlowCondensed_BoldItalic_80 | Hero numeric display      |
+ *              | BarlowCondensed_BoldItalic_100| Largest numeric display   |
+ *              | FontAwesome_Solid_18          | Header status icons       |
+ *
+ *              ### Styles
  *              One global lv_style_t instance per semantic role. All styles
  *              are initialised by ui_styles_init(); do not call lv_obj_add_style()
  *              before that function returns.
@@ -41,15 +48,13 @@
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -62,13 +67,23 @@
 
 #include <lvgl.h>
 
+/**
+ * @defgroup dcu_ui_styles UI styles
+ * @ingroup  dcu_ui
+ * @brief Shared colors, fonts and lv_style_t instances.
+ *
+ * Screens compose their look from these; none of them calls lv_style_init()
+ * itself. Changing a color or a font here changes it everywhere.
+ * @{
+ */
 
-/* ── Colour Palette ──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Color Palette ──────────────────────────────────────────────────────────────────────────── */
 
 /** @brief Warm off-white — used as the default screen background. */
 #define UI_C_BG         lv_color_hex(0xFAF8F3)
 
-/** @brief Near-black — primary text colour and widget border colour. */
+/** @brief Near-black — primary text color and widget border color. */
 #define UI_C_DARK       lv_color_hex(0x1A1A1A)
 
 /** @brief FSE gold / yellow — accent, focus highlight, header gradient start. */
@@ -143,8 +158,12 @@ extern lv_style_t ui_style_screen;
 /**
  * @brief Full-width header bar with a horizontal ACCENT → DARK gradient.
  *
- * Apply to an lv_obj sized to lv_pct(100) × 15 % of screen height.
- * Gradient end coordinate is computed from the display width at init time.
+ * Applied by ui_header_create() to an object of lv_pct(100) × 15 % of screen
+ * height; screens do not use it directly.
+ *
+ * The gradient stops are hard-coded to a very short span, which makes the
+ * transition read as a hard edge rather than a fade — see init_header_style()
+ * in ui_styles.c for the display-width-derived variant it replaced.
  */
 extern lv_style_t ui_style_header;
 
@@ -153,8 +172,10 @@ extern lv_style_t ui_style_header;
 /**
  * @brief Bordered white panel for grouping related content.
  *
- * White background with a 1 px BORDER-coloured border, 8 px internal
+ * White background with a 1 px BORDER-colored border, 8 px internal
  * padding, and no radius (square corners match the overall aesthetic).
+ *
+ * @note No screen uses it at present.
  */
 extern lv_style_t ui_style_card;
 
@@ -162,37 +183,37 @@ extern lv_style_t ui_style_card;
 
 /**
  * @brief Widget caption and slider / button title text.
- * Font: BarlowCondensed_BoldItalic_18. Colour: UI_C_DARK.
+ * Font: BarlowCondensed_BoldItalic_18. Color: UI_C_DARK.
  */
 extern lv_style_t ui_style_label_subtitle;
 
 /**
  * @brief Unit-suffix text (%, rpm, V, °C …).
- * Font: BarlowCondensed_Italic_20. Colour: UI_C_DARK.
+ * Font: BarlowCondensed_Italic_20. Color: UI_C_DARK.
  */
 extern lv_style_t ui_style_label_unit;
 
 /**
  * @brief Screen title and medium numeric value text.
- * Font: BarlowCondensed_BoldItalic_32. Colour: UI_C_DARK.
+ * Font: BarlowCondensed_BoldItalic_32. Color: UI_C_DARK.
  */
 extern lv_style_t ui_style_label_title;
 
 /**
  * @brief Screen sub-heading and secondary caption text.
- * Font: BarlowCondensed_Italic_44. Colour: UI_C_DARK.
+ * Font: BarlowCondensed_Italic_44. Color: UI_C_DARK.
  */
 extern lv_style_t ui_style_label_caption;
 
 /**
  * @brief Hero numeric display (RPM, SoC …).
- * Font: BarlowCondensed_BoldItalic_100. Colour: UI_C_DARK.
+ * Font: BarlowCondensed_BoldItalic_100. Color: UI_C_DARK.
  */
 extern lv_style_t ui_style_label_value_lg;
 
 /**
  * @brief Hero numeric display (RPM, SoC …).
- * Font: BarlowCondensed_BoldItalic_80. Colour: UI_C_DARK.
+ * Font: BarlowCondensed_BoldItalic_80. Color: UI_C_DARK.
  */
 extern lv_style_t ui_style_label_value_md;
 
@@ -242,6 +263,12 @@ extern lv_style_t ui_style_slider_indicator;
 
 /* --- Status indicators ------------------------------------------------------------ */
 
+/*
+ * The three dot styles below predate the header widget, which recolors its
+ * Font Awesome glyphs directly instead. Nothing uses them at present; they
+ * remain the intended styling for a plain circular status indicator.
+ */
+
 /**
  * @brief Circular OK / connected indicator dot.
  * Green fill, no border, circle radius.
@@ -279,19 +306,19 @@ extern lv_style_t ui_style_status_fault;
 #define UI_STATE_CRIT   LV_STATE_USER_2
 
 /**
- * @brief Text colour style for the WARNING level (UI_STATE_WARN).
+ * @brief Text color style for the WARNING level (UI_STATE_WARN).
  * Sets text_color to UI_C_ACCENT (gold). For labels and span groups.
  */
 extern lv_style_t ui_style_level_warn;
 
 /**
- * @brief Text colour style for the CRITICAL level (UI_STATE_CRIT).
+ * @brief Text color style for the CRITICAL level (UI_STATE_CRIT).
  * Sets text_color to UI_C_RED. Higher priority than ui_style_level_warn.
  */
 extern lv_style_t ui_style_level_crit;
 
 /**
- * @brief Background/fill colour style for the WARNING level (UI_STATE_WARN).
+ * @brief Background/fill color style for the WARNING level (UI_STATE_WARN).
  * Sets bg_color to UI_C_ACCENT (gold). For slider indicators, arcs, progress fills.
  * Apply with: lv_obj_add_style(obj, &ui_style_level_warn_indicator,
  *                              UI_STATE_WARN | LV_PART_INDICATOR);
@@ -299,7 +326,7 @@ extern lv_style_t ui_style_level_crit;
 extern lv_style_t ui_style_level_warn_indicator;
 
 /**
- * @brief Background/fill colour style for the CRITICAL level (UI_STATE_CRIT).
+ * @brief Background/fill color style for the CRITICAL level (UI_STATE_CRIT).
  * Sets bg_color to UI_C_RED. Higher priority than ui_style_level_warn_indicator.
  * Apply with: lv_obj_add_style(obj, &ui_style_level_crit_indicator,
  *                              UI_STATE_CRIT | LV_PART_INDICATOR);
@@ -309,26 +336,35 @@ extern lv_style_t ui_style_level_crit_indicator;
 /* ─── Custom Icons ───────────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Custom added Icons
+ * @name Font Awesome icon glyphs
  *
- * Custom Icons from Font Awesome Font. 
+ * UTF-8 encodings of the code points included in the FontAwesome_Solid_18
+ * font. Usable wherever LVGL accepts a symbol string, but only on an object
+ * whose text font is FontAwesome_Solid_18 — any other font renders them as
+ * missing glyphs. Currently used by the header widget's device slots.
+ *
+ * Adding an icon means regenerating that font with the extra code point;
+ * a define alone is not enough.
+ * @{
  */
 
-#define FA_SYMBOL_DESKTOP_SOLID "\xEF\x8E\x90"
+#define FA_SYMBOL_DESKTOP_SOLID "\xEF\x8E\x90"  /**< U+F390 desktop — DV PC.        */
 
-#define FA_SYMBOL_GAUGE_SIMPLE  "\xEF\x98\xAA"
+#define FA_SYMBOL_GAUGE_SIMPLE  "\xEF\x98\xAA"  /**< U+F62A gauge.                  */
 
-#define FA_SYMBOL_MICROCHIP     "\xEF\x8B\x9B"
+#define FA_SYMBOL_MICROCHIP     "\xEF\x8B\x9B"  /**< U+F2DB microchip — mABX.       */
 
-#define FA_SYMBOL_NETWORK_SOLID "\xEF\x9B\xBF"
+#define FA_SYMBOL_NETWORK_SOLID "\xEF\x9B\xBF"  /**< U+F6FF network — CAN bus.      */
 
-#define FA_SYMBOL_RULER         "\xEF\x95\x85"
+#define FA_SYMBOL_RULER         "\xEF\x95\x85"  /**< U+F545 ruler — Kistler.        */
 
-#define FA_SYMBOL_VIDEO         "\xEF\x80\xBD"
+#define FA_SYMBOL_VIDEO         "\xEF\x80\xBD"  /**< U+F03D video — data logger.    */
 
-#define FA_SYMBOL_POWER_OFF     "\xEF\x80\x91"
+#define FA_SYMBOL_POWER_OFF     "\xEF\x80\x91"  /**< U+F011 power — shutdown circuit.*/
 
-#define FA_SYMBOL_ROBOT         "\xEF\x95\x84"
+#define FA_SYMBOL_ROBOT         "\xEF\x95\x84"  /**< U+F544 robot — ROS.            */
+
+/** @} */
 
 /* ── Initialisation ──────────────────────────────────────────────────────────────────────────── */
 
@@ -336,13 +372,13 @@ extern lv_style_t ui_style_level_crit_indicator;
  * @brief Initialise all shared UI styles.
  *
  * Must be called once from the UI module after LVGL has been initialised
- * and before any screen builder function runs. Calling it a second time
- * re-initialises all styles (safe but discouraged).
+ * and before any screen builder function runs — a style added to an object
+ * before lv_style_init() has run on it is undefined behaviour.
  *
- * The header gradient is computed from the active display's horizontal
- * resolution at call time, so the default LVGL display must already be
- * registered.
+ * The first step of ui_module_init(), and the only caller.
  */
 void ui_styles_init(void);
+
+/** @} */ /* dcu_ui_styles */
 
 #endif /* MODULES_UI_UI_STYLES_H */

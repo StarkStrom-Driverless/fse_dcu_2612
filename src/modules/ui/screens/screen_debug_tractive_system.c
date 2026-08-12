@@ -1,23 +1,30 @@
 /**
  * @file        screen_debug_tractive_system.c
- * @brief       Debug screen for tractive system
+ * @brief       Debug screen for the tractive system
  *
- * @details     
+ * @ingroup     dcu_ui_screens
+ *
+ * @details     Implementation; the contract is in screen_debug_tractive_system.h.
+ *
+ *              Builds six bar-plus-readout pairs in two columns: tractive-system
+ *              voltage, highest motor temperature and inverter temperature on
+ *              the left; both accelerator pedal position sensors and the brake
+ *              pedal position on the right. Each is bound to its generated
+ *              subject, so the screen keeps no state.
+ *
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-24
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-24  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -58,6 +65,16 @@ static void build_bars(lv_obj_t *scr);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Build every bar and its numeric readout.
+ *
+ * One block per value, each following the same shape: create the bar,
+ * strip the LVGL defaults, apply the shared slider styles, set the range,
+ * bind it to its subject, then add the caption above and the readout to
+ * its right.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_bars(lv_obj_t *scr)
 {
     /* ── Tractive System Voltage ────────────────────────────────────────── */

@@ -1,53 +1,64 @@
 /**
  * @file        ui.c
- * @brief       UI module — LVGL task thread, screen carousel, encoder routing
+ * @brief       UI module — LVGL task thread, screen carousel, input routing
+ *
+ * @ingroup     dcu_ui
  *
  * @details     Central coordinator for all display output.
  *
- *              Thread model
- *              ────────────
+ *              ### Thread model
  *              One dedicated LVGL task thread (priority 8) calls
  *              lv_timer_handler() at UI_TASK_PERIOD_MS intervals.  All LVGL
  *              API calls (screen loads, style changes, label updates) happen
  *              inside this thread to preserve LVGL's single-thread assumption.
+ *              It is the lowest-priority thread in the system: rendering must
+ *              never delay CAN or the App Layer.
  *
- *              Left encoder — screen carousel
- *              ──────────────────────────────
- *              INPUT_CALLBACK_DEFINE captures INPUT_REL_WHEEL events from
- *              qdec_input0 in the Zephyr input workqueue context and accumulates
- *              them in atomic_t s_nav_delta.  The LVGL thread drains this delta
- *              each iteration and calls carousel_navigate() if non-zero.
+ *              ### Screen lifecycle
+ *              Screens are built on first visit by the factory in
+ *              k_screen_factories[] and deleted when the next screen has been
+ *              loaded, so at most one screen occupies RAM.  A screen therefore
+ *              cannot hold state across visits — anything that must survive
+ *              belongs in a file-scope LVGL subject, in app_state or in the
+ *              settings service.
  *
- *              Carousel layout (left → right):
- *                index 0 : SCREEN_MISSION_SELECT
- *                index 1 : SCREEN_BOOT  ← starting position
+ *              ### Left encoder — screen carousel
+ *              INPUT_CALLBACK_DEFINE captures INPUT_REL_WHEEL events from the
+ *              qdec_input_left alias in the Zephyr input workqueue context and
+ *              accumulates them in atomic_t s_nav_delta.  The LVGL thread
+ *              drains this delta each iteration and calls carousel_navigate()
+ *              if non-zero.  This encoder is never handed to LVGL — it moves
+ *              between screens, not between widgets.
  *
- *              Right encoder — in-screen widget navigation
- *              ────────────────────────────────────────────
- *              The second LVGL encoder indev (lvgl_encoder1) is assigned to the
- *              active screen's lv_group_t via lv_indev_set_group().  Screens
- *              without interactive content receive NULL (indev ignored by LVGL).
+ *              The carousel order is k_carousel[]; the starting position is
+ *              SCREEN_BOOT, found by searching that array in ui_module_init().
  *
- *              Zbus — App → UI commands
- *              ─────────────────────────
- *              ZBUS_SUBSCRIBER_DEFINE(ui_cmd_sub) subscribes to ui_cmd_chan.
- *              The LVGL thread polls the subscriber queue with K_NO_WAIT each
- *              iteration so commands are processed without a dedicated thread.
+ *              ### Right encoder and button pads — in-screen interaction
+ *              Three LVGL input devices are resolved from devicetree aliases
+ *              and re-pointed on every screen change (set_encoder_group()) to
+ *              the groups the target screen exposes.  A screen without
+ *              interactive content returns NULL, which detaches the device so
+ *              LVGL ignores its events.
+ *
+ *              ### Zbus — three channels, polled, never blocking
+ *              ui_cmd_chan (screen switches, CAN snapshots), can_status_chan
+ *              (CAN icon) and vehicle_status_chan are drained with K_NO_WAIT
+ *              at the end of every LVGL iteration.  Polling instead of a
+ *              blocking subscriber thread keeps every LVGL call in this one
+ *              thread; the cost is up to UI_TASK_PERIOD_MS of latency.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -99,13 +110,19 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
-/** @brief LVGL task period in milliseconds (~100 fps upper bound). */
+/** @brief LVGL task period in milliseconds. Also bounds the Zbus command latency. */
 #define UI_TASK_PERIOD_MS       5U
 
-/** @brief Screen slide animation duration in milliseconds. */
+/** @brief Screen transition animation duration in milliseconds. 0 = instant. */
 #define UI_ANIM_DURATION_MS     0U
 
-/** @brief Stack size for the LVGL task thread. */
+/**
+ * @brief Stack size for the LVGL task thread.
+ *
+ * Large by embedded standards, and deliberately so: rendering the 80 pt and
+ * 100 pt fonts is what drives the requirement. This is also why the first
+ * lv_timer_handler() call was moved out of ui_module_init() — see there.
+ */
 #define UI_THREAD_STACK_SIZE    16384U
 
 /** @brief Scheduling priority for the LVGL task thread (lowest in the system). */
@@ -122,29 +139,48 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
 /**
  * @brief Left-to-right ordered list of screens reachable via the left encoder.
  *
- * Index 0 is the leftmost screen; rotating CCW moves to lower indices.
- * The starting position is SCREEN_BOOT (index 1).
+ * Index 0 is the leftmost screen; turning the encoder counter-clockwise moves
+ * towards lower indices, clockwise towards higher ones. There is no wrap-around
+ * — the ends are hard stops, so the driver can reach an edge screen blindly.
+ *
+ * The list is a subset of enum screen_id: a screen may exist and be reachable
+ * only through UI_CMD_SET_SCREEN. Every entry must have a factory below.
  */
 static const enum screen_id k_carousel[] = {
-    SCREEN_DEBUG_LV_ACCU,   /* index  1 - CCW from boot   */
-    SCREEN_DEBUG_HV_ACCU,   /* index  2 - CCW from boot   */
-    SCREEN_DEBUG_PRESSURE,  /* index  3 - CCW from boot   */
-    SCREEN_DEBUG_TS,        /* index  4 - CCW from boot   */
-    SCREEN_DEBUG_WRITE,     /* index  5 - CCW from boot   */
-    SCREEN_BOOT,            /* index  6 - initial screen  */
-    SCREEN_MISSION_SELECT,  /* index  7 - CW from boot    */
-    SCREEN_SDC,             /* index  8 - CW from Mission */
-    SCREEN_PRE_RTD,         /* index  9 - CW from Mission */
-    SCREEN_EV_DRIVING,      /* index 10 - EV Driving      */
+    SCREEN_DEBUG_LV_ACCU,   /* index 0 — leftmost                       */
+    SCREEN_DEBUG_HV_ACCU,   /* index 1                                  */
+    SCREEN_DEBUG_PRESSURE,  /* index 2                                  */
+    SCREEN_DEBUG_TS,        /* index 3                                  */
+    SCREEN_DEBUG_WRITE,     /* index 4                                  */
+    SCREEN_BOOT,            /* index 5 — start position after boot      */
+    SCREEN_MISSION_SELECT,  /* index 6                                  */
+    SCREEN_SDC,             /* index 7                                  */
+    SCREEN_PRE_RTD,         /* index 8 — carries the RTD button         */
+    SCREEN_EV_DRIVING,      /* index 9 — rightmost                      */
 };
 
+/** @brief Number of screens in the carousel. */
 #define CAROUSEL_LEN    ARRAY_SIZE(k_carousel)
 
 
 /* ── Screen factory ──────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * @brief Signature every screen builder shares.
+ *
+ * Takes the device-status subject array that the header widget binds to — every
+ * screen passes it straight to ui_header_create() — and returns the newly
+ * created top-level screen object.
+ */
 typedef lv_obj_t *(*screen_factory_fn)(lv_subject_t *);
 
+/**
+ * @brief Builder per screen_id; NULL means "screen not implemented".
+ *
+ * Sparse by design — the designated initialisers keep the table aligned with
+ * enum screen_id no matter how the enum is reordered, and ui_load_screen()
+ * treats a NULL entry as a no-op with a warning.
+ */
 static const screen_factory_fn k_screen_factories[SCREEN_ID_COUNT] = {
     [SCREEN_DEBUG_LV_ACCU]  = screen_debug_lv_accu_create,
     [SCREEN_DEBUG_HV_ACCU]  = screen_debug_hv_accu_create,
@@ -172,7 +208,15 @@ static lv_obj_t *s_screens[SCREEN_ID_COUNT];
 /** @brief Currently active screen identifier. */
 static enum screen_id s_active_screen = SCREEN_NONE;
 
-/** @brief Current position in the carousel array. */
+/**
+ * @brief Current index into k_carousel[].
+ *
+ * @note The initialiser is an index-versus-enum mix-up without consequence:
+ *       SCREEN_BOOT is a screen_id, not a carousel index, and the two do not
+ *       coincide. It never matters, because ui_module_init() searches
+ *       k_carousel[] for SCREEN_BOOT and overwrites this with the real index
+ *       before anything reads it.
+ */
 static uint8_t s_carousel_pos = SCREEN_BOOT;    /* starts at SCREEN_BOOT */
 
 /**
@@ -183,28 +227,25 @@ static uint8_t s_carousel_pos = SCREEN_BOOT;    /* starts at SCREEN_BOOT */
  */
 static atomic_t s_nav_delta;
 
-/**
- * @brief LVGL indev for the right encoder (lvgl_encoder1).
+/*
+ * The three LVGL input devices routed to the active screen.
  *
- * Resolved once in ui_module_init() by iterating registered encoder indevs.
- * Assigned to the active screen's group on each screen transition.
+ * Each is resolved once in ui_module_init() from its devicetree alias and
+ * re-pointed at a new group on every screen transition (set_encoder_group()).
+ * NULL means the device was not found; routing then skips it and that input
+ * is simply inactive.
+ *
+ * The left encoder is deliberately absent here: it drives the carousel in this
+ * module and is never given to LVGL.
  */
+
+/** @brief Right encoder (alias qdec_input_right) — moves within a screen. */
 static lv_indev_t *s_right_enc_indev;
 
-/**
- * @brief LVGL indev for the right encoder (lvgl_encoder1).
- *
- * Resolved once in ui_module_init() by iterating registered encoder indevs.
- * Assigned to the active screen's group on each screen transition.
- */
+/** @brief Left button pad (alias keypad_left). */
 static lv_indev_t *s_left_btn_indev;
 
-/**
- * @brief LVGL indev for the right encoder (lvgl_encoder1).
- *
- * Resolved once in ui_module_init() by iterating registered encoder indevs.
- * Assigned to the active screen's group on each screen transition.
- */
+/** @brief Right button pad (alias keypad_right). */
 static lv_indev_t *s_right_btn_indev;
 
 /** @brief Thread control block for the LVGL task thread. */
@@ -221,7 +262,13 @@ static K_THREAD_STACK_DEFINE(s_ui_stack, UI_THREAD_STACK_SIZE);
  */
 static const struct device *s_disp_dev;
 
-/** @brief LVGL subjects for the four device status slots — subscribed to by header icons. */
+/**
+ * @brief One LVGL subject per device status slot; the header icons observe them.
+ *
+ * File-scope on purpose: the subjects outlive the screens. A screen passes the
+ * array to ui_header_create() while building, LVGL drops the observers when
+ * the screen is deleted, and the values survive for the next screen.
+ */
 static lv_subject_t s_device_status[UI_DEVICE_SLOT_COUNT];
 
 
@@ -232,7 +279,7 @@ static lv_subject_t s_device_status[UI_DEVICE_SLOT_COUNT];
 ZBUS_SUBSCRIBER_DEFINE(ui_cmd_sub, 4);
 ZBUS_CHAN_ADD_OBS(ui_cmd_chan, ui_cmd_sub, 0);
 
-/** @brief Subscriber for vehicle_status_chan (App Layer → all modules). */
+/** @brief Subscriber for vehicle_status_chan. Reserved — nothing publishes there. */
 ZBUS_SUBSCRIBER_DEFINE(vehicle_status_sub, 4);
 ZBUS_CHAN_ADD_OBS(vehicle_status_chan, vehicle_status_sub, 0);
 
@@ -247,10 +294,15 @@ ZBUS_CHAN_ADD_OBS(can_status_chan, can_status_sub, 0);
  * @brief Capture left encoder rotation events for carousel navigation.
  *
  * Runs in the Zephyr input workqueue context — LVGL API must not be called
- * here.  The delta is accumulated atomically and drained by the LVGL thread.
+ * here.  The delta is accumulated atomically and drained by the LVGL thread,
+ * which is the whole reason for the atomic: this callback and the LVGL thread
+ * touch s_nav_delta concurrently and share no lock.
  *
  * Positive value → CW  (navigate right in carousel)
  * Negative value → CCW (navigate left  in carousel)
+ *
+ * @param evt        Input event; only INPUT_EV_REL / INPUT_REL_WHEEL is used.
+ * @param user_data  Unused.
  */
 static void left_encoder_cb(struct input_event *evt, void *user_data)
 {
@@ -262,8 +314,8 @@ static void left_encoder_cb(struct input_event *evt, void *user_data)
 }
 
 /*
- * Register the callback for qdec_input0 (left encoder) only.
- * Events from qdec_input1 and the keypad devices are not received here.
+ * Register the callback for the left encoder only.  Events from the right
+ * encoder and the keypad devices go to LVGL and never reach this callback.
  */
 INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_ALIAS(qdec_input_left)), left_encoder_cb, NULL);
 
@@ -285,8 +337,13 @@ static void        ui_thread_fn(void *p1, void *p2, void *p3);
 /**
  * @brief Return the Nth LVGL encoder indev (0-indexed).
  *
- * Relies on the Zephyr init order: lvgl_encoder0 registers before lvgl_encoder1.
- * Passing index=0 returns the left encoder indev; index=1 the right.
+ * Walks the registered input devices and counts the encoder-type ones, so the
+ * index refers to registration order rather than to a devicetree node.
+ *
+ * @note Superseded and unused. ui_module_init() resolves the input devices
+ *       with lvgl_input_get_indev() from their devicetree aliases instead,
+ *       which does not depend on Zephyr's init order. Kept as a fallback for
+ *       a board whose aliases are missing.
  *
  * @param index  0-based index among encoder-type indevs.
  * @return Pointer to the indev, or NULL if not found.
@@ -309,11 +366,16 @@ static lv_indev_t *get_encoder_indev(uint8_t index)
 }
 
 /**
- * @brief Assign the right encoder indev to the group of the given screen.
+ * @brief Point the right encoder and both button pads at the target screen's groups.
  *
- * Screens without interactive content pass NULL, which detaches the encoder
- * so LVGL ignores its events (useful on the boot screen where any encoder
- * input drives carousel navigation, not widget focus).
+ * Every interactive screen exposes three group accessors; screens without
+ * interactive content have none and fall through to the default branch, where
+ * all three groups stay NULL. Assigning NULL detaches the device, so LVGL
+ * discards its events instead of delivering them to the previous screen's
+ * widgets — which by then are about to be deleted.
+ *
+ * Called before the screen load, so focus is already correct when the new
+ * screen appears.
  *
  * @param id  The screen that is about to become active.
  */
@@ -372,13 +434,20 @@ static void set_encoder_group(enum screen_id id)
 }
 
 /**
- * @brief Load a screen with the given animation.
+ * @brief Build if necessary, then load a screen, and release the previous one.
  *
- * Updates the right encoder group, triggers the LVGL screen transition, and
- * records the active screen.  Logs a warning if the screen was not created.
+ * The single entry point for every screen change — both carousel navigation
+ * and UI_CMD_SET_SCREEN go through here, so the create/load/delete sequence
+ * exists in exactly one place.
+ *
+ * Order matters: the previous screen is deleted only *after* the new one has
+ * been loaded, and via lv_obj_delete_async() so the deletion happens once LVGL
+ * is out of the current event dispatch and no longer holds a reference.
+ *
+ * Does nothing but log if @p id is out of range or has no factory.
  *
  * @param id    Target screen.
- * @param anim  Slide animation direction.
+ * @param anim  LVGL screen-load animation to use.
  */
 static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
 {
@@ -412,14 +481,18 @@ static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
 /**
  * @brief Navigate the screen carousel by the given encoder delta.
  *
- * One step in either direction changes s_carousel_pos by ±1, clamped at
- * the carousel boundaries (no wrapping).  The animation direction mirrors
- * the physical movement:
+ * Only the sign of @p delta is used: several accumulated detents still move
+ * one screen. That is intentional — a fast turn should not skip past several
+ * screens, each of which would be built and immediately destroyed.
  *
- *   delta < 0 (CCW, left)  → new screen slides in from the left
- *   delta > 0 (CW,  right) → new screen slides in from the right
+ * The position is clamped at both ends; there is no wrap-around.
  *
- * @param delta  Signed encoder step count; sign encodes direction.
+ * Transitions are currently instant (LV_SCREEN_LOAD_ANIM_NONE). The
+ * directional slide the commented-out lines describe follows the
+ * phone-launcher convention and can be re-enabled there.
+ *
+ * @param delta  Signed encoder step count; sign encodes direction
+ *               (negative = CCW/left, positive = CW/right).
  */
 static void carousel_navigate(int32_t delta)
 {
@@ -455,12 +528,18 @@ static void carousel_navigate(int32_t delta)
 /**
  * @brief Derive per-device icon status from the latest CAN snapshot.
  *
- * Called on every UI_CMD_UPDATE_DATA.  Only slots with CAN-derivable status
- * are written; UI_DEVICE_MABX and UI_DEVICE_CAN are left unchanged.
+ * Called on every UI_CMD_UPDATE_DATA. Writes the five slots that can be
+ * derived from CAN signals; UI_DEVICE_CAN comes from handle_can_status()
+ * instead, and UI_DEVICE_MABX has no source and keeps its initial value.
+ *
+ * Writing unconditionally is cheap: lv_subject_set_int() only notifies
+ * observers when the value actually changes.
+ *
+ * @param snap  Snapshot received from the App Layer.
  */
 static void update_device_status(const struct can_data_snapshot *snap)
 {
-    /* KISTLER: timeout counter = 0 → receiving → OK */
+    /* KISTLER: timeout flag clear → frames arriving → OK */
     lv_subject_set_int(&s_device_status[UI_DEVICE_KISTLER],
         snap->kistler_timeout ? UI_DEVICE_STATUS_FAULT : UI_DEVICE_STATUS_OK);
 
@@ -482,7 +561,7 @@ static void update_device_status(const struct can_data_snapshot *snap)
     lv_subject_set_int(&s_device_status[UI_DEVICE_ROS],
         snap->dv_ready ? UI_DEVICE_STATUS_OK : UI_DEVICE_STATUS_FAULT);
 
-    /* LOGGER: recording → OFFLINE (busy), ready → OK, else FAULT */
+    /* LOGGER: recording → ACTIVE (blinking), ready → OK, else FAULT */
     enum ui_device_status logger_status;
     if (snap->datalogger_recording) {
         logger_status = UI_DEVICE_STATUS_ACTIVE;
@@ -497,12 +576,17 @@ static void update_device_status(const struct can_data_snapshot *snap)
 /**
  * @brief Process a single ui_cmd received from the App Layer.
  *
- * UI_CMD_SET_SCREEN  — switches to the requested screen; if the target is
- *                      in the carousel the carousel position is updated so
- *                      subsequent encoder navigation stays consistent.
+ * UI_CMD_SET_SCREEN  — switches to the requested screen. If the target is in
+ *                      the carousel, the carousel position is moved with it,
+ *                      so the next encoder step continues from where the
+ *                      driver now is rather than from where they last turned.
  *
- * UI_CMD_UPDATE_DATA — pushes a CAN data snapshot into the generated LVGL
- *                      subjects; widget bindings update reactively.
+ * UI_CMD_UPDATE_DATA — pushes a CAN snapshot into the generated LVGL subjects
+ *                      and re-derives the header status icons. Bound widgets
+ *                      update themselves; nothing here knows which screen is
+ *                      on the display.
+ *
+ * @param cmd  Command read from ui_cmd_chan.
  */
 static void handle_ui_cmd(const struct ui_cmd *cmd)
 {
@@ -534,10 +618,17 @@ static void handle_ui_cmd(const struct ui_cmd *cmd)
 }
 
 /**
- * @brief Handle a vehicle_status_chan update from the App Layer.
+ * @brief Handle a vehicle_status_chan update — apply a full slot array at once.
  *
- * Sets the per-slot LVGL subjects.  Header icons on any active screen react
- * automatically via their registered observers.
+ * Header icons on the active screen react automatically through their
+ * observers.
+ *
+ * @note Never called: no module publishes on vehicle_status_chan. The status
+ *       subjects are fed by update_device_status() and handle_can_status()
+ *       instead. Note also that this would overwrite all seven slots,
+ *       including the two those functions own.
+ *
+ * @param status  Full set of slot states.
  */
 static void handle_vehicle_status(const struct vehicle_status *status)
 {
@@ -550,11 +641,20 @@ static void handle_vehicle_status(const struct vehicle_status *status)
 /**
  * @brief Map a CAN bus state event to the UI_DEVICE_CAN icon status.
  *
- * CAN_BUS_STATE_ERROR_ACTIVE  → OK    (normal operation)
- * CAN_BUS_STATE_ERROR_WARNING → WARN  (error counters elevated)
- * CAN_BUS_STATE_ERROR_PASSIVE → FAULT (error-passive, TX limited)
- * CAN_BUS_STATE_BUS_OFF       → ACTIVE (controller silent)
- * CAN_BUS_STATE_STOPPED       → ACTIVE (controller not started)
+ * CAN_BUS_STATE_ERROR_ACTIVE  → OK     (normal operation)
+ * CAN_BUS_STATE_ERROR_WARNING → WARN   (error counters elevated)
+ * CAN_BUS_STATE_ERROR_PASSIVE → FAULT  (error-passive, TX limited)
+ * CAN_BUS_STATE_BUS_OFF       → ACTIVE (controller silent — blinking)
+ * CAN_BUS_STATE_STOPPED       → ACTIVE (controller not started — blinking)
+ *
+ * The two worst states map to ACTIVE rather than FAULT on purpose: ACTIVE
+ * blinks, and a bus the DCU has dropped off entirely should be the one icon
+ * that moves.
+ *
+ * Only evt->state is read; evt->type carries no additional information on this
+ * path (see the note in can.c).
+ *
+ * @param evt  Event read from can_status_chan.
  */
 static void handle_can_status(const struct can_status_event *evt)
 {
@@ -575,10 +675,18 @@ static void handle_can_status(const struct can_status_event *evt)
 /**
  * @brief LVGL task thread entry point.
  *
- * Runs lv_timer_handler() every UI_TASK_PERIOD_MS milliseconds.  Between
- * LVGL calls, the thread:
- *   1. Drains the left encoder delta and calls carousel_navigate().
- *   2. Non-blocking polls the Zbus subscriber queue for App Layer commands.
+ * Renders the first frame and enables the backlight, then loops:
+ *   1. lv_timer_handler() — LVGL's own timers, animations and rendering.
+ *   2. Drain the left encoder delta and navigate the carousel.
+ *   3. Drain all three Zbus subscriber queues with K_NO_WAIT.
+ *   4. Sleep UI_TASK_PERIOD_MS.
+ *
+ * Everything the UI does happens here, which is what keeps LVGL's
+ * single-thread requirement satisfied without a single lock.
+ *
+ * @param p1  Unused.
+ * @param p2  Unused.
+ * @param p3  Unused.
  */
 static void ui_thread_fn(void *p1, void *p2, void *p3)
 {
@@ -587,10 +695,14 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
     ARG_UNUSED(p3);
 
     /*
-     * Render the first frame on the 8 kB LVGL stack, then enable the display
-     * backlight.  This must NOT happen in ui_module_init() (main-thread context)
-     * because lv_timer_handler() with large fonts can exceed CONFIG_MAIN_STACK_SIZE
-     * (2 kB) and silently corrupt adjacent memory (typically the idle thread stack).
+     * Render the first frame on this thread's stack, then enable the display
+     * backlight — in that order, so the panel never shows an unpainted frame.
+     *
+     * This must NOT happen in ui_module_init() (main-thread context) because
+     * lv_timer_handler() with large fonts can exceed CONFIG_MAIN_STACK_SIZE
+     * (2 kB) and silently corrupt adjacent memory (typically the idle thread
+     * stack).  The symptom is a crash somewhere else entirely, which is why
+     * the split is worth keeping.
      */
     lv_timer_handler();
 
@@ -649,7 +761,7 @@ void ui_module_init(void)
     ui_styles_init();
 
     /*
-     * ── 1b. Generated LVGL subjects ─────────────────────────────────────
+     * ── 1a. Generated LVGL subjects ─────────────────────────────────────
      * Must precede screen creation: screens bind their widgets to the
      * subjects while building.  Safe here (main thread) because the LVGL
      * task thread has not been started yet.
@@ -658,23 +770,31 @@ void ui_module_init(void)
     ui_tx_subjects_gen_init();
 
     /*
-     * ── 1c. Device status subjects ───────────────────────────────────────
+     * ── 1b. Device status subjects ───────────────────────────────────────
      * Must also precede screen creation: header icons subscribe to these
      * subjects during ui_header_create() and expect them to be initialised.
+     *
+     * Starting at OK rather than FAULT keeps the header quiet during boot,
+     * before the first CAN snapshot has arrived to say otherwise.
      */
     for (int i = 0; i < UI_DEVICE_SLOT_COUNT; i++) {
         lv_subject_init_int(&s_device_status[i], (int32_t)UI_DEVICE_STATUS_OK);
     }
 
-    /* ── 3. Resolve the display device (used by the LVGL thread) ────────── */
+    /* ── 2. Resolve the display device (used by the LVGL thread) ────────── */
     s_disp_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
     if (!device_is_ready(s_disp_dev)) {
         LOG_ERR("Display device not ready — backlight will not be enabled");
         s_disp_dev = NULL;
     }
 
-    /* ── 4. Load the boot screen (no animation on cold start) ───────────── */
+    /* ── 3. Load the boot screen (no animation on cold start) ───────────── */
 
+    /*
+     * Find SCREEN_BOOT in the carousel rather than hard-coding its index, so
+     * reordering k_carousel[] cannot leave the start position pointing at a
+     * different screen.  Index 0 is the fallback if it is not in the list.
+     */
     s_carousel_pos = 0;
     for (uint8_t i = 0; i < (uint8_t)CAROUSEL_LEN; i++) {
         if (k_carousel[i] == SCREEN_BOOT) {
@@ -691,11 +811,11 @@ void ui_module_init(void)
      * and silently corrupts adjacent kernel memory (idle thread stack).
      */
 
-    /* ── 5. Locate the right encoder LVGL indev ─────────────────────────── */
+    /* ── 4. Resolve the LVGL input devices ──────────────────────────────── */
     /*
-     * Relies on Zephyr init order: lvgl_encoder0 registers first (index 0),
-     * lvgl_encoder1 second (index 1).  If in-screen navigation appears on the
-     * wrong encoder, swap the index here.
+     * Looked up by devicetree alias, so the mapping is defined by the shield
+     * and not by Zephyr's init order.  A missing device is a warning, not a
+     * failure: the display keeps working, that one input does not.
      */
 
     s_right_enc_indev = lvgl_input_get_indev(DEVICE_DT_GET(DT_ALIAS(qdec_input_right)));
@@ -719,7 +839,7 @@ void ui_module_init(void)
         LOG_DBG("Right button indev found");
     }
 
-    /* ── 6. Start the LVGL task thread ──────────────────────────────────── */
+    /* ── 5. Start the LVGL task thread ──────────────────────────────────── */
     k_thread_create(&s_ui_thread,
                     s_ui_stack,
                     K_THREAD_STACK_SIZEOF(s_ui_stack),

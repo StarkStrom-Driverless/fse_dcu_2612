@@ -1,50 +1,39 @@
 /**
  * @file        screen_checklist.c
- * @brief       Pre-RTD checklist screen implementation
+ * @brief       Pre-RTD screen implementation — the Ready-to-Drive button
  *
- * @details     Builds the pre-RTD checklist screen with:
+ * @ingroup     dcu_ui_screens
  *
- *                – Roller  : lists all seven FS disciplines; controlled by the
- *                            right encoder via an lv_group_t.  Rolling does NOT
- *                            publish any Zbus event — the selection is only
- *                            transmitted when OK or RTD is pressed.
+ * @details     Builds the pre-RTD screen. Its only widget is the RTD button;
+ *              the checklist the file is named after is still to come.
  *
- *                – OK button  : confirms the roller's current selection and
- *                               publishes UI_INPUT_MISSION_SELECTED to
- *                               ui_input_chan.  The App Layer then calls
- *                               app_state_set_mission() and sends the mission
- *                               over CAN (CAN_TX_CMD_SEND_MISSION).
+ *              The button listens for LV_EVENT_LONG_PRESSED and
+ *              LV_EVENT_RELEASED, not for LV_EVENT_CLICKED, and publishes
+ *              UI_INPUT_RTD_REQUEST / UI_INPUT_RTD_RELEASE respectively. The
+ *              App Layer maps them to operating mode RTD and DEBUG, and the
+ *              CAN module transmits that as the RTD_Button bit — so the bit on
+ *              the bus follows the driver's thumb, and letting go always clears
+ *              the request.
  *
- *                – RTD button : requests Ready-to-Drive by publishing
- *                               UI_INPUT_RTD_REQUEST to ui_input_chan.  The
- *                               App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                               using the last-known drive mode.  Can be
- *                               pressed without having first confirmed a mission
- *                               (MISSION_NONE drive mode = 0 is then used).
+ *              Requiring a long press rather than a click is deliberate: a
+ *              brush against the button must not put the car into RTD.
  *
- *              Right encoder interaction (LVGL group)
- *              ───────────────────────────────────────
- *              Tab order: [Roller] → [OK] → [RTD] (wraps around)
- *
- *              Roller focused, NAVIGATE mode  : encoder moves focus to next obj
- *              Roller focused, EDIT mode       : encoder scrolls mission list
- *              Toggle NAVIGATE ↔ EDIT          : physical OK button (LV_KEY_ENTER)
- *              Button focused                  : LV_KEY_ENTER → LV_EVENT_CLICKED
+ *              The visual state is driven explicitly through LV_STATE_USER_1
+ *              instead of LVGL's LV_STATE_CHECKED, because the button is not
+ *              checkable — it has no state of its own to toggle.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-08  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -81,10 +70,12 @@ LOG_MODULE_REGISTER(screen_checklist, CONFIG_LOG_DEFAULT_LEVEL);
 #define BTN_HEIGHT              50
 
 /**
- * @brief Half the centre-to-centre distance between the two buttons.
+ * @brief Horizontal offset of the button from the screen centre, in pixels.
  *
- * Layout: |←BTN_WIDTH→| 10px gap |←BTN_WIDTH→|
- *          centre-to-centre = BTN_WIDTH + 10 = 110 px → half = 55 px
+ * The name is a leftover from the two-button layout this screen was copied
+ * from, where it was half the centre-to-centre distance. With one button it is
+ * simply how far right of centre that button sits — the second, negative
+ * offset is used only by the commented-out counterpart below.
  */
 #define BTN_HALF_SPACING        55
 
@@ -94,16 +85,16 @@ LOG_MODULE_REGISTER(screen_checklist, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
-/** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
+/** @brief RTD button — held to request Ready-to-Drive. */
 static lv_obj_t   *s_btn_rtd;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right encoder. Created empty — no focusable widget. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the left button pad. Never created; stays NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right button pad — holds the RTD button. */
 static lv_group_t *s_right_button_group;
 
 
@@ -114,6 +105,14 @@ static void btn_rtd_event_cb(lv_event_t *e);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Build the RTD button.
+ *
+ * The same callback is registered for both press and release; it tells them
+ * apart by the event code.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_buttons(lv_obj_t *scr)
 {
 
@@ -139,8 +138,18 @@ static void build_buttons(lv_obj_t *scr)
 /**
  * @brief RTD button press/release handler.
  *
- * PRESSED  → publishes UI_INPUT_RTD_REQUEST  (App sets mode RTD  → CAN rtd_button=1)
- * RELEASED → publishes UI_INPUT_RTD_RELEASE  (App sets mode DEBUG → CAN rtd_button=0)
+ * LONG_PRESSED → UI_INPUT_RTD_REQUEST  (App sets mode RTD   → CAN rtd_button=1)
+ * RELEASED     → UI_INPUT_RTD_RELEASE  (App sets mode DEBUG → CAN rtd_button=0)
+ *
+ * The visual state is set before publishing, so the button reflects the
+ * driver's input even if the publish fails. That is the right way round for a
+ * held control: a release event follows regardless and clears it again.
+ *
+ * A RELEASED after a short press publishes UI_INPUT_RTD_RELEASE without a
+ * preceding request. Harmless — it sets the operating mode to DEBUG, which is
+ * where it already was.
+ *
+ * @param e  LV_EVENT_LONG_PRESSED or LV_EVENT_RELEASED from the RTD button.
  */
 static void btn_rtd_event_cb(lv_event_t *e)
 {
@@ -178,15 +187,12 @@ lv_obj_t *screen_checklist_create(lv_subject_t *status_subjects)
     ui_header_create(scr, "PRE RTD", status_subjects);
     build_buttons(scr);
 
-    /* ── Input group (right encoder) ─────────────────────────────────────── */
+    /* ── Input groups ────────────────────────────────────────────────────── */
 
     /*
-     * Tab order: roller → OK → RTD.
-     *
-     * ui.c assigns this group to the right encoder indev on screen entry:
-     *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group())
-     * and removes it on screen leave:
-     *   lv_indev_set_group(right_encoder_indev, NULL)
+     * The encoder group is created empty, so the encoder stays attached and a
+     * widget added here later needs no change in ui.c.  The button group holds
+     * the RTD button as its only member and therefore stays in edit mode.
      */
     s_right_encoder_group = lv_group_create();
     lv_group_set_editing(s_right_encoder_group, true);

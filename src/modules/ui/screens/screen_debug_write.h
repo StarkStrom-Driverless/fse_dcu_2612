@@ -1,69 +1,59 @@
 /**
  * @file        screen_debug_write.h
- * @brief       Mission selection screen factory
+ * @brief       Debug-bits transmit screen factory
  *
- * @details     Provides a factory function and a group accessor for the mission
- *              selection screen.
+ * @ingroup     dcu_ui_screens
  *
- *              Screen layout (480 × 320)
- *              ─────────────────────────
+ * @details     The one screen that writes to the vehicle for diagnostic
+ *              purposes: it sets the three-bit Debug_SETTING signal that the
+ *              CAN module puts into every DCU_2_mABX frame.
  *
- *                ┌──────────────────────────────────────┐
- *                │  MISSION                 ← gradient header (15 %)
- *                ├──────────────────────────────────────┤
- *                │                                      │
- *                │         ┌─────────────────┐          │
- *                │         │  Acceleration   │          │ ← Roller
- *                │         │▶ Skidpad       ◀│          │   right encoder
- *                │         │  Autocross      │          │
- *                │         └─────────────────┘          │
- *                │                                      │
- *                │    ┌───────────┐  ┌───────────┐      │
- *                │    │    OK     │  │    RTD    │      │
- *                │    └───────────┘  └───────────┘      │
- *                └──────────────────────────────────────┘
+ *              ### Screen layout (480 × 320)
  *
- *              Encoder / button assignment
- *              ────────────────────────────
- *              Left  encoder  →  screen carousel (managed by ui.c, not this screen)
- *              Right encoder  →  assigned to this screen's LVGL group by ui.c
- *                                Tab order:  [Roller] → [OK] → [RTD]
+ *              ```
+ *              ┌──────────────────────────────────────┐
+ *              │ DBG TX                        ▪▪▪▪▪▪ │ ← shared header
+ *              ├──────────────────────────────────────┤
+ *              │              ┌─────────┐             │
+ *              │              │    2    │             │ ← roller 0…7,
+ *              │              │▶   3   ◀│             │   right encoder
+ *              │              │    4    │             │
+ *              │              └─────────┘             │
+ *              │        Current Debug Bits: 3         │ ← last confirmed
+ *              │                   ┌───────────────┐  │
+ *              │                   │   SET BITS    │  │ ← right button pad
+ *              │                   └───────────────┘  │
+ *              └──────────────────────────────────────┘
+ *              ```
  *
- *              Physical buttons on this screen:
- *                ESC  →  ui.c handles navigation back to boot screen
- *                OK   →  LV_KEY_ENTER → click focused widget (toggle roller
- *                         edit-mode or confirm OK / RTD button)
- *                RTD  →  publishes UI_INPUT_RTD_REQUEST directly (input module)
- *                TS   →  not used on this screen
+ *              ### Input assignment
  *
- *              Two distinct user actions
- *              ──────────────────────────
- *              OK  button widget  →  publishes UI_INPUT_MISSION_SELECTED
- *                                    carrying the roller's current selection.
- *                                    App Layer updates mission state and sends
- *                                    CAN_TX_CMD_SEND_MISSION.
+ *              | Input         | Drives                                      |
+ *              |---------------|---------------------------------------------|
+ *              | Left encoder  | Screen carousel — handled in ui.c, not here |
+ *              | Right encoder | The roller, permanently in edit mode        |
+ *              | Right buttons | The SET BITS button                         |
+ *              | Left buttons  | Nothing; the group accessor returns NULL    |
  *
- *              RTD button widget  →  publishes UI_INPUT_RTD_REQUEST (no payload).
- *                                    App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                                    with the last-known drive mode.
- *
- *              Rolling the roller does NOT trigger any CAN transmission; only
- *              pressing OK or RTD does.
+ *              ### Selecting versus confirming
+ *              Scrolling the roller changes nothing outside this screen. Only
+ *              SET BITS publishes UI_INPUT_DEBUG_BITS_SELECTED, which the App
+ *              Layer hands to the settings service; the CAN module reads the
+ *              stored value on its next TX cycle. The label under the roller
+ *              shows what was last confirmed.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-09
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-09  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -80,33 +70,39 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the mission selection screen.
+ * @brief Create the debug-bits transmit screen.
  *
- * Builds the header, roller, OK button, RTD button, and the LVGL input group.
+ * Builds the header, the 0…7 roller with its confirmed-value label, the
+ * SET BITS button and the two input groups.
  * Must be called after ui_styles_init().
  *
- * @return  Pointer to the top-level screen object.  Never NULL.
+ * @param status_subjects  Device-status subjects for the header widget.
+ * @return                 Pointer to the top-level screen object. Never NULL.
  */
 lv_obj_t *screen_debug_write_create(lv_subject_t *status_subjects);
 
 /**
  * @brief Return the LVGL input group for the right encoder.
  *
- * Tab order: roller → OK button → RTD button.
- * ui.c assigns this group to the RIGHT encoder input device whenever this
- * screen becomes active, and removes it when navigating away:
+ * Contains the roller only, in edit mode, so a turn scrolls the value list.
  *
- * @code
- *   // on screen enter:
- *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group());
- *   // on screen leave:
- *   lv_indev_set_group(right_encoder_indev, NULL);
- * @endcode
- *
- * @return  Pointer to the lv_group_t.  Valid after screen_mission_select_create().
+ * @return  The group. Valid only after screen_debug_write_create().
  */
 lv_group_t *screen_debug_write_get_right_encoder_group(void);
+
+/**
+ * @brief Return the LVGL input group for the left button pad.
+ * @return Always NULL — this screen has nothing on the left pad.
+ */
 lv_group_t *screen_debug_write_get_left_button_group(void);
+
+/**
+ * @brief Return the LVGL input group for the right button pad.
+ *
+ * Contains the SET BITS button.
+ *
+ * @return  The group. Valid only after screen_debug_write_create().
+ */
 lv_group_t *screen_debug_write_get_right_button_group(void);
 
 #endif /* MODULES_UI_SCREENS_SCREEN_DEBUG_WRITE_H */

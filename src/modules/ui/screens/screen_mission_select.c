@@ -2,49 +2,48 @@
  * @file        screen_mission_select.c
  * @brief       Mission selection screen implementation
  *
+ * @ingroup     dcu_ui_screens
+ *
  * @details     Builds the mission selection screen with:
  *
- *                – Roller  : lists all seven FS disciplines; controlled by the
- *                            right encoder via an lv_group_t.  Rolling does NOT
- *                            publish any Zbus event — the selection is only
- *                            transmitted when OK or RTD is pressed.
+ *                – Roller       : the mission list, scrolled by the right
+ *                                 encoder.  Scrolling publishes nothing; it
+ *                                 only moves the highlight.
  *
- *                – OK button  : confirms the roller's current selection and
- *                               publishes UI_INPUT_MISSION_SELECTED to
- *                               ui_input_chan.  The App Layer then calls
- *                               app_state_set_mission() and sends the mission
- *                               over CAN (CAN_TX_CMD_SEND_MISSION).
+ *                – Label        : "Current Mission: …", driven by an observer
+ *                                 on ui_tx_subj_drive_mode, so it always shows
+ *                                 what was last confirmed rather than what is
+ *                                 highlighted.
  *
- *                – RTD button : requests Ready-to-Drive by publishing
- *                               UI_INPUT_RTD_REQUEST to ui_input_chan.  The
- *                               App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                               using the last-known drive mode.  Can be
- *                               pressed without having first confirmed a mission
- *                               (MISSION_NONE drive mode = 0 is then used).
+ *                – SET MISSION  : publishes UI_INPUT_MISSION_SELECTED with the
+ *                                 highlighted index and updates the TX subject.
+ *                                 The App Layer writes it to app_state; the CAN
+ *                                 module transmits it on its next cycle.  No
+ *                                 CAN frame is built here.
  *
- *              Right encoder interaction (LVGL group)
- *              ───────────────────────────────────────
- *              Tab order: [Roller] → [OK] → [RTD] (wraps around)
+ *              ### State across visits
+ *              The screen is destroyed on leaving, so the roller position is
+ *              kept in the file-scope subject s_roller_sel and restored when
+ *              the screen is rebuilt.  The confirmed mission needs no such
+ *              handling — it lives in the generated TX subject.
  *
- *              Roller focused, NAVIGATE mode  : encoder moves focus to next obj
- *              Roller focused, EDIT mode       : encoder scrolls mission list
- *              Toggle NAVIGATE ↔ EDIT          : physical OK button (LV_KEY_ENTER)
- *              Button focused                  : LV_KEY_ENTER → LV_EVENT_CLICKED
+ *              ### Encoder mode
+ *              The encoder group is created with editing enabled and never
+ *              leaves it, because the roller is the only member: there is
+ *              nothing to navigate between, so a turn should always scroll.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -77,16 +76,11 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Roller option string.
+ * @brief Roller option string — one mission per line.
  *
- * Index maps directly to enum mission_id (both start at 0):
- *   0 → MISSION_NONE          "---"
- *   1 → MISSION_ACCELERATION
- *   2 → MISSION_SKIDPAD
- *   3 → MISSION_AUTOCROSS
- *   4 → MISSION_ENDURANCE
- *   5 → MISSION_INSPECTION
- *   6 → MISSION_MANUAL_DRIVING
+ * The roller index is published as a mission_id and ends up unchanged in the
+ * DV_Drive_Mode_SETTING CAN signal, so this list is effectively a wire format.
+ *
  */
 #define ROLLER_OPTIONS          \
     "None\n"                    \
@@ -98,7 +92,12 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
     "Autocross\n"               \
     "Manual Driving"            \
 
-/** @brief Mission names indexed by mission_id — mirrors ROLLER_OPTIONS. */
+/**
+ * @brief Mission names for the confirmed-mission label.
+ *
+ * Mirrors ROLLER_OPTIONS line by line and must stay in step with it: the
+ * observer indexes this array with the confirmed roller index.
+ */
 static const char *const k_mission_names[] = {
     "None", "Acceleration", "Skidpad", "Trackdrive",
     "Braketest", "Inspection", "Autocross", "Manual Driving",
@@ -117,10 +116,12 @@ static const char *const k_mission_names[] = {
 #define BTN_HEIGHT              50
 
 /**
- * @brief Half the centre-to-centre distance between the two buttons.
+ * @brief Horizontal offset of the button from the screen centre, in pixels.
  *
- * Layout: |←BTN_WIDTH→| 10px gap |←BTN_WIDTH→|
- *          centre-to-centre = BTN_WIDTH + 10 = 110 px → half = 55 px
+ * The name is a leftover from the two-button layout this screen was copied
+ * from, where it was half the centre-to-centre distance. With one button it is
+ * simply how far right of centre that button sits — the second, negative
+ * offset is used only by the commented-out counterpart below.
  */
 #define BTN_HALF_SPACING        55
 
@@ -131,32 +132,35 @@ static const char *const k_mission_names[] = {
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Persistent UI state — survive screen destroy/recreate.
+ * @brief Currently highlighted roller index — survives screen destroy/recreate.
  *
- * Initialized once on first create; never re-initialized so the values
- * carry over across lazy-load cycles.
+ * Initialised once, guarded by s_subjects_init, and never re-initialised: that
+ * is what carries the highlight across the create/delete cycle. Re-running
+ * lv_subject_init_int() would reset it to zero on every visit.
  */
-static lv_subject_t s_roller_sel;  /* currently highlighted roller index */
+static lv_subject_t s_roller_sel;
+
+/** @brief Guard so the subject above is initialised exactly once. */
 static bool         s_subjects_init;
 
 /** @brief Mission roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
 
+/** @brief "Current Mission: …" label; driven by an observer, not by the roller. */
 static lv_obj_t   *s_roller_lbl;
 
-/** @brief OK button — confirms the roller selection (sends mission over CAN). */
+/** @brief SET MISSION button — confirms the highlighted mission. */
 static lv_obj_t   *s_btn_ok;
 
-/** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
-// static lv_obj_t   *s_btn_esc;
+/* An UNSET MISSION counterpart existed here; the code is retained below. */
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right encoder — holds the roller. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the left button pad. Never created; stays NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right button pad — holds SET MISSION. */
 static lv_group_t *s_right_button_group;
 
 
@@ -170,11 +174,25 @@ static void btn_ok_event_cb(lv_event_t *e);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Mirror the roller's position into s_roller_sel so it survives a rebuild.
+ *
+ * @param e  LV_EVENT_VALUE_CHANGED from the roller.
+ */
 static void roller_value_changed_cb(lv_event_t *e)
 {
     lv_subject_set_int(&s_roller_sel, (int32_t)lv_roller_get_selected(lv_event_get_target_obj(e)));
 }
 
+/**
+ * @brief Update the "Current Mission" label from the confirmed drive mode.
+ *
+ * Observing the TX subject rather than the roller is what makes the label show
+ * the confirmed mission instead of the highlighted one.
+ *
+ * @param observer  Observer whose target object is the label.
+ * @param subject   ui_tx_subj_drive_mode; holds an index into k_mission_names.
+ */
 static void confirmed_mission_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *lbl = lv_observer_get_target_obj(observer);
@@ -182,6 +200,14 @@ static void confirmed_mission_observer_cb(lv_observer_t *observer, lv_subject_t 
     lv_label_set_text_fmt(lbl, "Current Mission: %s", k_mission_names[idx]);
 }
 
+/**
+ * @brief Build the mission roller and the confirmed-mission label.
+ *
+ * The roller is restored to the remembered position, so returning to this
+ * screen looks like it was never left.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_roller(lv_obj_t *scr)
 {
     s_roller = lv_roller_create(scr);
@@ -220,6 +246,11 @@ static void build_roller(lv_obj_t *scr)
                                 s_roller_lbl, NULL);
 }
 
+/**
+ * @brief Build the SET MISSION button.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_buttons(lv_obj_t *scr)
 {
     /* ── OK button ─────────────────────────────────────────────────────── */
@@ -258,13 +289,17 @@ static void build_buttons(lv_obj_t *scr)
 }
 
 /**
- * @brief OK button click handler.
+ * @brief SET MISSION click handler — confirm the highlighted mission.
  *
- * Reads the current roller selection and publishes UI_INPUT_MISSION_SELECTED.
- * The App Layer responds by updating the mission state and sending the
- * selected mission over CAN (CAN_TX_CMD_SEND_MISSION).
+ * Publishes UI_INPUT_MISSION_SELECTED with the roller index. The App Layer
+ * stores it in app_state, from where the CAN module reads it on its next TX
+ * cycle; no CAN frame is built here.
  *
- * No CAN frame is sent here — this screen only raises the intent.
+ * The TX subject — which drives the "Current Mission" label — is only updated
+ * once the publish succeeded, so a dropped event cannot leave the display
+ * claiming a mission the vehicle was never told about.
+ *
+ * @param e  LV_EVENT_CLICKED from the button. Unused.
  */
 static void btn_ok_event_cb(lv_event_t *e)
 {
@@ -285,14 +320,10 @@ static void btn_ok_event_cb(lv_event_t *e)
     }
 }
 
-/**
- * @brief ESC button click handler.
- *
- * Publishes UI_INPUT_ESC_REQUEST.  The App Layer responds by sending
- * CAN_TX_CMD_SEND_ESC_REQUEST using the last-known drive mode.
- *
- * Can be pressed without having first confirmed a mission; in that case the
- * CAN module uses drive mode 0 (MISSION_NONE).
+/*
+ * Retained: the UNSET MISSION button, which published the same event so the
+ * driver could clear a confirmed mission. Re-enable together with the button
+ * itself in build_buttons() and the group registration in the factory.
  */
 // static void btn_esc_event_cb(lv_event_t *e)
 // {
@@ -339,15 +370,16 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
     build_roller(scr);
     build_buttons(scr);
 
-    /* ── Input group (right encoder) ─────────────────────────────────────── */
+    /* ── Input groups ────────────────────────────────────────────────────── */
 
     /*
-     * Tab order: roller → OK → RTD.
+     * One member each, so there is nothing to tab between and both groups stay
+     * in edit mode: a turn of the encoder scrolls the roller, a press of the
+     * right pad clicks the button.
      *
-     * ui.c assigns this group to the right encoder indev on screen entry:
-     *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group())
-     * and removes it on screen leave:
-     *   lv_indev_set_group(right_encoder_indev, NULL)
+     * ui.c attaches them to the input devices on screen entry and detaches
+     * them on leaving.  The groups themselves are owned by LVGL and released
+     * with the screen.
      */
     s_right_encoder_group = lv_group_create();
     lv_group_add_obj(s_right_encoder_group, s_roller);
