@@ -2,50 +2,60 @@
  * @file        app.c
  * @brief       App Layer — Dirigent coordinator between all modules
  *
+ * @ingroup     dcu_app
+ *
  * @details     The App Layer is the single source of truth for the application
  *              state and the exclusive writer of app_state.  It coordinates all
  *              modules by reacting to upward Zbus events and issuing downward
  *              commands.
  *
- *              Threading
- *              ─────────
+ *              ### Threading
  *              A single app thread (priority 5, stack 2 kB) blocks on
  *              zbus_sub_wait() forever.  On each notification it reads the
  *              channel payload and dispatches to the appropriate handler.
  *
- *              Upward channels consumed (Module → App)
- *              ────────────────────────────────────────
- *              ui_input_chan   — driver interactions (mission selection, RTD, …)
- *              can_status_chan — CAN bus connectivity and error state
- *              can_data_chan   — decoded CAN signal snapshots
- *              settings_chan   — settings load / update events  (TODO)
- *              feedback_chan   — effect completion feedback      (TODO)
+ *              ### Upward channels consumed (Module → App)
  *
- *              Downward channels produced (App → Module)
- *              ──────────────────────────────────────────
- *              can_tx_cmd_chan — CAN frame transmission commands
- *              ui_cmd_chan     — screen navigation and data push commands
+ *              | Channel         | Carries                                     |
+ *              |-----------------|---------------------------------------------|
+ *              | ui_input_chan   | Driver interactions (mission, RTD, settings) |
+ *              | can_status_chan | CAN bus connectivity and error state         |
+ *              | can_data_chan   | Decoded CAN signal snapshots                 |
+ *              | settings_chan   | Settings load / update events — TODO         |
+ *              | feedback_chan   | Effect completion feedback — TODO            |
  *
- *              MVP operating mode transitions
- *              ──────────────────────────────
- *              DEBUG  →  (RTD button pressed)  →  RTD
- *              Full state-machine (PRE_RTD, POST_RTD, error handling) is
- *              deferred to a later implementation phase.
+ *              ### Downward channels produced (App → Module)
+ *
+ *              | Channel        | Carries                                    |
+ *              |----------------|--------------------------------------------|
+ *              | ui_cmd_chan    | Screen navigation and data push commands   |
+ *              | audio_cmd_chan | Piezo on/off, following the RTD sound signal |
+ *
+ *              No frame-level CAN commands are published.  The CAN module pulls
+ *              mission and operating mode out of app_state on its own TX cycle,
+ *              so can_tx_cmd_chan stays unused (see modules/can/can.c).
+ *
+ *              ### Operating mode transitions implemented so far
+ *
+ *              - `DEBUG` → RTD button held → `RTD`
+ *              - `RTD` → RTD button released → `DEBUG`
+ *
+ *              The mode is what the CAN module turns into the RTD_Button bit.
+ *              The remaining states of enum operating_mode (PRE_RTD, POST_RTD)
+ *              and the error handling around them are not reached yet.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -124,7 +134,11 @@ static void app_thread_fn(void *p1, void *p2, void *p3);
 
 /**
  * @brief Publish a command to ui_cmd_chan.
- * Logs an error if the channel is full.
+ *
+ * Never blocks: a full channel costs the command, not the App thread.
+ * Logs an error in that case.
+ *
+ * @param cmd  Command to copy into the channel.
  */
 static void pub_ui_cmd(const struct ui_cmd *cmd)
 {
@@ -141,23 +155,33 @@ static void pub_ui_cmd(const struct ui_cmd *cmd)
 /**
  * @brief Handle a UI input event from the driver.
  *
- * UI_INPUT_MISSION_SELECTED
- *   Records the selected mission in app_state and transmits it over CAN.
- *   The mission is not yet locked — the driver can change it again before
- *   pressing RTD.
+ * None of these handlers touches the CAN driver.  They change app_state or a
+ * setting; the CAN module picks the new value up on its next TX cycle.
  *
- * UI_INPUT_RTD_REQUEST
- *   Locks the current mission, sets operating mode to RTD, transmits the
- *   RTD CAN frame, and navigates to SCREEN_RTD.  If SCREEN_RTD is not yet
- *   implemented, ui.c logs a warning and stays on the current screen.
+ * UI_INPUT_MISSION_SELECTED
+ *   Records the selected mission in app_state, unlocked and inactive — the
+ *   driver may still change it.  The CAN module reads it every cycle.
+ *
+ * UI_INPUT_RTD_REQUEST / UI_INPUT_RTD_RELEASE
+ *   Switch the operating mode to RTD and back to DEBUG.  The CAN module
+ *   derives RTD_Button from the mode, so the bit follows the button.
  *
  * UI_INPUT_BACK
  *   Navigates back to the boot screen.  The left-encoder carousel is handled
  *   inside ui.c; this handles the physical ESC button.
  *
+ * UI_INPUT_DEBUG_BITS_SELECTED
+ *   Hands the raw value to the Settings service, which clamps, persists and
+ *   owns it.  app_state_set_debug_bits() is deliberately not used here.
+ *
  * UI_INPUT_TIMESTAMP
  *   Logs the current Zephyr uptime as an event marker.  Useful for
  *   synchronising external measurements with the firmware timeline.
+ *
+ * Everything else (confirm, encoder steps, torque-vectoring toggles) is
+ * consumed by LVGL or by the screen itself and ignored here.
+ *
+ * @param evt  Event read from ui_input_chan.
  */
 static void handle_ui_input(const struct ui_input_event *evt)
 {
@@ -251,6 +275,18 @@ static void handle_ui_input(const struct ui_input_event *evt)
  * CAN status handler
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * @brief Handle a CAN connectivity or bus-error event.
+ *
+ * Maps the event onto the connectivity flags in app_state.  A bus-off
+ * additionally raises the system error flag, because at that point the
+ * controller is silent and no vehicle data can be trusted any more.
+ *
+ * The bus state carried in evt->state is not evaluated here — the UI module
+ * subscribes to the same channel and derives its CAN icon from it directly.
+ *
+ * @param evt  Event read from can_status_chan.
+ */
 static void handle_can_status(const struct can_status_event *evt)
 {
     switch (evt->type) {
@@ -285,6 +321,18 @@ static void handle_can_status(const struct can_status_event *evt)
  * CAN data handler
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * @brief Handle a decoded CAN snapshot from the CAN module.
+ *
+ * Stores the snapshot in app_state, forwards it to the UI, and turns the
+ * rtd_sound signal into piezo commands.
+ *
+ * The RTD sound is edge-triggered: only a change of snap->rtd_sound produces
+ * an audio command, so the ~10 Hz snapshot rate does not flood audio_cmd_chan
+ * with identical messages.
+ *
+ * @param snap  Snapshot read from can_data_chan.
+ */
 static void handle_can_data(const struct can_data_snapshot *snap)
 {
     app_state_update_can_data(snap);
@@ -323,10 +371,6 @@ static void handle_can_data(const struct can_data_snapshot *snap)
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────────────────────
- * Safety event handler
- * ────────────────────────────────────────────────────────────────────────────────────────────── */
-
-/* ──────────────────────────────────────────────────────────────────────────────────────────────
  * App thread
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
 
@@ -338,6 +382,10 @@ static void handle_can_data(const struct can_data_snapshot *snap)
  *
  * The thread never yields voluntarily between events — it sleeps inside
  * zbus_sub_wait() until the OS wakes it.
+ *
+ * @param p1  Unused.
+ * @param p2  Unused.
+ * @param p3  Unused.
  */
 static void app_thread_fn(void *p1, void *p2, void *p3)
 {

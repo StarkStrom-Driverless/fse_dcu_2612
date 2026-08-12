@@ -2,32 +2,36 @@
  * @file        app_state.c
  * @brief       Application state storage, accessors, and write setters
  *
+ * @ingroup     dcu_app
+ *
  * @details     Owns the single static instance of the root application state.
  *              All reads and writes go through the functions declared in
  *              app_state.h; the root struct is opaque to all other translation
  *              units.
  *
- *              Thread safety
- *              ─────────────
- *              A k_mutex serialises concurrent access. In the current design
- *              only app_thread reads and writes the state, so contention is
- *              negligible. The mutex is retained for forward compatibility
- *              (e.g., a future diagnostics thread reading a snapshot).
+ *              ### Thread safety
+ *              A k_mutex serialises concurrent access, and it is needed: the
+ *              app thread (priority 5) writes while the CAN worker thread
+ *              (priority 3) reads mission and mode on every TX cycle, and the
+ *              CAN thread preempts the app thread. Contention is still low —
+ *              every critical section is a plain struct copy with no blocking
+ *              call inside — so K_FOREVER cannot deadlock here.
+ *
+ *              Getters copy under the lock and return by value, so a caller
+ *              never holds a reference into the shared state.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -57,24 +61,26 @@ LOG_MODULE_REGISTER(app_state, CONFIG_LOG_DEFAULT_LEVEL);
  * access must use the accessor and setter functions.
  */
 struct app_state {
-    struct app_state_system     system;
-    struct app_state_mission    mission;
-    enum   screen_id            active_screen;
-    struct app_state_can_status can_status;
-    struct can_data_snapshot    can_data;
-    struct app_state_settings   settings;
+    struct app_state_system     system;        /**< Operating mode and system flags.   */
+    struct app_state_mission    mission;       /**< Selected mission and lifecycle.    */
+    enum   screen_id            active_screen; /**< Reserved; see app_state.h.         */
+    struct app_state_can_status can_status;    /**< CAN connectivity.                  */
+    struct can_data_snapshot    can_data;      /**< Latest decoded CAN signal values.  */
+    struct app_state_settings   settings;      /**< Reserved; see app_state.h.         */
 };
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
+/** @brief Guards every access to s_state. Held only for plain struct copies. */
 K_MUTEX_DEFINE(s_mutex);
 
 /**
  * @brief Global application state instance with safe initial values.
  *
- * Operating mode starts as DEBUG. Safety flags default to false (unknown)
- * until confirmed by incoming CAN frames. Display brightness defaults to 80 %.
+ * This initialiser — not app_state_init() — is what establishes the defaults:
+ * operating mode DEBUG, no mission, CAN disconnected, all flags false
+ * (i.e. "unknown", never "confirmed OK"), display brightness 80 %.
  */
 static struct app_state s_state = {
     .system = {
@@ -108,9 +114,11 @@ static struct app_state s_state = {
 void app_state_init(void)
 {
     /*
-     * The static initialiser above already sets the default values.
-     * This function exists as an explicit hook for future extensions,
-     * such as loading persisted values before the first thread starts.
+     * The static initialiser above already sets the default values, so there
+     * is nothing to reset here.  The function is kept as the explicit hook for
+     * start-up work that cannot be expressed statically — loading persisted
+     * values, for instance — and to give main()'s init sequence one obvious
+     * place to call.
      */
     LOG_INF("Application state initialised (mode=DEBUG)");
 }
