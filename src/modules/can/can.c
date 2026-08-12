@@ -2,51 +2,62 @@
  * @file        can.c
  * @brief       CAN module — frame TX, bus management, and status reporting
  *
+ * @ingroup     dcu_can
+ *
  * @details     Owns the CAN controller hardware instance.  All frame layouts
  *              (pack/unpack/dispatch) come from the code generator — this
  *              file contains no hand-written bit manipulation.  To add a CAN
  *              message, edit dbc/dcu_app.yaml and run
  *              `python3 tools/codegen/gen_can.py`; no change here is needed.
  *
- *              Periodic TX
- *              ───────────
- *              A dedicated worker thread (priority 3) sends DCU_2_mABX
- *              (0x196) every 100 ms.  On each cycle the thread reads the
- *              current mission and operating mode directly from app_state
- *              (the single source of truth) and packs them via the generated
- *              dcu_can_gen_dcu_2_m_abx_pack().  No local state copy is kept.
+ *              ### Base tick
+ *              A dedicated worker thread (priority 3) runs a CAN_TX_PERIOD_MS
+ *              (10 ms) cycle.  Every cycle drains RX; TX messages fire on the
+ *              subset of cycles that matches their own period, taken from the
+ *              generated CAN_TX_GEN_*_PERIOD_MS constants — DCU_2_mABX (0x196)
+ *              at 100 ms, i.e. every tenth tick.
+ *
+ *              ### Pull, not push
+ *              Nothing commands a transmission.  On its send cycle the thread
+ *              reads the current values from their owners and packs them via
+ *              dcu_can_gen_dcu_2_m_abx_pack().  No local state copy is kept,
+ *              so the frame on the bus can never lag behind the application:
  *
  *                drive_mode = mission_to_drive_mode(app_state_get_selected_mission())
  *                rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD)
+ *                debug      = settings_get_all()[SETTING_DEBUG_BITS]
  *
- *              Periodic RX
- *              ───────────
+ *              RX
+ *              ──
  *              Hardware RX filters (one per ID in can_rx_gen_frame_ids[])
- *              route all generated RX frames into a message queue.  The
- *              worker thread drains the queue each cycle, decodes via
- *              can_rx_gen_dispatch() into a can_data_snapshot, and publishes
- *              it to can_data_chan.  The App Layer stores it in app_state.
+ *              route all generated RX frames into a message queue filled from
+ *              interrupt context.  The worker thread drains the queue each
+ *              cycle, decodes via can_rx_gen_dispatch() into a shared
+ *              can_data_snapshot, and publishes that snapshot whenever at
+ *              least one frame arrived.  The App Layer stores it in app_state
+ *              and forwards it to the UI.
  *
- *              Bus status
- *              ──────────
- *              can_module_init() publishes CAN_STATUS_CONNECTED after the
- *              controller is started successfully.  A future RX watchdog
- *              will publish CAN_STATUS_TIMEOUT when frames stop arriving.
+ *              ### Bus status
+ *              can_module_init() publishes CAN_STATUS_CONNECTED once after the
+ *              controller starts.  The worker thread then polls can_get_state()
+ *              every tick and republishes on every change, carrying the new
+ *              controller state — that is how the UI learns about error-warning,
+ *              error-passive and bus-off.  There is no RX watchdog yet, so a
+ *              silent bus that stays electrically healthy is not detected and
+ *              CAN_STATUS_TIMEOUT is never published.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -95,11 +106,22 @@ LOG_MODULE_REGISTER(can_module, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Thread scheduling priority for the CAN worker (higher = more urgent). */
 #define CAN_THREAD_PRIORITY     3
 
-/** @brief Capacity of the RX frame message queue (frames buffered between cycles). */
+/**
+ * @brief Capacity of the RX frame message queue, in frames.
+ *
+ * Sized far above one cycle's worth of traffic so a scheduling delay of the
+ * worker thread cannot drop frames: the driver's ISR discards silently once
+ * the queue is full.
+ */
 #define CAN_RX_MSGQ_DEPTH       550U
 
-/** @brief Base tick interval of the CAN worker thread. TX messages are sent at
- *         multiples of this value (see CAN_TX_GEN_*_PERIOD_MS in can_tx_gen.h). */
+/**
+ * @brief Base tick interval of the CAN worker thread, in milliseconds.
+ *
+ * TX messages are sent at multiples of this value (see CAN_TX_GEN_*_PERIOD_MS
+ * in can_tx_gen.h), so it must divide every generated TX period evenly.  It
+ * also bounds the RX latency: a frame waits at most one tick in the queue.
+ */
 #define CAN_TX_PERIOD_MS        10U
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -129,7 +151,12 @@ static uint32_t s_tx_tick;
 /** @brief Last-known CAN bus state; used to detect and publish state changes. */
 static enum can_state s_can_state_prev = CAN_STATE_STOPPED;
 
-/* Verify that enum can_bus_state values (events.h) match enum can_state (Zephyr). */
+/*
+ * Verify that enum can_bus_state values (events.h) match enum can_state
+ * (Zephyr).  The worker thread casts one to the other instead of translating,
+ * which keeps events.h free of any Zephyr dependency — these assertions are
+ * what makes that cast safe, and they fail the build if either enum moves.
+ */
 _Static_assert((int)CAN_STATE_ERROR_ACTIVE  == (int)CAN_BUS_STATE_ERROR_ACTIVE,  "CAN state enum mismatch");
 _Static_assert((int)CAN_STATE_ERROR_WARNING == (int)CAN_BUS_STATE_ERROR_WARNING, "CAN state enum mismatch");
 _Static_assert((int)CAN_STATE_ERROR_PASSIVE == (int)CAN_BUS_STATE_ERROR_PASSIVE, "CAN state enum mismatch");
@@ -139,19 +166,19 @@ _Static_assert((int)CAN_STATE_STOPPED       == (int)CAN_BUS_STATE_STOPPED,      
 /**
  * @brief RX message queue, filled by the CAN driver ISR for matching frames.
  *
- * Drained by the CAN worker thread once per 100 ms cycle.  Depth 16 buffers
- * more than one full period of both mABX frames at their expected rates.
+ * Drained by the CAN worker thread once per CAN_TX_PERIOD_MS cycle.
  */
 CAN_MSGQ_DEFINE(s_can_rx_msgq, CAN_RX_MSGQ_DEPTH);
 
 /**
  * @brief Accumulator for decoded RX signal values.
  *
- * Only touched by the CAN worker thread.  Holds the latest decoded value of
- * every signal; published as a whole to can_data_chan after each RX drain so
- * partial updates (only one of the two frames received) keep earlier values.
+ * Only touched by the CAN worker thread, so it needs no lock.  Holds the
+ * latest decoded value of every signal and is published as a whole after each
+ * RX drain, so a cycle in which only some of the RX messages arrived keeps the
+ * previous values of the others instead of zeroing them.
  */
-static struct can_data_snapshot s_rx_snapshot; // 80UL = 320 Byte?
+static struct can_data_snapshot s_rx_snapshot;
 
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
@@ -165,7 +192,10 @@ static void can_thread_fn(void *p1, void *p2, void *p3);
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
 /**
- * @brief Configure the CAN controller and start the bus.
+ * @brief Configure the CAN controller, install RX filters, and start the bus.
+ *
+ * Aborts on the first failing step and leaves the controller stopped, so a
+ * partially configured bus is never started.
  *
  * @return 0 on success, negative errno on failure.
  */
@@ -292,8 +322,12 @@ static bool can_drain_rx(void)
 /**
  * @brief Convert a mission_id to the DV_Drive_Mode_SETTING raw value.
  *
- * The numeric values of enum mission_id are defined to match the DBC
- * encoding directly (MISSION_NONE = 0 … MISSION_MANUAL_DRIVING = 6).
+ * The numeric values of enum mission_id are defined to match the DBC encoding
+ * directly, so the conversion is a cast.  The function exists to name that
+ * assumption at the call site rather than hide it in a cast.
+ *
+ * @param mission  Mission currently selected in app_state.
+ * @return         Raw signal value for DV_Drive_Mode_SETTING.
  */
 static inline uint8_t mission_to_drive_mode(enum mission_id mission)
 {
@@ -306,20 +340,29 @@ static inline uint8_t mission_to_drive_mode(enum mission_id mission)
  * Runs a fixed CAN_TX_PERIOD_MS (10 ms) base tick:
  *
  *   1. Drain the RX message queue — decode every received frame into the
- *      snapshot accumulator.  If anything arrived, publish the full snapshot
- *      to can_data_chan (the App Layer stores it in app_state).
+ *      snapshot accumulator.  If anything arrived, stamp it and publish the
+ *      full snapshot to can_data_chan.
  *   2. For each TX message: check s_tx_tick % (period_ms / CAN_TX_PERIOD_MS).
- *      If zero, read current state from app_state and transmit the frame.
- *   3. Increment s_tx_tick and sleep for the remainder of the base tick.
+ *      If zero, read the current values from their owners and transmit.
+ *   3. Poll the controller state and publish it on change.
+ *   4. Increment s_tx_tick and sleep for the base tick.
  *
  * TX periods come from can_tx_gen.h (generated from dcu_app.yaml period_ms).
  * Adding a TX message there requires updating only the send_* call below.
  *
- * app_state getters are thread-safe (mutex-protected inside app_state.c)
- * so they are safe to call here.
+ * The cycle is a sleep, not a deadline: the period drifts by whatever the
+ * cycle's own work costs.  That is acceptable for a 100 ms status frame and
+ * keeps the loop free of timer state.
  *
- * The thread exits silently if hardware initialisation failed so that the
+ * app_state getters and settings_get_all() are mutex-protected internally and
+ * safe to call from this thread.
+ *
+ * The thread returns immediately if hardware initialisation failed, so the
  * rest of the firmware continues to function without CAN.
+ *
+ * @param p1  Unused.
+ * @param p2  Unused.
+ * @param p3  Unused.
  */
 static void can_thread_fn(void *p1, void *p2, void *p3)
 {
@@ -361,6 +404,15 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
         }
 
         /* ── 3. Poll CAN bus state; publish to can_status_chan on change ─ */
+        /*
+         * The error counters are read only because can_get_state() requires a
+         * destination for them; the state alone drives the reporting.
+         *
+         * Note that .type stays CAN_STATUS_CONNECTED even when the controller
+         * has gone bus-off — the detail travels in .state, which is what the
+         * UI evaluates.  As a result the App Layer, which switches on .type,
+         * does not currently learn about a bus-off from this path.
+         */
         enum can_state cur_state;
         struct can_bus_err_cnt err_cnt;
         if (can_get_state(s_can_dev, &cur_state, &err_cnt) == 0 &&
@@ -390,7 +442,12 @@ void can_module_init(void)
 {
     int ret = can_hw_init();
     if (ret != 0) {
-        /* Hardware failure — thread will exit gracefully on first run. */
+        /*
+         * Hardware failure — the thread is still created, and returns on its
+         * first run.  Creating it unconditionally keeps this function's
+         * control flow simple and costs only the stack, which is statically
+         * allocated either way.
+         */
         s_hw_ready = false;
         LOG_ERR("CAN module init failed (%d) — TX disabled", ret);
     } else {
