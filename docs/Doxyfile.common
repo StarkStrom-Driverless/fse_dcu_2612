@@ -572,7 +572,13 @@ EXTRACT_PACKAGE        = NO
 # included in the documentation.
 # The default value is: NO.
 
-EXTRACT_STATIC         = NO
+# YES: in C, "static at file scope" is what a module's private implementation
+# looks like, and it is documented throughout src/. Without this the file pages
+# would show only the one *_module_init() function each .c file exports.
+# Requires the fonts/icons exclusion below — those are generated glyph tables
+# made almost entirely of static arrays.
+
+EXTRACT_STATIC         = YES
 
 # If the EXTRACT_LOCAL_CLASSES tag is set to YES, classes (and structs) defined
 # locally in source files will be included in the documentation. If set to NO,
@@ -1125,7 +1131,24 @@ EXCLUDE_SYMLINKS       = NO
 # Note that the wildcards are matched against the file with absolute path, so to
 # exclude all test directories for example use the pattern */test/*
 
-EXCLUDE_PATTERNS       =
+# Generated LVGL assets: ~26 000 lines of glyph bitmaps and image data, with no
+# API surface to document. Excluding them keeps the file list readable and,
+# together with EXTRACT_STATIC = YES above, keeps their static tables out of the
+# reference and out of the undocumented-symbol warnings.
+#
+# dcu_can_gen.*: the cantools bit-manipulation layer — one pack/unpack pair per
+# message, several thousand lines of it, and the only source of undocumented-
+# symbol warnings left in the tree. Nothing outside modules/can/can.c calls it.
+#
+# The rest of src/generated/ stays in: can_data_gen.h, can_rx_gen.h,
+# settings_schema_gen.h and the ui_*_subjects_gen.h headers are the interface
+# the application is written against — the snapshot struct, the setting ids, the
+# LVGL subjects and their threshold defines. gen_can.py emits Doxygen comments
+# for them, and they produce no warnings.
+
+EXCLUDE_PATTERNS       = */fonts/* \
+                         */icons/* \
+                         */dcu_can_gen.*
 
 # The EXCLUDE_SYMBOLS tag can be used to specify one or more symbol names
 # (namespaces, classes, functions, etc.) that should be excluded from the
@@ -1133,7 +1156,17 @@ EXCLUDE_PATTERNS       =
 # wildcard * is used, a substring. Examples: ANamespace, AClass,
 # ANamespace::AClass, ANamespace::*Test
 
-EXCLUDE_SYMBOLS        =
+# Zephyr registration macros invoked at file scope. Doxygen parses each
+# invocation as a function definition and then reports it as undocumented; they
+# declare no API of their own, so they are dropped rather than commented.
+# The objects they create are documented where it matters: the channels in
+# event_bus.h, the subscribers next to their invocation.
+
+EXCLUDE_SYMBOLS        = LOG_MODULE_REGISTER \
+                         ZBUS_CHAN_DEFINE \
+                         ZBUS_CHAN_ADD_OBS \
+                         INPUT_CALLBACK_DEFINE \
+                         SETTINGS_STATIC_HANDLER_DEFINE
 
 # The EXAMPLE_PATH tag can be used to specify one or more files or directories
 # that contain example code fragments that are included (see the \include
