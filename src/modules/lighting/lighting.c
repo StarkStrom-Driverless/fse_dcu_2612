@@ -1,37 +1,42 @@
 /**
  * @file        lighting.c
- * @brief       Lighting module — APA102 LED strip effects
+ * @brief       Lighting module — digital LED strip effects
  *
- * @details     Runs a dedicated thread (priority 7) that drives the APA102
- *              LED strip.  On startup the KITT scanner effect plays
- *              continuously: a bright red cursor bounces back and forth across
- *              the strip with an exponentially fading red tail.
+ * @ingroup     dcu_lighting
  *
- *              Effect timing
- *              ─────────────
- *              Each step advances the cursor by one LED and sleeps for
- *              LIGHTING_STEP_MS (50 ms).  A full sweep across 12 LEDs takes
- *              11 × 50 ms = 550 ms one-way, giving a ~1.1 s full cycle.
+ * @details     Runs a dedicated thread (priority 7) that drives the digital LED
+ *              strip with one animation, from start-up until power-off.  The
+ *              strip length comes from the devicetree (`chain-length` on the
+ *              `led_strip` alias), so no effect hard-codes an LED count.
  *
- *              Future extension
- *              ────────────────
+ *              ### Which animation runs
+ *              The gear animation: orange teeth rotating along the strip, to
+ *              match the turning gear on the boot screen.  It is rendered from
+ *              a sin^4 lookup table, which gives narrow bright teeth with dark
+ *              valleys between them and needs no floating-point maths.
+ *
+ *              kitt_step() implements an alternative — a bouncing red
+ *              cursor with a fading tail. Nothing calls it yet. swapping the call in
+ *              lighting_thread_fn() switches the strip over.
+ *
+ *              ### Future extension
  *              A Zbus subscriber for lighting_cmd_chan will be added when the
  *              App Layer begins issuing lighting commands (zone states, effects,
- *              override layer for safety faults).
+ *              override layer for safety faults).  Until then the zone and
+ *              layer model declared in events.h has no counterpart here.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-07-06
  *
  * @version     0.1.0
  *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *
+ */
+
+/*
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Version  Date        Author          Description
  * 0.1.0    2026-07-06  Mario Wegmann   Initial creation
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -59,8 +64,17 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
+/** @brief Devicetree node of the LED strip, resolved through the `led_strip` alias. */
 #define STRIP_NODE              DT_ALIAS(led_strip)
 
+/**
+ * @brief Number of LEDs on the strip, taken from the devicetree.
+ *
+ * Every effect derives its geometry from this, so a strip of a different
+ * length needs a shield change and no code change.  The @c \#error makes a
+ * missing property a build failure with a readable message instead of a
+ * confusing one about an undefined macro further down.
+ */
 #if DT_NODE_HAS_PROP(STRIP_NODE, chain_length)
 #define LIGHTING_NUM_PIXELS     DT_PROP(STRIP_NODE, chain_length)
 #else
@@ -73,14 +87,15 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Scheduling priority for the lighting thread. */
 #define LIGHTING_THREAD_PRIORITY    7
 
-/** @brief Time between KITT scanner steps in milliseconds. */
+/** @brief Time between animation steps in milliseconds */
 #define LIGHTING_STEP_MS            50U
 
 /**
  * @brief KITT scanner tail brightness table.
  *
  * Index 0 = cursor (brightest), index 1..N = trailing LEDs in the direction
- * the scanner came from, each dimmer than the previous.
+ * the scanner came from, each dimmer than the previous.  The array length
+ * defines the tail length; no separate constant to keep in sync.
  */
 static const uint8_t k_kitt_trail[] = {255, 100, 35, 10};
 
@@ -95,17 +110,23 @@ static const uint8_t k_kitt_trail[] = {255, 100, 35, 10};
 /** @brief LUT size; must be a power of 2 for the modulo to stay cheap. */
 #define GEAR_LUT_SIZE       64U
 
-/* Orange 0xfa6e00 */
-#define GEAR_R  255U
-#define GEAR_G   60U
-#define GEAR_B    0U
+/** @name Gear color — orange 0xfa6e00, matching the boot-screen logo.
+ *  @{ */
+#define GEAR_R  255U /**< Red channel at full tooth brightness.   */
+#define GEAR_G   60U /**< Green channel at full tooth brightness. */
+#define GEAR_B    0U /**< Blue channel; unused, kept for clarity. */
+/** @} */
 
-/*
+/**
+ * @brief Brightness profile of one gear tooth.
+ *
  * sin^4(2π·i/64) · 255  for i = 0..31, then 0 for i = 32..63.
  *
  * sin^4 gives narrower, sharper peaks than sin^2, which better
  * resembles distinct gear teeth.  The negative half of the sine wave
  * is clamped to 0, creating a dark valley between each tooth.
+ *
+ * Precomputed so the animation needs no floating-point maths at runtime.
  */
 static const uint8_t k_gear_lut[GEAR_LUT_SIZE] = {
       0,   0,   0,   2,   5,  13,  24,  41,
@@ -121,11 +142,20 @@ static const uint8_t k_gear_lut[GEAR_LUT_SIZE] = {
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
+/** @brief digital strip device handle, resolved at compile time. */
 static const struct device *const s_strip = DEVICE_DT_GET(STRIP_NODE);
 
+/**
+ * @brief Frame buffer handed to the driver on every step.
+ *
+ * Only the lighting thread touches it, so it needs no lock.
+ */
 static struct led_rgb s_pixels[LIGHTING_NUM_PIXELS];
 
+/** @brief Thread control block for the lighting thread. */
 static struct k_thread s_lighting_thread;
+
+/** @brief Stack storage for the lighting thread. */
 static K_THREAD_STACK_DEFINE(s_lighting_stack, LIGHTING_THREAD_STACK_SIZE);
 
 
@@ -137,6 +167,12 @@ static K_THREAD_STACK_DEFINE(s_lighting_stack, LIGHTING_THREAD_STACK_SIZE);
  * Paints the cursor LED at full brightness and the trailing LEDs with
  * decreasing brightness in the direction the cursor came from, then
  * advances the cursor and flips direction at strip boundaries.
+ *
+ * Both parameters are in/out: the caller owns the animation state and this
+ * function moves it one step on.
+ *
+ * @note Not called at present — lighting_thread_fn() runs gear_step(). Kept
+ *       as an alternative effect; see the file header.
  *
  * @param cursor  Current cursor position (0 … LIGHTING_NUM_PIXELS-1).
  * @param dir     Current scan direction (+1 = right, -1 = left).
@@ -173,10 +209,16 @@ static void kitt_step(int32_t *cursor, int32_t *dir)
  * Maps each LED index to a LUT entry via:
  *   idx = (i * TEETH * LUT_SIZE / NUM_LEDS + phase) % LUT_SIZE
  *
- * Incrementing phase by 1 each step rotates all teeth by 1/LUT_SIZE
- * of a full strip-width, giving smooth motion without float arithmetic.
+ * The first term spreads GEAR_NUM_TEETH copies of the tooth profile evenly
+ * across the strip; adding the phase shifts them all by the same amount.
+ * Incrementing phase by 1 each step therefore rotates the whole gear by
+ * 1/LUT_SIZE of a tooth pitch, giving smooth motion in integer arithmetic.
  *
- * @param phase  Current animation phase (0 … GEAR_LUT_SIZE-1).
+ * Unlike kitt_step() this writes every LED each frame, so no clearing is
+ * needed beforehand.
+ *
+ * @param phase  In/out. Current animation phase (0 … GEAR_LUT_SIZE-1);
+ *               advanced by one on return.
  */
 static void gear_step(uint8_t *phase)
 {
@@ -200,6 +242,17 @@ static void gear_step(uint8_t *phase)
     *phase = (*phase + 1U) % GEAR_LUT_SIZE;
 }
 
+/**
+ * @brief Lighting thread entry point.
+ *
+ * Renders the gear animation forever, one frame per GEAR_STEP_MS.  The thread
+ * never blocks on anything but the sleep, so a stalled SPI transfer would show
+ * up as a frozen strip rather than as a blocked system.
+ *
+ * @param p1  Unused.
+ * @param p2  Unused.
+ * @param p3  Unused.
+ */
 static void lighting_thread_fn(void *p1, void *p2, void *p3)
 {
     ARG_UNUSED(p1);
