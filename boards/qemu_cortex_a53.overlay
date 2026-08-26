@@ -1,8 +1,185 @@
+/*
+ * QEMU Cortex-A53 – Emulator-Aufbau für UI-Arbeit ohne Hardware
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Die Anwendung greift an sieben Stellen fest auf den Devicetree zu, jeweils
+ * über DEVICE_DT_GET zur Compile-Zeit:
+ *
+ *   chosen zephyr,display    ui.c        Backlight
+ *   chosen zephyr,canbus     can.c       CAN-Controller
+ *   alias  qdec-input-left   ui.c        Screen-Karussell
+ *   alias  qdec-input-right  ui.c        Widget-Navigation
+ *   alias  keypad-left       ui.c        Tastenfeld links
+ *   alias  keypad-right      ui.c        Tastenfeld rechts
+ *   alias  piezo             audio.c     Summer
+ *   alias  led-strip         lighting.c  LED-Streifen
+ *
+ * Fehlt einer davon, bricht schon der Build ab — nicht erst der Start. Dieses
+ * Overlay stellt deshalb für jeden einen emulierten Ersatz bereit. Es bildet
+ * die Belegung des echten Shields nach, nicht dessen Pinout: welcher
+ * gpio_emul-Pin was ist, ist frei gewählt und nur hier von Bedeutung.
+ *
+ * Was der Emulator wirklich kann
+ * ──────────────────────────────
+ * Display und CAN funktionieren echt: ramfb zeigt die UI, und der
+ * Loopback-Treiber nimmt gesendete Frames an und stellt sie selbst wieder zu,
+ * sodass der CAN-Thread seinen vollen Zyklus durchläuft.
+ *
+ * Die Eingaben hängen an emulierten GPIOs, die von außen niemand bewegt. Sie
+ * existieren, damit LVGL seine Input-Devices findet und die Screens ihre
+ * Gruppen bekommen — bedienen lässt sich die UI im Emulator nicht. Piezo und
+ * LED-Streifen schreiben ins Leere.
+ *
+ * Beim Erweitern der Anwendung um ein weiteres Gerät gehört der Ersatz dafür
+ * hierher, sonst fällt der QEMU-Build wieder aus dem Build-Kreis heraus.
+ */
 
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/led/led.h>
+#include <zephyr/dt-bindings/lvgl/lvgl.h>
 
 / {
-    ramfb0: ramfb {
-		width = <480>;
-		height = <320>;
+	chosen {
+		zephyr,canbus = &can_loopback0;
 	};
+
+	/*
+	 * Namen und Zuordnung wie im echten Shield — inklusive der Asymmetrie
+	 * bei den Encodern: ui.c hängt sich links per INPUT_CALLBACK_DEFINE an
+	 * das rohe Eingabegerät, rechts dagegen holt es sich über
+	 * lvgl_input_get_indev() das LVGL-Gerät.
+	 */
+	aliases {
+		qdec-input-left  = &qdec_input0;
+		qdec-input-right = &lvgl_encoder1;
+		keypad-left      = &keypad_left;
+		keypad-right     = &keypad_right;
+		piezo            = &piezo_gpio;
+		led-strip        = &led_strip0;
+	};
+
+	/*
+	 * Ein emulierter GPIO-Controller trägt alles, was auf der echten
+	 * Platine an Pins hängt. Alle vier Interrupt-Arten sind aktiviert, weil
+	 * gpio-keys und gpio-qdec Flankenerkennung erwarten.
+	 */
+	gpio_emul0: gpio_emul {
+		compatible = "zephyr,gpio-emul";
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <32>;
+		rising-edge;
+		falling-edge;
+		high-level;
+		low-level;
+		status = "okay";
+	};
+
+	/*
+	 * CAN: Loopback statt Transceiver. Der Treiber aktiviert sich allein
+	 * über diesen Knoten (CAN_LOOPBACK ist default y), CONFIG_CAN steht
+	 * bereits in prj.conf.
+	 */
+	can_loopback0: can_loopback {
+		compatible = "zephyr,can-loopback";
+		status = "okay";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		piezo_gpio: piezo_gpio {
+			gpios = <&gpio_emul0 0 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	/*
+	 * LED-Streifen: TLC59731 statt APA102.
+	 *
+	 * Der APA102-Treiber braucht einen SPI-Bus, den QEMU hier nicht hat.
+	 * TLC59731 ist der einzige LED-Streifen-Treiber in Zephyr, der über
+	 * einen einzelnen GPIO bitbangt und nicht auf eine SoC-Familie
+	 * eingeschränkt ist — er läuft daher auf gpio_emul.
+	 *
+	 * chain-length ist bewusst dieselbe wie beim echten APA102, damit die
+	 * Zahnrad-Animation im Emulator dieselbe Geometrie hat. lighting.c
+	 * liest den Wert aus dem Devicetree und kennt den Treiber dahinter
+	 * nicht.
+	 */
+	led_strip0: led_strip {
+		compatible = "ti,tlc59731";
+		gpios = <&gpio_emul0 1 GPIO_ACTIVE_HIGH>;
+		chain-length = <31>;
+		color-mapping = <LED_COLOR_ID_BLUE LED_COLOR_ID_GREEN LED_COLOR_ID_RED>;
+		status = "okay";
+	};
+
+	/* ── Eingaben ─────────────────────────────────────────────────────── */
+
+	qdec_input0: qdec-encoder0 {
+		compatible = "gpio-qdec";
+		gpios = <&gpio_emul0 2 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpio_emul0 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		steps-per-period = <2>;
+		zephyr,axis = <INPUT_REL_WHEEL>;
+		sample-time-us = <2000>;
+		idle-timeout-ms = <200>;
+		status = "okay";
+	};
+
+	qdec_input1: qdec-encoder1 {
+		compatible = "gpio-qdec";
+		gpios = <&gpio_emul0 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpio_emul0 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		steps-per-period = <2>;
+		zephyr,axis = <INPUT_REL_HWHEEL>;
+		sample-time-us = <2000>;
+		idle-timeout-ms = <200>;
+		status = "okay";
+	};
+
+	lvgl_encoder1: lvgl-encoder1 {
+		compatible = "zephyr,lvgl-encoder-input";
+		rotation-input-code = <INPUT_REL_HWHEEL>;
+		status = "okay";
+	};
+
+	buttons0: gpio_keys0 {
+		compatible = "gpio-keys";
+		left_button: button_1 {
+			gpios = <&gpio_emul0 6 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	buttons1: gpio_keys1 {
+		compatible = "gpio-keys";
+		right_button: button_2 {
+			gpios = <&gpio_emul0 7 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	keypad_left: keypad0 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons0>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+
+	keypad_right: keypad1 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons1>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+};
+
+/*
+ * Das Board bringt ramfb mit 1024x768 mit; die DCU rechnet mit dem Format des
+ * 3,5-Zoll-Displays.
+ */
+&ramfb0 {
+	width = <480>;
+	height = <320>;
 };
