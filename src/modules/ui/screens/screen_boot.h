@@ -5,9 +5,14 @@
  * @ingroup     dcu_ui_screens
  *
  * @details     Provides a single factory function that builds and returns the
- *              boot screen lv_obj_t.  The screen has no interactive widgets
- *              and no data bindings; the only moving part is the rotating
- *              outer gear, animated by LVGL itself.
+ *              boot screen lv_obj_t.  The screen has no interactive widgets;
+ *              the only moving part is the rotating outer gear, animated by
+ *              LVGL itself.
+ *
+ *              It carries no vehicle data either, unless
+ *              CONFIG_DCU_BENCHMARK_BOOT_PATCH is enabled — that adds a
+ *              CAN-driven measurement patch for latency benchmarking, which is
+ *              scaffolding rather than a feature. See screen_boot.c.
  *
  *              ### Navigation context
  *              The boot screen is the carousel's starting position.  Turning
@@ -20,14 +25,15 @@
  *
  *              ```
  *              ┌──────────────────────────────────────┐
- *              │ BOOT                          ▪▪▪▪▪▪ │ ← shared header
+ *              │ START                         ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
  *              │                                      │
  *              │                ⚙                     │ ← gear logo,
  *              │                                      │   outer ring turning
  *              │               DCU                    │ ← BoldItalic_80
- *              │             v2612.x.y                │ ← from app_version.h
- *              └──────────────────────────────────────┘
+ *              │  ┌────┐     v2612.x.y                │ ← from app_version.h
+ *              │  │████│                              │ ← benchmark patch,
+ *              └──┴────┴──────────────────────────────┘   only when enabled
  *              ```
  *
  *              ### Lifecycle

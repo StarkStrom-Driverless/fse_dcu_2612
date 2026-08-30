@@ -27,6 +27,22 @@ config DCU_SETTINGS_PERSIST
 	  internal STM32F405 flash that costs 256 KB of application space,
 	  because NVS needs two 128 KB erase sectors. See docs/settings_module.md.
 
+config DCU_BENCHMARK_BOOT_PATCH
+	bool "Optical latency patch on the boot screen"
+	default n
+	help
+	  Add a solid rectangle to the boot screen whose colour follows the
+	  AS_state CAN signal, for measuring end-to-end latency with a
+	  photodiode on the panel.
+
+	  Black, yellow and white give three optically distinct levels, so a
+	  scope trace shows when a received CAN frame reaches the glass.
+
+	  Scaffolding, not a feature. AS_state is borrowed because it already
+	  arrives over the bus — the patch has nothing to do with the
+	  autonomous system state, and the signal keeps its normal meaning
+	  everywhere else. Keep this off in anything that goes on the car.
+
 endmenu
 
 source "Kconfig.zephyr"

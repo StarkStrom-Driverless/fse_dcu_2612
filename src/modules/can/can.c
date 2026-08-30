@@ -386,6 +386,7 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
             }
         }
 
+        #ifndef CONFIG_DCU_BENCHMARK_BOOT_PATCH
         /* ── 2. Transmit scheduled TX messages ──────────────────────── */
         if (s_tx_tick % (CAN_TX_GEN_DCU_2_M_ABX_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) {
             /*
@@ -402,6 +403,7 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
             uint8_t debug      = settings[SETTING_DEBUG_BITS];
             can_send_dcu2_mabx(drive_mode, rtd_active, debug);
         }
+        #endif /* CONFIG_DCU_BENCHMARK_BOOT_PATCH */
 
         /* ── 3. Poll CAN bus state; publish to can_status_chan on change ─ */
         /*
