@@ -6,12 +6,43 @@
  *
  * @details     Creates a full-width header bar (15 % of screen height) with:
  *
- *              Left side:   Screen title label (ui_style_label_title)
- *              Right side:  One icon per @ref ui_device_slot, each
- *                           independently colored and optionally blinking.
+ *              | Position     | Content                                      |
+ *              |--------------|----------------------------------------------|
+ *              | Left         | Screen title (ui_style_label_title)          |
+ *              | Right        | One icon per @ref ui_device_slot, independently colored and optionally blinking |
+ *              | Below the bar| Page indicator: one segment per carousel screen, across the full width |
  *
  *              Every screen puts one of these at the top, so the vehicle's
- *              health stays visible no matter where the driver has navigated.
+ *              health and the driver's position in the carousel stay visible
+ *              no matter where they have navigated.
+ *
+ *              ### Page indicator
+ *
+ *              A full-width bar under the header, divided into one segment per
+ *              carousel screen: white for the others, UI_C_GREEN for the
+ *              current one. Position reads as a proportion of the whole width,
+ *              so it can be taken in without counting — which is what a driver
+ *              glancing down from the track actually has time for. The carousel
+ *              has no other visible structure; without it the only way to find
+ *              out how far the ends are is to turn the encoder until it stops.
+ *
+ *              The segments are 45° parallelograms, matching the diagonal
+ *              colour edge of the header above them. They are painted in a
+ *              draw callback rather than built as objects, which costs less
+ *              than the ten objects it replaces.
+ *
+ *              Two things follow from it being a *sibling* of the header rather
+ *              than part of it: it keeps the screen background instead of the
+ *              header gradient, and it adds its own height below the header.
+ *              Screens that place content by absolute offset should leave the
+ *              first few pixels under the header free.
+ *
+ *              The widget reads the position itself, through
+ *              ui_carousel_get_position() — it is not a parameter, and the
+ *              creating screen neither knows nor needs to know its own index.
+ *              Read once while building, which is correct because navigation
+ *              destroys and rebuilds the screen, and with it this header. See
+ *              page_indicator_create() in ui_header.c for what that assumes.
  *
  *              Each slot subscribes to its corresponding lv_subject_t from the
  *              @p status_subjects array passed at creation time.  Updates are

@@ -54,6 +54,10 @@
 #ifndef MODULES_UI_UI_H
 #define MODULES_UI_UI_H
 
+/* ── Standard Includes ───────────────────────────────────────────────────────────────────────── */
+
+#include <stdint.h>
+
 /**
  * @defgroup dcu_ui UI module
  * @ingroup  dcu_modules
@@ -91,6 +95,38 @@
  * earlier by the Zephyr display driver.
  */
 void ui_module_init(void);
+
+
+/* ── Carousel Introspection ──────────────────────────────────────────────────────────────────── */
+
+/*
+ * The carousel is private to ui.c — these two only report on it, so a screen or
+ * widget can show the driver where they are without being able to move them.
+ * The page indicator in the header widget is the one consumer.
+ *
+ * Both are safe to call while a screen is being built, which is the only time
+ * they are called: screen construction happens in the UI thread, and the very
+ * first one runs on the main thread before that thread exists. Neither case
+ * competes with the navigation that writes the position.
+ */
+
+/**
+ * @brief Number of screens reachable through the screen carousel.
+ * @return Length of the carousel; constant for the runtime.
+ */
+uint8_t ui_carousel_get_length(void);
+
+/**
+ * @brief Index of the current screen within the carousel.
+ *
+ * @note Meaningful only while a carousel screen is loaded. Navigating to a
+ *       screen outside the carousel leaves the value on the last carousel
+ *       screen visited — every screen with a factory is currently in the
+ *       carousel, so that case does not arise today.
+ *
+ * @return Zero-based index, always less than ui_carousel_get_length().
+ */
+uint8_t ui_carousel_get_position(void);
 
 /** @} */ /* dcu_ui */
 

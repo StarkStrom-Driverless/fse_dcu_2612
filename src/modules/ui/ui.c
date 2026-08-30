@@ -755,6 +755,16 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
+uint8_t ui_carousel_get_length(void)
+{
+    return (uint8_t)CAROUSEL_LEN;
+}
+
+uint8_t ui_carousel_get_position(void)
+{
+    return s_carousel_pos;
+}
+
 void ui_module_init(void)
 {
     /* ── 1. Shared LVGL styles ───────────────────────────────────────────── */
