@@ -17,7 +17,7 @@
  *
  *                – Three readouts: HV accumulator, inverter and motor
  *                                  temperature, bound to their generated
- *                                  subjects through the ui_unit_label widget.
+ *                                  subjects through the ui_quantity widget.
  *
  *                – PWR Limit     : checkable button mirroring
  *                                  ui_tx_subj_pwrlimit_setting.
@@ -71,7 +71,7 @@
 #include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
-#include "modules/ui/widgets/ui_unit_label.h"
+#include "modules/ui/widgets/ui_quantity.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "generated/ui_subjects_gen.h"
