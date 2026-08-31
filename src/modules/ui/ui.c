@@ -530,7 +530,7 @@ static void carousel_navigate(int32_t delta)
  *
  * Called on every UI_CMD_UPDATE_DATA. Writes the five slots that can be
  * derived from CAN signals; UI_DEVICE_CAN comes from handle_can_status()
- * instead, and UI_DEVICE_MABX has no source and keeps its initial value.
+ * instead, and UI_DEVICE_MABX has no source and keeps its initial FAULT.
  *
  * Writing unconditionally is cheap: lv_subject_set_int() only notifies
  * observers when the value actually changes.
@@ -543,15 +543,22 @@ static void update_device_status(const struct can_data_snapshot *snap)
     lv_subject_set_int(&s_device_status[UI_DEVICE_KISTLER],
         snap->kistler_timeout ? UI_DEVICE_STATUS_FAULT : UI_DEVICE_STATUS_OK);
 
-    /* SDCS: any open SDC node → FAULT */
-    bool sdc_any_open = snap->sdc_bspd     || snap->sdc_cockpit  ||
-                        snap->sdc_ascu     || snap->sdc_motor_rl ||
-                        snap->sdc_hvd      || snap->sdc_motor_rr ||
-                        snap->sdc_sdb_mh   || snap->sdc_res      ||
-                        snap->sdc_motor_fl || snap->sdc_bots     ||
-                        snap->sdc_motor_fr || snap->sdc_inertia;
+    /*
+     * SDCS: every node has to report closed for the chain to be intact.
+     *
+     * Each SDC signal is 1 while its own contact is closed, so the healthy
+     * state is all bits set — one node dropping to 0 breaks the circuit and
+     * takes the icon to FAULT. Same polarity as the SDC screen; the two must
+     * not disagree.
+     */
+    bool sdc_all_closed = snap->sdc_bspd     && snap->sdc_cockpit  &&
+                          snap->sdc_ascu     && snap->sdc_motor_rl &&
+                          snap->sdc_hvd      && snap->sdc_motor_rr &&
+                          snap->sdc_sdb_mh   && snap->sdc_res      &&
+                          snap->sdc_motor_fl && snap->sdc_bots     &&
+                          snap->sdc_motor_fr && snap->sdc_inertia;
     lv_subject_set_int(&s_device_status[UI_DEVICE_SDCS],
-        sdc_any_open ? UI_DEVICE_STATUS_FAULT : UI_DEVICE_STATUS_OK);
+        sdc_all_closed ? UI_DEVICE_STATUS_OK : UI_DEVICE_STATUS_FAULT);
 
     /* DV_PC: actively receiving mission data → OK */
     lv_subject_set_int(&s_device_status[UI_DEVICE_DV_PC],
@@ -784,11 +791,20 @@ void ui_module_init(void)
      * Must also precede screen creation: header icons subscribe to these
      * subjects during ui_header_create() and expect them to be initialised.
      *
-     * Starting at OK rather than FAULT keeps the header quiet during boot,
-     * before the first CAN snapshot has arrived to say otherwise.
+     * All slots start at FAULT, not OK. Nothing is known about any device
+     * until its first CAN frame arrives, and on a status display the honest
+     * rendering of "unknown" is the pessimistic one: a green icon that has
+     * never been confirmed invites the driver to trust a device that may not
+     * even be powered. Red resolving to green as the bus comes up is a
+     * start-up sequence anyone can read; green that silently stays green is
+     * indistinguishable from a working system.
+     *
+     * The slots that have a source clear themselves within a cycle or two —
+     * see update_device_status() and handle_can_status(). UI_DEVICE_MABX has
+     * no source at all and therefore stays red for now.
      */
     for (int i = 0; i < UI_DEVICE_SLOT_COUNT; i++) {
-        lv_subject_init_int(&s_device_status[i], (int32_t)UI_DEVICE_STATUS_OK);
+        lv_subject_init_int(&s_device_status[i], (int32_t)UI_DEVICE_STATUS_FAULT);
     }
 
     /* ── 2. Resolve the display device (used by the LVGL thread) ────────── */
@@ -807,12 +823,12 @@ void ui_module_init(void)
      */
     s_carousel_pos = 0;
     for (uint8_t i = 0; i < (uint8_t)CAROUSEL_LEN; i++) {
-        if (k_carousel[i] == SCREEN_BOOT) {
+        if (k_carousel[i] == SCREEN_SDC) {
             s_carousel_pos = i;
             break;
         }
     }
-    ui_load_screen(SCREEN_BOOT, LV_SCR_LOAD_ANIM_NONE);
+    ui_load_screen(SCREEN_SDC, LV_SCR_LOAD_ANIM_NONE);
 
     /*
      * lv_timer_handler() and display_blanking_off() are intentionally deferred

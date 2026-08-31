@@ -91,7 +91,7 @@ LOG_MODULE_REGISTER(screen_sdc, CONFIG_LOG_DEFAULT_LEVEL);
  */
 typedef struct {
     const char   *label;   /**< Node name shown in the table.                     */
-    lv_subject_t *subject; /**< Generated RX subject; non-zero means SDC open.     */
+    lv_subject_t *subject; /**< Generated RX subject; 1 = closed, 0 = open.        */
     int16_t       img_x;   /**< Overlay LED X on topdown image (px from image left)*/
     int16_t       img_y;   /**< Overlay LED Y on topdown image (px from image top) */
 } sdc_node_t;
@@ -156,7 +156,9 @@ static void sdc_table_draw_cb(lv_event_t *e);
 /**
  * @brief Observer for one overlay LED on the car topdown image.
  *
- * Subject value 0 → node closed → green; non-zero → node open → red.
+ * Subject value 1 → node closed → green; 0 → node open → red. A shutdown
+ * circuit reports the state of its own contact, so a set bit is the healthy
+ * one: current is getting through.
  *
  * @param observer  Observer whose target object is the LED.
  * @param subject   The node's ui_subj_sdc_* subject.
@@ -187,8 +189,8 @@ static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject)
 /**
  * @brief Draw callback that colors table cell text based on SDC subject state.
  *
- * value = 0 → UI_C_DARK (node OK / SDC closed)
- * value ≠ 0 → UI_C_RED  (node fault / SDC open)
+ * value = 1 → UI_C_DARK (node closed, healthy)
+ * value = 0 → UI_C_RED  (node open, circuit interrupted)
  *
  * Runs per draw task, so it filters down to label tasks on LV_PART_ITEMS and
  * ignores everything else the table draws. The cell coordinates arrive as
@@ -211,8 +213,8 @@ static void sdc_table_draw_cb(lv_event_t *e)
     uint8_t idx = (uint8_t)(base->id1 * 2u + base->id2);
     if (idx >= SDC_NODE_COUNT) return;
 
-    bool fault = lv_subject_get_int(k_sdc_nodes[idx].subject) != 0;
-    ((lv_draw_label_dsc_t *)lv_draw_task_get_draw_dsc(t))->color = fault ? UI_C_RED : UI_C_DARK;
+    bool open = lv_subject_get_int(k_sdc_nodes[idx].subject) == 0;
+    ((lv_draw_label_dsc_t *)lv_draw_task_get_draw_dsc(t))->color = open ? UI_C_RED : UI_C_DARK;
 }
 
 /**

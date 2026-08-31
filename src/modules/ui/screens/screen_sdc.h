@@ -26,8 +26,13 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
- *              Green LED / dark text  →  node closed (healthy)
- *              Red   LED / red text   →  node open   (circuit interrupted)
+ *              Signal 1 → node closed → green LED, dark text  (healthy)
+ *              Signal 0 → node open   → red LED, red text     (interrupted)
+ *
+ *              Each node reports the state of its own contact, so a set bit is
+ *              the good case: current is getting through. The SDCS icon in the
+ *              header follows the same rule and turns red as soon as any one
+ *              node reports 0.
  *
  *              The screen is display-only: it has no interactive widgets, and
  *              all three group accessors return NULL.

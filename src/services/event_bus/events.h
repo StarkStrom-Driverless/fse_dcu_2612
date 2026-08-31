@@ -279,7 +279,11 @@ struct feedback_event {
  *
  * Each slot has one LVGL subject in ui.c. Five of them are derived from the
  * CAN snapshot (update_device_status()), UI_DEVICE_CAN from the controller
- * bus state; UI_DEVICE_MABX has no source yet and stays at its initial OK.
+ * bus state; UI_DEVICE_MABX has no source yet and therefore stays red.
+ *
+ * Every slot starts at UI_DEVICE_STATUS_FAULT: until a frame has arrived,
+ * nothing is known about the device, and unknown is shown as bad rather than
+ * good. See the initialisation in ui_module_init().
  *
  * @note UI_DEVICE_SLOT_COUNT is used as an array size — keep it last.
  */
