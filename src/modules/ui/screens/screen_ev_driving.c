@@ -6,9 +6,14 @@
  *
  * @details     Builds the EV driving screen with:
  *
- *                – Three sliders : torque gain front (left edge) and rear
- *                                  (right edge), plus a horizontal HV
- *                                  accumulator voltage slider along the bottom.
+ *                – Two sliders   : torque gain front (left edge) and rear
+ *                                  (right edge). Only the rear one is
+ *                                  reachable, through the right encoder.
+ *
+ *                – One bar       : HV accumulator voltage along the bottom.
+ *                                  A bar rather than a slider because the
+ *                                  value comes from the vehicle — there is
+ *                                  nothing for the driver to set.
  *
  *                – Three readouts: HV accumulator, inverter and motor
  *                                  temperature, bound to their generated
@@ -33,7 +38,6 @@
  *              subjects: the values reach neither a setting nor a CAN signal.
  *              The left slider is in no input group at all, so it cannot be
  *              moved. Both are placeholders for the torque-gain settings.
- *
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
@@ -119,8 +123,14 @@ static lv_obj_t   *s_sldr_left;
 /** @brief Torque gain rear — vertical slider at the right edge, on the encoder. */
 static lv_obj_t   *s_sldr_right;
 
-/** @brief HV accumulator voltage — horizontal, bound to a received signal. */
-static lv_obj_t   *s_sldr_middle;
+/**
+ * @brief HV accumulator voltage — horizontal bar across the bottom.
+ *
+ * An lv_bar, not an lv_slider: the value comes from the vehicle and there is
+ * nothing here for the driver to set. A bar has no knob and no input handling,
+ * so the widget cannot be dragged or focused even by accident.
+ */
+static lv_obj_t   *s_bar_middle;
 
 /** @brief TQ Vect button — toggles torque vectoring. */
 static lv_obj_t   *s_btn_right;
@@ -219,10 +229,11 @@ static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject
 }
 
 /**
- * @brief Build the three sliders and the HV voltage readout.
+ * @brief Build the two torque-gain sliders, the HV bar and its readout.
  *
- * The two torque-gain sliders are restored from their subjects; the HV
- * voltage slider is bound to a received signal and is display-only.
+ * The sliders are restored from their subjects. The bar is bound straight to
+ * the received signal and needs no state of its own — nothing can change it
+ * but the vehicle.
  *
  * @param scr  Screen object to build into.
  */
@@ -262,39 +273,44 @@ static void build_sliders(lv_obj_t *scr)
     lv_label_set_text(lbl_sldr_right_title, "TQG R");
     lv_obj_align_to(lbl_sldr_right_title, s_sldr_right, LV_ALIGN_OUT_TOP_MID, 0, 0);
 
-    /* ── Slider Middle ──────────────────────────────────────────────────── */
+    /* ── Bar Middle — HV accumulator, display only ──────────────────────── */
 
-    s_sldr_middle = lv_slider_create(scr);
-    lv_obj_remove_style_all(s_sldr_middle);
-    lv_obj_add_style(s_sldr_middle, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(s_sldr_middle, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_obj_set_size(s_sldr_middle, 300, 20);
-    lv_slider_set_range(s_sldr_middle, 0, 500);
-    lv_slider_bind_value(s_sldr_middle, &ui_subj_voltage_accu_hv);
-    lv_obj_align(s_sldr_middle, LV_ALIGN_BOTTOM_MID, 0, -60);
+    /*
+     * Styled with the shared slider styles like every other bar in the tree:
+     * ui_style_slider_main paints the track, ui_style_slider_indicator the
+     * fill. The names are about the visual role, not the widget type.
+     */
+    s_bar_middle = lv_bar_create(scr);
+    lv_obj_remove_style_all(s_bar_middle);
+    lv_obj_add_style(s_bar_middle, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(s_bar_middle, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_obj_set_size(s_bar_middle, 300, 20);
+    lv_bar_set_range(s_bar_middle, 0, 500);
+    lv_bar_bind_value(s_bar_middle, &ui_subj_voltage_accu_hv);
+    lv_obj_align(s_bar_middle, LV_ALIGN_BOTTOM_MID, 0, -60);
 
-    lv_obj_t *lbl_sldr_middle_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_sldr_middle_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_sldr_middle_title, "HV SoC");
-    lv_obj_align_to(lbl_sldr_middle_title, s_sldr_middle, LV_ALIGN_OUT_TOP_LEFT, 0, 0);    
+    lv_obj_t *lbl_bar_middle_title = lv_label_create(scr);
+    lv_obj_add_style(lbl_bar_middle_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_bar_middle_title, "HV SoC");
+    lv_obj_align_to(lbl_bar_middle_title, s_bar_middle, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
 
-    lv_obj_t *lbl_sldr_middle_value = ui_unit_label_create(scr,
+    lv_obj_t *lbl_bar_middle_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_32,
                                       &BarlowCondensed_Italic_20, "V");
-    lv_obj_add_style(lbl_sldr_middle_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_sldr_middle_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_sldr_middle_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_sldr_middle_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    lv_obj_set_size(lbl_sldr_middle_value, 60, 30);
-    ui_unit_label_bind_value(lbl_sldr_middle_value, &ui_subj_voltage_accu_hv, "%d");
-    lv_obj_align_to(lbl_sldr_middle_value, s_sldr_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
+    lv_obj_add_style(lbl_bar_middle_value, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_bar_middle_value, &ui_style_level_crit, UI_STATE_CRIT);
+    lv_obj_bind_state_if_lt(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
+    lv_obj_bind_state_if_lt(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    lv_obj_set_size(lbl_bar_middle_value, 60, 30);
+    ui_quantity_bind_value(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, "%d");
+    lv_obj_align_to(lbl_bar_middle_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
     
 }
 
 /**
  * @brief Build the three temperature readouts across the middle of the screen.
  *
- * Each is a ui_unit_label bound to its generated subject. The level styles
+ * Each is a ui_quantity bound to its generated subject. The level styles
  * are attached but the state bindings are commented out, so none of the three
  * changes color yet — the thresholds they were bound to belonged to the HV
  * voltage signal, not to a temperature.
@@ -304,7 +320,7 @@ static void build_sliders(lv_obj_t *scr)
 static void build_labels(lv_obj_t *scr)
 {
     /* ── Label HV Accu Temp ─────────────────────────────────────────────── */
-    lv_obj_t *lbl_temp_hv_accu_value = ui_unit_label_create(scr,
+    lv_obj_t *lbl_temp_hv_accu_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_80,
                                       &BarlowCondensed_Italic_44, "°C");
     lv_obj_add_style(lbl_temp_hv_accu_value, &ui_style_level_warn, UI_STATE_WARN);
@@ -312,8 +328,8 @@ static void build_labels(lv_obj_t *scr)
     // lv_obj_bind_state_if_lt(lbl_temp_hv_accu_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
     // lv_obj_bind_state_if_lt(lbl_temp_hv_accu_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
     // lv_obj_set_size(lbl_temp_hv_accu_value, 60, 30);
-    ui_unit_label_bind_value(lbl_temp_hv_accu_value, &ui_subj_temperature_accu_hv, "%d");
-    // lv_obj_align_to(lbl_temp_hv_accu_value, s_sldr_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
+    ui_quantity_bind_value(lbl_temp_hv_accu_value, &ui_subj_temperature_accu_hv, "%d");
+    // lv_obj_align_to(lbl_temp_hv_accu_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
     lv_obj_set_pos(lbl_temp_hv_accu_value, 65, 100);
 
     lv_obj_t *lbl_temp_hv_accu_title = lv_label_create(scr);
@@ -323,7 +339,7 @@ static void build_labels(lv_obj_t *scr)
     
     /* ── Label Inverter Temp ────────────────────────────────────────────── */
 
-    lv_obj_t *lbl_temp_inverter_value = ui_unit_label_create(scr,
+    lv_obj_t *lbl_temp_inverter_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_80,
                                       &BarlowCondensed_Italic_44, "°C");
     lv_obj_add_style(lbl_temp_inverter_value, &ui_style_level_warn, UI_STATE_WARN);
@@ -331,8 +347,8 @@ static void build_labels(lv_obj_t *scr)
     // lv_obj_bind_state_if_lt(lbl_temp_inverter_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
     // lv_obj_bind_state_if_lt(lbl_temp_inverter_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
     // lv_obj_set_size(lbl_temp_inverter_value, 60, 30);
-    ui_unit_label_bind_value(lbl_temp_inverter_value, &ui_subj_temperature_inverter, "%d");
-    // lv_obj_align_to(lbl_temp_inverter_value, s_sldr_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
+    ui_quantity_bind_value(lbl_temp_inverter_value, &ui_subj_temperature_inverter, "%d");
+    // lv_obj_align_to(lbl_temp_inverter_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
     lv_obj_set_pos(lbl_temp_inverter_value, 185, 100);
 
     lv_obj_t *lbl_temp_inverter_title = lv_label_create(scr);
@@ -342,7 +358,7 @@ static void build_labels(lv_obj_t *scr)
     
     /* ── Label Motor Temp ───────────────────────────────────────────────── */
 
-    lv_obj_t *lbl_temp_motor_value = ui_unit_label_create(scr,
+    lv_obj_t *lbl_temp_motor_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_80,
                                       &BarlowCondensed_Italic_44, "°C");
     lv_obj_add_style(lbl_temp_motor_value, &ui_style_level_warn, UI_STATE_WARN);
@@ -350,8 +366,8 @@ static void build_labels(lv_obj_t *scr)
     // lv_obj_bind_state_if_lt(lbl_temp_motor_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
     // lv_obj_bind_state_if_lt(lbl_temp_motor_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
     // lv_obj_set_size(lbl_temp_motor_value, 60, 30);
-    ui_unit_label_bind_value(lbl_temp_motor_value, &ui_subj_temperature_motor, "%d");
-    // lv_obj_align_to(lbl_temp_motor_value, s_sldr_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
+    ui_quantity_bind_value(lbl_temp_motor_value, &ui_subj_temperature_motor, "%d");
+    // lv_obj_align_to(lbl_temp_motor_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
     lv_obj_set_pos(lbl_temp_motor_value, 305, 100);
 
     lv_obj_t *lbl_temp_motor_title = lv_label_create(scr);
@@ -368,14 +384,14 @@ static void build_labels(lv_obj_t *scr)
     // lv_label_bind_text(lbl_mean_power, &ui_subj_power_average, "%d");
     // lv_obj_align(lbl_mean_power, LV_ALIGN_LEFT_MID, 10, 0);
 
-    // lv_obj_t *lbl_hv_volt_akku = ui_unit_label_create(scr,
+    // lv_obj_t *lbl_hv_volt_akku = ui_quantity_create(scr,
     //                                   &BarlowCondensed_BoldItalic_100,
     //                                   &BarlowCondensed_Italic_44, "V");
     // lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_warn, UI_STATE_WARN);
     // lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_crit, UI_STATE_CRIT);
     // lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
     // lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // ui_unit_label_bind_value(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, "%d");
+    // ui_quantity_bind_value(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, "%d");
     // lv_obj_align(lbl_hv_volt_akku, LV_ALIGN_LEFT_MID, 150, 0);
 
     // lv_obj_t *lbl_hv_volt_ts = lv_label_create(scr);
