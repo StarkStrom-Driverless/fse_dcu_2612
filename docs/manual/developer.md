@@ -11,7 +11,7 @@ This part is aimed at developers who build, extend or port the DCU firmware.
 | Controller | STM32F405RG, 168 MHz, 1 MB flash, 128 KB RAM (+64 KB DTCM/CCM) |
 | Board | `fse_pb` (processor board) |
 | Shield | `fse_dcu_2612` (display board) |
-| Display | 3.5" colour display via SPI2 |
+| Display | 3.5" color display via SPI2 |
 | LED strip | APA102 via SPI3 |
 | CAN | CAN3, 1 Mbit/s, TJA1048 transceiver |
 | Inputs | 2 GPIO quadrature encoders, 4 GPIO buttons |
@@ -393,8 +393,9 @@ If a TX signal is to survive a restart, a `persist` block is all it takes:
 ```
 
 The value range follows from the bit width in the DBC. The generator creates
-the entry in `settings_schema_gen.h`; the settings service handles loading,
-saving and range checking without further action.
+the entry in `settings_schema_gen.h` and adds the signal to the apply-settings
+helper in `can_tx_gen.h`, which the CAN module calls for every frame. Loading,
+saving, range checking and transmitting therefore need no further action.
 
 Details in `docs/settings_module.md`.
 

@@ -24,8 +24,20 @@
  *              so the frame on the bus can never lag behind the application:
  *
  *                drive_mode = mission_to_drive_mode(app_state_get_selected_mission())
- *                rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD)
- *                debug      = settings_get_all()[SETTING_DEBUG_BITS]
+ *                rtd_active = app_state_is_rtd_request_active()
+ *                settings   = settings_get_all()  — every persisted signal,
+ *                             packed by can_tx_gen_dcu_2_m_abx_apply_settings()
+ *
+ *              ### RTD_Button
+ *              rtd_active is true only while the driver holds the RTD button
+ *              and has held it for APP_RTD_HOLD_MS. It is re-evaluated for
+ *              every frame and never stored, so the bit cannot stay set after
+ *              the release. There is no extra frame on a press — a request
+ *              reaches the bus with the next regular 100 ms frame.
+ *
+ *              After a successful can_send(), a change of the transmitted value
+ *              is published on feedback_chan (FEEDBACK_CAN_RTD_TX). That report
+ *              is what turns the RTD button green on the display.
  *
  *              RX
  *              ──
@@ -148,6 +160,14 @@ static bool s_hw_ready;
  *         schedule TX messages at their individual period_ms via modulo. */
 static uint32_t s_tx_tick;
 
+/**
+ * @brief RTD_Button value of the last frame that was actually transmitted.
+ *
+ * Only a successful can_send() updates it, so FEEDBACK_CAN_RTD_TX reports the
+ * bus, not the intent. Touched by the CAN worker thread only.
+ */
+static bool s_rtd_tx_reported;
+
 /** @brief Last-known CAN bus state; used to detect and publish state changes. */
 static enum can_state s_can_state_prev = CAN_STATE_STOPPED;
 
@@ -184,7 +204,9 @@ static struct can_data_snapshot s_rx_snapshot;
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static int  can_hw_init(void);
-static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, uint8_t debug);
+static int  can_send_dcu2_mabx(uint8_t drive_mode, bool rtd,
+                               const uint8_t settings[SETTING_COUNT]);
+static void can_report_rtd_tx(bool rtd);
 static bool can_drain_rx(void);
 static void can_thread_fn(void *p1, void *p2, void *p3);
 
@@ -259,11 +281,19 @@ static int can_hw_init(void)
  *
  * Logs an error if the frame cannot be delivered within CAN_TX_TIMEOUT.
  *
+ * Every persisted signal — debug bits, ASR, recuperation, torque vectoring and
+ * power limit — is written by the generated helper, so a signal newly marked
+ * `persist:` in dcu_app.yaml is transmitted without a change here. The two
+ * volatile signals are passed in; DCU_RESERVE_BUTTON has no source yet and
+ * stays 0 from the initialiser.
+ *
  * @param drive_mode  DV_Drive_Mode_SETTING raw value (0–7).
  * @param rtd         true → RTD_Button = 1 (Ready-to-Drive request).
- * @param debug       Debug_SETTING raw value (0–7).
+ * @param settings    Values from settings_get_all(), by enum setting_id.
+ * @return 0 once the frame was transmitted, negative errno otherwise.
  */
-static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, uint8_t debug)
+static int can_send_dcu2_mabx(uint8_t drive_mode, bool rtd,
+                              const uint8_t settings[SETTING_COUNT])
 {
     struct can_frame frame = {
         .id    = DCU_CAN_GEN_DCU_2_M_ABX_FRAME_ID,
@@ -271,25 +301,59 @@ static void can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, uint8_t debug)
         .flags = 0,   /* standard (11-bit) frame, no CAN-FD */
     };
 
-    const struct dcu_can_gen_dcu_2_m_abx_t msg = {
-        .debug_setting         = debug,
+    struct dcu_can_gen_dcu_2_m_abx_t msg = {
         .dv_drive_mode_setting = drive_mode,
         .rtd_button            = rtd ? 1U : 0U,
     };
 
+    can_tx_gen_dcu_2_m_abx_apply_settings(&msg, settings);
+
     if (dcu_can_gen_dcu_2_m_abx_pack(frame.data, &msg, sizeof(frame.data)) < 0) {
         LOG_ERR("TX 0x%03X pack failed", frame.id);
-        return;
+        return -EINVAL;
     }
 
     int ret = can_send(s_can_dev, &frame, CAN_TX_TIMEOUT, NULL, NULL);
     if (ret != 0) {
         LOG_ERR("TX 0x%03X failed: %d (drive_mode=%u rtd=%d debug=%u)",
-                frame.id, ret, drive_mode, (int)rtd, debug);
+                frame.id, ret, drive_mode, (int)rtd,
+                settings[SETTING_DEBUG_BITS]);
     } else {
         LOG_DBG("TX 0x%03X  drive_mode=%u  rtd=%d  debug=%u",
-                frame.id, drive_mode, (int)rtd, debug);
+                frame.id, drive_mode, (int)rtd,
+                settings[SETTING_DEBUG_BITS]);
     }
+
+    return ret;
+}
+
+/**
+ * @brief Publish FEEDBACK_CAN_RTD_TX if the transmitted RTD_Button changed.
+ *
+ * Call only after a frame was transmitted successfully. A failed publish
+ * leaves s_rtd_tx_reported untouched, so the report is retried with the next
+ * frame instead of being lost.
+ *
+ * @param rtd  RTD_Button value of the frame just transmitted.
+ */
+static void can_report_rtd_tx(bool rtd)
+{
+    if (rtd == s_rtd_tx_reported) {
+        return;
+    }
+
+    const struct feedback_event evt = {
+        .type       = FEEDBACK_CAN_RTD_TX,
+        .rtd_button = rtd,
+    };
+
+    int rc = zbus_chan_pub(&feedback_chan, &evt, K_NO_WAIT);
+    if (rc != 0) {
+        LOG_WRN("feedback_chan publish failed: %d", rc);
+        return;
+    }
+
+    s_rtd_tx_reported = rtd;
 }
 
 /**
@@ -399,9 +463,11 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
             settings_get_all(settings);
 
             uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
-            bool    rtd_active = (app_state_get_mode() == OPERATING_MODE_RTD);
-            uint8_t debug      = settings[SETTING_DEBUG_BITS];
-            can_send_dcu2_mabx(drive_mode, rtd_active, debug);
+            bool    rtd_active = app_state_is_rtd_request_active();
+
+            if (can_send_dcu2_mabx(drive_mode, rtd_active, settings) == 0) {
+                can_report_rtd_tx(rtd_active);
+            }
         }
         #endif /* CONFIG_DCU_BENCHMARK_BOOT_PATCH */
 

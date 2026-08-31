@@ -10,7 +10,7 @@
  *              ### Compile-time split
  *              Everything below CONFIG_DCU_SETTINGS_PERSIST — the blob type,
  *              the storage handler, the delayed-write work item — disappears
- *              when the option is off (it currently is, see prj.conf).  What
+ *              when the option is off, as it is for the emulator.  What
  *              remains is the RAM cache and the clamping, which is why the
  *              public functions need no @c \#ifdef of their own:
  *              settings_schedule_flush() degrades to a no-op macro.
@@ -321,9 +321,9 @@ void settings_service_init(void)
     }
 #else
     /*
-     * No non-volatile storage on the board yet.  The service keeps its full
-     * API and the values stay authoritative for the runtime — they just start
-     * from the schema defaults on every boot.
+     * No non-volatile storage on this target.  The service keeps its full API
+     * and the values stay authoritative for the runtime — they just start from
+     * the schema defaults on every boot.
      */
     LOG_WRN("Persistence disabled (CONFIG_DCU_SETTINGS_PERSIST=n) — "
             "settings reset to defaults on every boot");

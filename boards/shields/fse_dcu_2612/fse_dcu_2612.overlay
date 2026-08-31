@@ -1,21 +1,21 @@
 /*
- * FSE DCU 2612 – Driver Control Unit, Aufsatzplatine für das fse_pb
+ * FSE DCU 2612 – Driver Control Unit, add-on board for the fse_pb
  * SPDX-License-Identifier: Apache-2.0
  *
- * Beschreibt die Bedienelemente der DCU-Platine:
- *   Backlight TIM1_CH4 auf PA11
- *   Eingaben  2 Drehencoder, 2 Taster
- *   Ausgaben  Piezo, APA102-LED-Streifen über SPI3
+ * Describes the controls of the DCU board:
+ *   Backlight TIM1_CH4 on PA11
+ *   Inputs    2 rotary encoders, 2 buttons
+ *   Outputs   piezo, APA102 LED strip over SPI3
+ *   Storage   SPI NOR flash AT25DF081A over SPI1
  *
- * Das Display ist steckbar und kommt aus einem eigenen Shield — entweder
- * fse_display_3_5 oder fse_display_2_8. Beide belegen dieselben zwei
- * Steckverbinder-Pins vertauscht und bringen daher ihre eigene
- * SPI2-Pinbelegung mit:
+ * The display is pluggable and comes from a shield of its own — either
+ * fse_display_3_5 or fse_display_2_8. Both use the same two connector pins the
+ * other way round and therefore bring their own SPI2 pin assignment with them:
  *
  *   west build -b fse_pb --shield "fse_dcu_2612;fse_display_3_5" ...
  *
- * Nicht hier: CAN-Transceiver, User-LEDs und Konsole — die sitzen auf dem
- * Prozessorboard und gehören ins Board-DTS.
+ * Not here: CAN transceiver, user LEDs and console — those sit on the
+ * processor board and belong in the board DTS.
  */
 
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -23,10 +23,10 @@
 #include <zephyr/dt-bindings/led/led.h>
 
 / {
-	/* ── Bedienelemente ──────────────────────────────────────────────────
+	/* ── Controls ────────────────────────────────────────────────────────
 	 *
-	 * Drehencoder, Taster, Piezo und Display-Backlight sitzen alle auf der
-	 * DCU-Platine, nicht auf dem Prozessorboard.
+	 * Rotary encoders, buttons, piezo and display backlight all sit on the
+	 * DCU board, not on the processor board.
 	 */
 
 	aliases {
@@ -51,7 +51,7 @@
 		};
 	};
 
-	/* Linker Drehencoder: Screen-Karussell */
+	/* Left rotary encoder: screen carousel */
 	qdec_input0: qdec-encoder0 {
 		compatible = "gpio-qdec";
 		gpios = <&gpioc 6 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
@@ -63,7 +63,7 @@
 		status = "okay";
 	};
 
-	/* Rechter Drehencoder: Widget-Navigation im Screen */
+	/* Right rotary encoder: widget navigation within a screen */
 	qdec_input1: qdec-encoder1 {
 		compatible = "gpio-qdec";
 		gpios = <&gpioa 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
@@ -149,10 +149,10 @@
 };
 
 /*
- * Display-Backlight über TIM1_CH4 auf PA11.
+ * Display backlight over TIM1_CH4 on PA11.
  *
- * TIM3 wird abgeschaltet: Zephyrs PWM-LED-Treiber würde sonst eine zweite
- * Instanz anlegen, die auf dieser Platine nicht verdrahtet ist.
+ * TIM3 is switched off: Zephyr's PWM LED driver would otherwise create a
+ * second instance that is not wired up on this board.
  */
 &timers3 {
 	status = "disabled";
@@ -169,10 +169,10 @@
 };
 
 /*
- * APA102-LED-Streifen im Sichtfeld über dem Display.
+ * APA102 LED strip in the driver's field of view above the display.
  *
- * Der Bus ist im Board-DTS mit Pinctrl hinterlegt, aber deaktiviert — welche
- * Funktion die Steckverbinder-Pins tragen, entscheidet erst das Shield.
+ * The board DTS carries the bus with its pinctrl but leaves it disabled — what
+ * the connector pins actually do is for the shield to decide.
  */
 &spi3 {
 	pinctrl-0 = <&spi3_sck_pc10 &spi3_mosi_pc12>;
@@ -185,5 +185,67 @@
 		spi-max-frequency = <5250000>;
 		chain-length = <28>;
 		color-mapping = <LED_COLOR_ID_BLUE LED_COLOR_ID_GREEN LED_COLOR_ID_RED>;
+	};
+};
+
+/*
+ * External SPI NOR flash AT25DF081A (8 Mbit = 1 MB) on SPI1.
+ *
+ * Home of the persistent settings. The internal flash is a poor fit: its
+ * sectors are 128 KB, NVS needs at least two of them, and the application
+ * would lose that space. This part erases in 4 KB sectors.
+ *
+ * has-lock: the AT25DF family powers up with its block protect bits set, so
+ * every write and erase would otherwise go nowhere. The driver clears the bits
+ * at start-up — the mask is the Global Unprotect from the datasheet (SPRL plus
+ * the four protection bits).
+ *
+ * CS is a GPIO on PA4 rather than the NSS alternate function: the Zephyr SPI
+ * driver drives the line itself.
+ *
+ * spi-max-frequency is deliberately low for bring-up. The part can do far
+ * more, and SPI1 hangs off the 84 MHz APB2.
+ */
+&spi1 {
+	pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pa7>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	nor_flash: at25df081a@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+		jedec-id = [1f 45 01];
+		size = <0x800000>;      /* in bits, not bytes */
+		has-lock = <0xbc>;
+		status = "okay";
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			/*
+			 * 32 KB = 8 sectors, matching the default of
+			 * CONFIG_SETTINGS_NVS_SECTOR_COUNT. The rest of the
+			 * part stays free for later.
+			 */
+			settings_partition: partition@0 {
+				label = "settings";
+				reg = <0x00000000 DT_SIZE_K(32)>;
+			};
+		};
+	};
+};
+
+/*
+ * Without this entry the settings' NVS backend would take the
+ * storage_partition in the processor board's internal flash. That one stays
+ * untouched.
+ */
+/ {
+	chosen {
+		zephyr,settings-partition = &settings_partition;
 	};
 };

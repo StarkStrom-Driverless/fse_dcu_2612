@@ -34,13 +34,18 @@
  *              The RAM cache is updated synchronously, so a read never
  *              observes a stale value while a flush is pending.
  *
- *              ### Persistence is currently off
- *              CONFIG_DCU_SETTINGS_PERSIST is @c n in prj.conf, so the flash
- *              path is compiled out entirely: no storage backend, no write
- *              delay, no schema-hash check.  The API and its semantics are
- *              unchanged — values stay authoritative for the runtime and are
- *              still clamped to the schema — but every boot starts from the
- *              defaults.  Enabling the option needs no change in any caller.
+ *              ### Where the values live
+ *              With CONFIG_DCU_SETTINGS_PERSIST (on for the DCU board) the
+ *              blob sits in NVS on the external SPI NOR flash, in the
+ *              settings_partition the shield overlay defines.
+ *
+ *              With the option off — the emulator, or any target without that
+ *              flash — the storage path is compiled out entirely: no backend,
+ *              no write delay, no schema-hash check.  The API and its
+ *              semantics are unchanged, values stay authoritative for the
+ *              runtime and are still clamped to the schema, but every boot
+ *              starts from the defaults.  Neither case needs a change in any
+ *              caller.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-07

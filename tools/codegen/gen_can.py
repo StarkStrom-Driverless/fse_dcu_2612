@@ -668,10 +668,15 @@ def emit_settings_schema_source(settings: list[dict]) -> str:
 
 def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
     """
-    Collect all direction==tx messages with their period_ms.
+    Collect all direction==tx messages with their period_ms and settings.
+
+    "settings" lists the signals of the message that carry a `persist:` block,
+    as (struct field, enum setting_id) pairs — the mapping emit_tx_header()
+    turns into the apply-settings helper, so can.c never spells it out.
 
     Returns a list of dicts:
-      { "msg": cantools message, "snake": c_name, "period_ms": int }
+      { "msg": cantools message, "snake": c_name, "period_ms": int,
+        "settings": list[tuple[str, str]] }
     """
     dbc_messages = {m.name: m for m in db.messages}
     result = []
@@ -681,10 +686,18 @@ def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
         if msg_cfg.get("direction") != "tx":
             continue
 
+        settings = []
+        for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
+            sig_cfg = sig_cfg or {}
+            if sig_cfg.get("persist"):
+                settings.append((camel_to_snake_case(sig_name),
+                                 f"SETTING_{sig_cfg['app_name'].upper()}"))
+
         result.append({
             "msg":       dbc_messages[msg_name],
             "snake":     camel_to_snake_case(msg_name),
             "period_ms": msg_cfg["period_ms"],
+            "settings":  settings,
         })
 
     return result
@@ -692,15 +705,23 @@ def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
 
 def emit_tx_header(tx_messages: list[dict]) -> str:
     """
-    Emit can_tx_gen.h: one PERIOD_MS #define per TX message.
+    Emit can_tx_gen.h: per TX message a PERIOD_MS #define and, if it carries
+    persisted signals, an apply-settings helper.
 
     Usage in can.c (CAN_TX_PERIOD_MS is the thread base tick):
       if (s_tx_tick % (CAN_TX_GEN_<MSG>_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) { ... }
       s_tx_tick++;
     Both values are compile-time constants, so the division folds away.
+
+    The helper writes every `persist:` signal of the message from the Settings
+    service's value array. Generating it is what keeps a newly persisted signal
+    from being transmitted as a silent zero: adding it to the YAML is enough,
+    no edit in can.c required.
     """
     lines = [GENERATED_BANNER]
     lines.append("#ifndef GENERATED_CAN_TX_GEN_H\n#define GENERATED_CAN_TX_GEN_H\n")
+    lines.append(f'#include "{DATABASE_NAME}.h"')
+    lines.append('#include "settings_schema_gen.h"\n')
     lines.append("""\
 /*
  * TX message period constants (physical milliseconds from dcu_app.yaml).
@@ -724,6 +745,31 @@ def emit_tx_header(tx_messages: list[dict]) -> str:
         define_name = f"CAN_TX_GEN_{snake.upper()}_PERIOD_MS"
         lines.append(f"/** @brief {msg.name} (0x{msg.frame_id:03X}) TX period. */")
         lines.append(f"#define {define_name:<44} {ms}U\n")
+
+    for entry in tx_messages:
+        if not entry["settings"]:
+            continue
+        msg   = entry["msg"]
+        snake = entry["snake"]
+        struct = f"struct {DATABASE_NAME}_{snake}_t"
+        lines.append(f"""\
+/**
+ * @brief Copy every persisted {msg.name} signal into the frame struct.
+ *
+ * Generated from the `persist:` blocks in dcu_app.yaml. Signals without one
+ * are left untouched — the caller owns those.
+ *
+ * @param msg       Frame struct to fill.
+ * @param settings  Values from settings_get_all(), indexed by enum setting_id.
+ */
+static inline void can_tx_gen_{snake}_apply_settings(
+    {struct} *msg, const uint8_t settings[SETTING_COUNT])
+{{""")
+        width = max(len(field) for field, _ in entry["settings"])
+        for field, setting in entry["settings"]:
+            lines.append(f"    msg->{field:<{width}} = settings[{setting}];")
+        lines.append("}\n")
+
     lines.append("#endif /* GENERATED_CAN_TX_GEN_H */")
     return "\n".join(lines) + "\n"
 
@@ -868,7 +914,7 @@ def emit_subjects_header(rx_messages: list[dict]) -> str:
  * wire lv_obj_bind_state_if_lt/gt directly, choosing UI_STATE_WARN /
  * UI_STATE_CRIT (defined in ui_styles.h) and the appropriate LV_PART_*.
  *
- * Example — label text colour:
+ * Example — label text color:
  *   lv_obj_add_style(lbl, &ui_style_level_warn, UI_STATE_WARN);
  *   lv_obj_add_style(lbl, &ui_style_level_crit, UI_STATE_CRIT);
  *   lv_obj_bind_state_if_lt(lbl, &ui_subj_voltage_accu_hv,
