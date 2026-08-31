@@ -34,6 +34,8 @@
 		qdec-input-right = &lvgl_encoder1;
 		keypad-left = &keypad_left;
 		keypad-right = &keypad_right;
+		keypad-rtd = &keypad_rtd;
+		keypad-ts = &keypad_ts;
 		piezo = &piezo_gpio;
 		pwm-display-bright = &pwm_display_bright;
 		led-strip = &apa102;
@@ -101,6 +103,22 @@
 		};
 	};
 
+	buttons2: gpio_keys2 {
+		compatible = "gpio-keys";
+		rtd_button: button_2 {
+			gpios = <&gpioc 8 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	buttons3: gpio_keys3 {
+		compatible = "gpio-keys";
+		ts_button: button_3 {
+			gpios = <&gpiob 12 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
 	keypad_left: keypad0 {
 		compatible = "zephyr,lvgl-keypad-input";
 		input = <&buttons0>;
@@ -111,6 +129,20 @@
 	keypad_right: keypad1 {
 		compatible = "zephyr,lvgl-keypad-input";
 		input = <&buttons1>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+
+	keypad_rtd: keypad2 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons2>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+
+	keypad_ts: keypad3 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons3>;
 		input-codes = <INPUT_KEY_ENTER>;
 		lvgl-codes = <LV_KEY_ENTER>;
 	};
