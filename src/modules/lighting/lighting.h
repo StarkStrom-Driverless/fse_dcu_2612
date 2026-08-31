@@ -26,7 +26,7 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * Revision History
  * Version  Date        Author          Description
- * 0.1.0    2026-07-06  Mario Wegmann   Initial creation — KITT scanner effect
+ * 0.1.0    2026-07-06  Mario Wegmann   Initial creation — chasing red effect
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 

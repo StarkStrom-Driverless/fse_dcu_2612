@@ -15,9 +15,10 @@
  *              a sin^4 lookup table, which gives narrow bright teeth with dark
  *              valleys between them and needs no floating-point maths.
  *
- *              kitt_step() implements an alternative — a bouncing red
- *              cursor with a fading tail. Nothing calls it yet. swapping the call in
- *              lighting_thread_fn() switches the strip over.
+ *              chase_step() implements an alternative — a red cursor chasing
+ *              back and forth with a fading tail. Nothing calls it yet;
+ *              swapping the call in lighting_thread_fn() switches the strip
+ *              over.
  *
  *              ### Future extension
  *              A Zbus subscriber for lighting_cmd_chan will be added when the
@@ -87,17 +88,19 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Scheduling priority for the lighting thread. */
 #define LIGHTING_THREAD_PRIORITY    7
 
-/** @brief Time between animation steps in milliseconds */
-#define LIGHTING_STEP_MS            50U
+/* ── Chasing red ─────────────────────────────────────────────────────────── */
+
+/** @brief Time per chase step in ms. One LED of travel per step. */
+#define CHASE_STEP_MS               50U
 
 /**
- * @brief KITT scanner tail brightness table.
+ * @brief Chase tail brightness table.
  *
  * Index 0 = cursor (brightest), index 1..N = trailing LEDs in the direction
- * the scanner came from, each dimmer than the previous.  The array length
+ * the cursor came from, each dimmer than the previous.  The array length
  * defines the tail length; no separate constant to keep in sync.
  */
-static const uint8_t k_kitt_trail[] = {255, 100, 35, 10};
+static const uint8_t k_chase_trail[] = {255, 100, 35, 10};
 
 /* ── Gear animation ──────────────────────────────────────────────────────── */
 
@@ -162,7 +165,7 @@ static K_THREAD_STACK_DEFINE(s_lighting_stack, LIGHTING_THREAD_STACK_SIZE);
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
 /**
- * @brief Render one KITT scanner frame and advance the cursor.
+ * @brief Render one chasing-red frame and advance the cursor.
  *
  * Paints the cursor LED at full brightness and the trailing LEDs with
  * decreasing brightness in the direction the cursor came from, then
@@ -177,14 +180,14 @@ static K_THREAD_STACK_DEFINE(s_lighting_stack, LIGHTING_THREAD_STACK_SIZE);
  * @param cursor  Current cursor position (0 … LIGHTING_NUM_PIXELS-1).
  * @param dir     Current scan direction (+1 = right, -1 = left).
  */
-static void kitt_step(int32_t *cursor, int32_t *dir)
+static void chase_step(int32_t *cursor, int32_t *dir)
 {
     memset(s_pixels, 0, sizeof(s_pixels));
 
-    for (int32_t k = 0; k < (int32_t)ARRAY_SIZE(k_kitt_trail); k++) {
+    for (int32_t k = 0; k < (int32_t)ARRAY_SIZE(k_chase_trail); k++) {
         int32_t pos = *cursor - (*dir * k);
         if (pos >= 0 && pos < (int32_t)LIGHTING_NUM_PIXELS) {
-            s_pixels[pos].r = k_kitt_trail[k];
+            s_pixels[pos].r = k_chase_trail[k];
         }
     }
 
@@ -214,7 +217,7 @@ static void kitt_step(int32_t *cursor, int32_t *dir)
  * Incrementing phase by 1 each step therefore rotates the whole gear by
  * 1/LUT_SIZE of a tooth pitch, giving smooth motion in integer arithmetic.
  *
- * Unlike kitt_step() this writes every LED each frame, so no clearing is
+ * Unlike chase_step() this writes every LED each frame, so no clearing is
  * needed beforehand.
  *
  * @param phase  In/out. Current animation phase (0 … GEAR_LUT_SIZE-1);
