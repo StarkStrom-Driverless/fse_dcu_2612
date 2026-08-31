@@ -1,10 +1,15 @@
 /**
- * @file        ui_unit_label.h
- * @brief       Composite value+unit display widget based on lv_spangroup
+ * @file        ui_quantity.h
+ * @brief       Physical quantity display widget based on lv_spangroup
  *
  * @ingroup     dcu_ui_widgets
  *
- * @details     Creates a spangroup with two spans:
+ * @details     Shows a physical quantity the way it is written: a numeric
+ *              value followed by its unit, as one typographic whole. That
+ *              pairing is what the widget is named after — neither half means
+ *              anything on its own.
+ *
+ *              Creates a spangroup with two spans:
  *                span 0 — numeric value, large font
  *                span 1 — unit suffix, small font
  *
@@ -21,13 +26,13 @@
  *
  *              Usage:
  *              @code
- *                lv_obj_t *w = ui_unit_label_create(scr,
+ *                lv_obj_t *w = ui_quantity_create(scr,
  *                                  &BarlowCondensed_BoldItalic_32,
  *                                  &BarlowCondensed_Italic_20, "W");
  *                lv_obj_set_size(w, 80, 40);
  *                lv_obj_align(w, LV_ALIGN_CENTER, 0, 0);
  *
- *                ui_unit_label_bind_float(w, &ui_subj_power_average, "%.0f");
+ *                ui_quantity_bind_value(w, &ui_subj_power_average, "%.0f");
  *
  *                // Optional level coloring:
  *                lv_obj_add_style(w, &ui_style_level_warn, UI_STATE_WARN);
@@ -56,14 +61,14 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#ifndef MODULES_UI_WIDGETS_UI_UNIT_LABEL_H
-#define MODULES_UI_WIDGETS_UI_UNIT_LABEL_H
+#ifndef MODULES_UI_WIDGETS_UI_QUANTITY_H
+#define MODULES_UI_WIDGETS_UI_QUANTITY_H
 
 #include <lvgl.h>
 
 
 /**
- * @brief Create a value+unit spangroup widget.
+ * @brief Create a quantity widget.
  *
  * The value span is right-aligned, so the unit stays put as the number of
  * digits changes.
@@ -76,9 +81,9 @@
  *                    Pass "" for a bare number.
  * @return            The lv_spangroup object. Use lv_obj_set_size / lv_obj_align
  *                    to position it. The value reads "0" until the first
- *                    ui_unit_label_bind_value() update arrives.
+ *                    ui_quantity_bind_value() update arrives.
  */
-lv_obj_t *ui_unit_label_create(lv_obj_t *parent,
+lv_obj_t *ui_quantity_create(lv_obj_t *parent,
                                 const lv_font_t *value_font,
                                 const lv_font_t *unit_font,
                                 const char *unit_str);
@@ -95,11 +100,11 @@ lv_obj_t *ui_unit_label_create(lv_obj_t *parent,
  *          choice; "%.2f" appears where a signal carries a scaled value.
  *          A mismatch is not diagnosed and prints garbage.
  *
- * @param obj      Spangroup returned by ui_unit_label_create().
+ * @param obj      Spangroup returned by ui_quantity_create().
  * @param subject  lv_subject_t to observe (int or float).
  * @param fmt      printf format string for the value. Must remain valid for
  *                 the lifetime of the widget (string literals are fine).
  */
-void ui_unit_label_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fmt);
+void ui_quantity_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fmt);
 
-#endif /* MODULES_UI_WIDGETS_UI_UNIT_LABEL_H */
+#endif /* MODULES_UI_WIDGETS_UI_QUANTITY_H */

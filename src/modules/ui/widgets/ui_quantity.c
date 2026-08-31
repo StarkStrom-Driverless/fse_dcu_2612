@@ -1,10 +1,10 @@
 /**
- * @file        ui_unit_label.c
- * @brief       Composite value+unit display widget based on lv_spangroup
+ * @file        ui_quantity.c
+ * @brief       Physical quantity display widget based on lv_spangroup
  *
  * @ingroup     dcu_ui_widgets
  *
- * @details     Implementation; the contract is in ui_unit_label.h.
+ * @details     Implementation; the contract is in ui_quantity.h.
  *
  *              The widget keeps no state of its own — it is two spans and a
  *              binding — so there is no create/destroy bookkeeping and no
@@ -29,7 +29,7 @@
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
 
-#include "modules/ui/widgets/ui_unit_label.h"
+#include "modules/ui/widgets/ui_quantity.h"
 
 
 /* ── Private Constants ───────────────────────────────────────────────────────────────────────── */
@@ -40,7 +40,7 @@
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
-lv_obj_t *ui_unit_label_create(lv_obj_t *parent,
+lv_obj_t *ui_quantity_create(lv_obj_t *parent,
                                 const lv_font_t *value_font,
                                 const lv_font_t *unit_font,
                                 const char *unit_str)
@@ -63,7 +63,7 @@ lv_obj_t *ui_unit_label_create(lv_obj_t *parent,
     return sg;
 }
 
-void ui_unit_label_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fmt)
+void ui_quantity_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fmt)
 {
     lv_spangroup_bind_span_text(obj, lv_spangroup_get_child(obj, VALUE_SPAN_IDX), subject, fmt);
 }
