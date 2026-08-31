@@ -249,6 +249,15 @@ static void handle_ui_input(const struct ui_input_event *evt)
         break;
     }
 
+    case UI_INPUT_SCREEN_CHANGED:
+        /*
+         * Purely a record. Nothing acts on it here — it exists so modules
+         * outside the UI can tell what the driver is looking at, which the
+         * lighting module uses to pick between the strip's two modes.
+         */
+        app_state_set_active_screen(evt->data.screen);
+        break;
+
     case UI_INPUT_TIMESTAMP:
         LOG_INF("Timestamp: %lld ms", (long long)k_uptime_get());
         break;

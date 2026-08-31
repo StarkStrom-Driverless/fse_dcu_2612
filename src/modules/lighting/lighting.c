@@ -9,22 +9,41 @@
  *              strip length comes from the devicetree (`chain-length` on the
  *              `led_strip` alias), so no effect hard-codes an LED count.
  *
- *              ### Which animation runs
- *              The gear animation: orange teeth rotating along the strip, to
- *              match the turning gear on the boot screen.  It is rendered from
- *              a sin^4 lookup table, which gives narrow bright teeth with dark
- *              valleys between them and needs no floating-point maths.
+ *              ### Two modes, picked by the active screen
+ *              On SCREEN_EV_DRIVING the strip becomes an instrument and shows
+ *              the three-zone view described below. On every other screen it
+ *              runs the gear animation: orange teeth rotating along the strip,
+ *              matching the turning gear on the boot screen, rendered from a
+ *              sin^4 lookup table that needs no floating-point maths.
  *
- *              chase_step() implements an alternative — a red cursor chasing
- *              back and forth with a fading tail. Nothing calls it yet;
- *              swapping the call in lighting_thread_fn() switches the strip
- *              over.
+ *              chase_step() implements a third effect — a red cursor chasing
+ *              back and forth with a fading tail. Nothing calls it; swapping
+ *              the call in lighting_thread_fn() puts it on the strip.
+ *
+ *              ### The three zones
+ *
+ *              | Zone | LEDs | Shows |
+ *              |------|------|-------|
+ *              | Left | ZONE_LEFT_LEN | Whichever of the three temperatures is closest to its own critical limit |
+ *              | Middle | 10 | LED_1…LED_8 as red flags, DCU_RESERVE_LED in amber, DCU_RGB_LED_Themperatur as a red/green/blue code |
+ *              | Right | ZONE_RIGHT_LEN | HV accumulator voltage, emptying as the pack drains |
+ *
+ *              Boundaries are derived from the devicetree strip length, so the
+ *              layout follows the hardware rather than a hard-coded 28.
+ *
+ *              ### Where the data comes from
+ *              Both the values and the active screen are read from app_state,
+ *              the same way the CAN module reads mission and operating mode.
+ *              This module subscribes to nothing and talks to no other module:
+ *              the App Layer stays the only writer, and the Dirigent pattern
+ *              holds.
  *
  *              ### Future extension
  *              A Zbus subscriber for lighting_cmd_chan will be added when the
- *              App Layer begins issuing lighting commands (zone states, effects,
- *              override layer for safety faults).  Until then the zone and
- *              layer model declared in events.h has no counterpart here.
+ *              App Layer begins issuing lighting commands (effects, override
+ *              layer for safety faults). The zone and layer model declared in
+ *              events.h is still unrelated to the zones implemented here —
+ *              those are a fixed layout, not a commandable one.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-07-06
@@ -46,6 +65,12 @@
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
 
 #include "modules/lighting/lighting.h"
+
+/* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
+
+#include "app/app_state.h"
+#include "generated/ui_subjects_gen.h"
+#include "services/event_bus/events.h"
 
 /* ── Zephyr Includes ─────────────────────────────────────────────────────────────────────────── */
 
@@ -101,6 +126,68 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
  * defines the tail length; no separate constant to keep in sync.
  */
 static const uint8_t k_chase_trail[] = {255, 100, 35, 10};
+
+/* ── Zone rendering (EV driving screen) ──────────────────────────────────── */
+
+/**
+ * @brief Number of LEDs in the middle zone.
+ *
+ * One per signal it shows: LED_1…LED_8, then DCU_RESERVE_LED and
+ * DCU_RGB_LED_Themperatur. Fixed by the signal list, not by taste.
+ */
+#define ZONE_MID_LEN        10
+
+/**
+ * @name Zone boundaries, derived from the strip length
+ *
+ * The middle zone is fixed; the two bars split what is left. An odd remainder
+ * goes to the right zone, so no LED is left dark between the zones.
+ * @{
+ */
+#define ZONE_LEFT_FIRST     0
+#define ZONE_LEFT_LEN       ((LIGHTING_NUM_PIXELS - ZONE_MID_LEN) / 2)
+#define ZONE_MID_FIRST      (ZONE_LEFT_FIRST + ZONE_LEFT_LEN)
+#define ZONE_RIGHT_FIRST    (ZONE_MID_FIRST + ZONE_MID_LEN)
+#define ZONE_RIGHT_LEN      (LIGHTING_NUM_PIXELS - ZONE_RIGHT_FIRST)
+/** @} */
+
+#if (LIGHTING_NUM_PIXELS < (ZONE_MID_LEN + 2))
+#error "LED strip too short for the three-zone layout"
+#endif
+
+/**
+ * @name Zone colours
+ *
+ * Chosen to match the display palette in ui_styles.h so that strip and screen
+ * agree on what green, amber and red mean. Kept below full brightness: the
+ * strip sits in the driver's field of view.
+ * @{
+ */
+#define ZONE_RGB_OFF        { .r =   0, .g =   0, .b =   0 }
+#define ZONE_RGB_GREEN      { .r =   0, .g = 160, .b =  60 }
+#define ZONE_RGB_AMBER      { .r = 200, .g = 130, .b =   0 }
+#define ZONE_RGB_RED        { .r = 200, .g =  20, .b =  20 }
+#define ZONE_RGB_BLUE       { .r =   0, .g =  40, .b = 200 }
+/** @} */
+
+/** @brief Severity bands shared by both progress bars. */
+enum zone_level {
+    ZONE_LEVEL_OK = 0,  /**< Below the warning limit.        */
+    ZONE_LEVEL_WARN,    /**< Between warning and critical.   */
+    ZONE_LEVEL_CRIT,    /**< At or beyond the critical limit.*/
+};
+
+/**
+ * @brief How far a reading has come, and how bad it is.
+ *
+ * @c pct is the fill for the bar, @c level picks its colour. Keeping them
+ * apart matters: the two do not move together, because the warning limit sits
+ * at a different fraction of the range for every signal.
+ */
+struct zone_reading {
+    uint8_t         pct;
+    enum zone_level level;
+};
 
 /* ── Gear animation ──────────────────────────────────────────────────────── */
 
@@ -246,6 +333,229 @@ static void gear_step(uint8_t *phase)
 }
 
 /**
+ * @brief Grade one reading against its warning and critical limits.
+ *
+ * @c pct is measured from the range minimum to the *critical* limit, not to the
+ * range maximum: a full bar then means "at the limit", which is the number the
+ * driver needs. Anything beyond clamps to full rather than overflowing.
+ *
+ * @param value  Current reading.
+ * @param min    Range minimum from the generated limits.
+ * @param warn   Warning limit.
+ * @param crit   Critical limit. Must be greater than @p min.
+ * @return       Fill percentage and severity band.
+ */
+static struct zone_reading grade_rising(int32_t value, int32_t min,
+                                        int32_t warn, int32_t crit)
+{
+    struct zone_reading r;
+
+    if (value <= min) {
+        r.pct = 0U;
+    } else if (value >= crit) {
+        r.pct = 100U;
+    } else {
+        r.pct = (uint8_t)(((value - min) * 100) / (crit - min));
+    }
+
+    r.level = (value >= crit) ? ZONE_LEVEL_CRIT
+            : (value >= warn) ? ZONE_LEVEL_WARN
+                              : ZONE_LEVEL_OK;
+    return r;
+}
+
+/**
+ * @brief Colour for a severity band.
+ *
+ * @param level  Band from grade_rising() or grade_falling().
+ * @return       The strip colour standing for it.
+ */
+static struct led_rgb zone_level_color(enum zone_level level)
+{
+    static const struct led_rgb green = ZONE_RGB_GREEN;
+    static const struct led_rgb amber = ZONE_RGB_AMBER;
+    static const struct led_rgb red   = ZONE_RGB_RED;
+
+    switch (level) {
+    case ZONE_LEVEL_CRIT: return red;
+    case ZONE_LEVEL_WARN: return amber;
+    default:              return green;
+    }
+}
+
+/**
+ * @brief Paint a run of LEDs as a bar filled to @p pct.
+ *
+ * Rounds to the nearest whole LED, so a bar only lights its last LED once the
+ * reading is more than half way into it. Unlit LEDs are cleared rather than
+ * left alone — the caller does not have to blank the zone first.
+ *
+ * @param first  Index of the zone's first LED.
+ * @param len    Number of LEDs in the zone.
+ * @param pct    Fill, 0…100.
+ * @param color  Colour for the lit part.
+ */
+static void zone_fill_bar(uint8_t first, uint8_t len, uint8_t pct,
+                          struct led_rgb color)
+{
+    static const struct led_rgb off = ZONE_RGB_OFF;
+    const uint8_t lit = (uint8_t)(((uint32_t)pct * len + 50U) / 100U);
+
+    for (uint8_t i = 0U; i < len; i++) {
+        s_pixels[first + i] = (i < lit) ? color : off;
+    }
+}
+
+/**
+ * @brief Left zone — whichever of the three temperatures is closest to its limit.
+ *
+ * The three have different ranges and different limits, so their raw values
+ * cannot be compared. Grading each against its own critical limit puts them on
+ * one scale, and the highest grade wins: the bar always shows the temperature
+ * that is in most trouble, whichever that currently is.
+ *
+ * The colour comes from the winner's own band, so a bar at 80 % reads as amber
+ * or green depending on where that signal's warning limit sits.
+ *
+ * @param snap  Latest CAN snapshot.
+ */
+static void zone_render_temperatures(const struct can_data_snapshot *snap)
+{
+    const struct zone_reading readings[] = {
+        grade_rising((int32_t)snap->temperature_accu_hv,
+                     (int32_t)UI_TEMPERATURE_ACCU_HV_RANGE_MIN,
+                     (int32_t)UI_TEMPERATURE_ACCU_HV_WARN_HIGH,
+                     (int32_t)UI_TEMPERATURE_ACCU_HV_CRIT_HIGH),
+        grade_rising((int32_t)snap->temperature_inverter,
+                     (int32_t)UI_TEMPERATURE_INVERTER_RANGE_MIN,
+                     (int32_t)UI_TEMPERATURE_INVERTER_WARN_HIGH,
+                     (int32_t)UI_TEMPERATURE_INVERTER_CRIT_HIGH),
+        grade_rising((int32_t)snap->temperature_motor,
+                     (int32_t)UI_TEMPERATURE_MOTOR_RANGE_MIN,
+                     (int32_t)UI_TEMPERATURE_MOTOR_WARN_HIGH,
+                     (int32_t)UI_TEMPERATURE_MOTOR_CRIT_HIGH),
+    };
+
+    struct zone_reading worst = readings[0];
+
+    for (size_t i = 1U; i < ARRAY_SIZE(readings); i++) {
+        if (readings[i].pct > worst.pct) {
+            worst = readings[i];
+        }
+    }
+
+    zone_fill_bar(ZONE_LEFT_FIRST, ZONE_LEFT_LEN, worst.pct,
+                  zone_level_color(worst.level));
+}
+
+/**
+ * @brief Middle zone — ten status signals, one LED each.
+ *
+ * LED_1…LED_8 are plain flags: lit red when set, dark when clear. The last two
+ * carry their own colour coding and are handled separately.
+ *
+ * @param snap  Latest CAN snapshot.
+ */
+static void zone_render_status(const struct can_data_snapshot *snap)
+{
+    static const struct led_rgb off   = ZONE_RGB_OFF;
+    static const struct led_rgb red   = ZONE_RGB_RED;
+    static const struct led_rgb green = ZONE_RGB_GREEN;
+    static const struct led_rgb blue  = ZONE_RGB_BLUE;
+    static const struct led_rgb amber = ZONE_RGB_AMBER;
+
+    /* LED_1 … LED_8, in the order the DBC numbers them. */
+    const bool flags[8] = {
+        snap->dv_receiving,          /* LED_1 */
+        snap->dv_ready,              /* LED_2 */
+        snap->sdc_open,              /* LED_3 */
+        snap->datalogger_ready,      /* LED_4 */
+        snap->datalogger_recording,  /* LED_5 */
+        snap->rtd_possible,          /* LED_6 */
+        snap->startup_finish,        /* LED_7 */
+        snap->kistler_timeout,       /* LED_8 */
+    };
+
+    for (uint8_t i = 0U; i < ARRAY_SIZE(flags); i++) {
+        s_pixels[ZONE_MID_FIRST + i] = flags[i] ? red : off;
+    }
+
+    /* DCU_RESERVE_LED — a single amber flag. */
+    s_pixels[ZONE_MID_FIRST + 8] = snap->led_reserved_0 ? amber : off;
+
+    /*
+     * DCU_RGB_LED_Themperatur — a three-state code rather than a flag.
+     * Anything outside 1…3 is dark, so an unexpected value reads as "no
+     * statement" instead of silently borrowing another state's colour.
+     */
+    switch (snap->temperature_generic) {
+    case 1:  s_pixels[ZONE_MID_FIRST + 9] = red;   break;
+    case 2:  s_pixels[ZONE_MID_FIRST + 9] = green; break;
+    case 3:  s_pixels[ZONE_MID_FIRST + 9] = blue;  break;
+    default: s_pixels[ZONE_MID_FIRST + 9] = off;   break;
+    }
+}
+
+/**
+ * @brief Right zone — HV accumulator voltage.
+ *
+ * Voltage is graded the other way round from a temperature: the limits are
+ * lower bounds, so the bar empties as the pack drains and the colour worsens
+ * on the way down. The fill therefore spans the full declared range rather
+ * than stopping at the critical limit — a driver watching this wants to see
+ * the pack empty, not the bar sit at zero from the limit onwards.
+ *
+ * @param snap  Latest CAN snapshot.
+ */
+static void zone_render_voltage(const struct can_data_snapshot *snap)
+{
+    const int32_t v    = (int32_t)snap->voltage_accu_hv;
+    const int32_t min  = (int32_t)UI_VOLTAGE_ACCU_HV_RANGE_MIN;
+    const int32_t max  = (int32_t)UI_VOLTAGE_ACCU_HV_RANGE_MAX;
+    const int32_t warn = (int32_t)UI_VOLTAGE_ACCU_HV_WARN_LOW;
+    const int32_t crit = (int32_t)UI_VOLTAGE_ACCU_HV_CRIT_LOW;
+
+    uint8_t pct;
+    if (v <= min) {
+        pct = 0U;
+    } else if (v >= max) {
+        pct = 100U;
+    } else {
+        pct = (uint8_t)(((v - min) * 100) / (max - min));
+    }
+
+    const enum zone_level level = (v <= crit) ? ZONE_LEVEL_CRIT
+                                : (v <= warn) ? ZONE_LEVEL_WARN
+                                              : ZONE_LEVEL_OK;
+
+    zone_fill_bar(ZONE_RIGHT_FIRST, ZONE_RIGHT_LEN, pct,
+                  zone_level_color(level));
+}
+
+/**
+ * @brief Render one full frame of the three-zone view.
+ *
+ * Takes one copy of the snapshot and works from it, so the three zones cannot
+ * end up showing values from different moments. Every LED is written, so no
+ * clearing is needed beforehand.
+ */
+static void zone_step(void)
+{
+    struct can_data_snapshot snap;
+
+    app_state_get_can_data(&snap);
+
+    zone_render_temperatures(&snap);
+    zone_render_status(&snap);
+    zone_render_voltage(&snap);
+
+    int ret = led_strip_update_rgb(s_strip, s_pixels, LIGHTING_NUM_PIXELS);
+    if (ret != 0) {
+        LOG_ERR("led_strip_update_rgb failed: %d", ret);
+    }
+}
+
+/**
  * @brief Lighting thread entry point.
  *
  * Renders the gear animation forever, one frame per GEAR_STEP_MS.  The thread
@@ -265,7 +575,18 @@ static void lighting_thread_fn(void *p1, void *p2, void *p3)
     uint8_t phase = 0U;
 
     while (true) {
-        gear_step(&phase);
+        /*
+         * The strip follows the display: on the EV driving screen it turns
+         * into an instrument, everywhere else it is decoration. The active
+         * screen comes from app_state, which the App Layer maintains from the
+         * UI's screen-change events — this module never talks to the UI.
+         */
+        if (app_state_get_active_screen() == SCREEN_EV_DRIVING) {
+            zone_step();
+        } else {
+            gear_step(&phase);
+        }
+
         k_msleep(GEAR_STEP_MS);
     }
 }

@@ -483,6 +483,20 @@ static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
         s_screens[prev] = NULL;
     }
 
+    /*
+     * Tell the App Layer where the driver ended up. It is the only writer of
+     * app_state, and the lighting module reads the active screen from there to
+     * decide what to put on the strip — the UI never talks to it directly.
+     */
+    struct ui_input_event evt = {
+        .type        = UI_INPUT_SCREEN_CHANGED,
+        .data.screen = id,
+    };
+    int rc = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
+    if (rc != 0) {
+        LOG_WRN("UI_INPUT_SCREEN_CHANGED publish failed: %d", rc);
+    }
+
     LOG_DBG("Screen transition → %d", (int)id);
 }
 

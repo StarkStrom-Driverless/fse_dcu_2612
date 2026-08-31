@@ -109,7 +109,7 @@
 	led_strip0: led_strip {
 		compatible = "ti,tlc59731";
 		gpios = <&gpio_emul0 1 GPIO_ACTIVE_HIGH>;
-		chain-length = <31>;
+		chain-length = <28>;
 		color-mapping = <LED_COLOR_ID_BLUE LED_COLOR_ID_GREEN LED_COLOR_ID_RED>;
 		status = "okay";
 	};

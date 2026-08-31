@@ -183,6 +183,7 @@ struct can_status_event {
  *  UI_INPUT_RTD_REQUEST/_RELEASE screen_checklist.c      (RTD button hold)
  *  UI_INPUT_TORQUE_VECT_ON/_OFF  screen_ev_driving.c     (TQ Vect toggle)
  *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SET BITS button)
+ *  UI_INPUT_SCREEN_CHANGED       ui.c                     (every screen load)
  */
 enum ui_input_type {
     UI_INPUT_CONFIRM          = 0, /**< Reserved. Also the channel's initial value.*/
@@ -197,6 +198,7 @@ enum ui_input_type {
     UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled torque vectoring.          */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Debug bits set; payload: data.debug_bits.  */
     UI_INPUT_TIMESTAMP,            /**< Reserved: log an event marker.             */
+    UI_INPUT_SCREEN_CHANGED,       /**< Carousel moved; payload: data.screen.      */
 };
 
 /**
@@ -221,6 +223,8 @@ struct ui_input_event {
          * Raw 3-bit value (0–7) for the Debug_SETTING CAN signal.
          */
         uint8_t debug_bits;
+        /** Valid when type == UI_INPUT_SCREEN_CHANGED. The screen now loaded. */
+        enum screen_id screen;
     } data;
 };
 

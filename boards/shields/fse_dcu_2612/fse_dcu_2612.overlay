@@ -183,7 +183,7 @@
 		compatible = "apa,apa102";
 		reg = <0>;
 		spi-max-frequency = <5250000>;
-		chain-length = <31>;
+		chain-length = <28>;
 		color-mapping = <LED_COLOR_ID_BLUE LED_COLOR_ID_GREEN LED_COLOR_ID_RED>;
 	};
 };
