@@ -298,8 +298,16 @@ ZBUS_CHAN_ADD_OBS(can_status_chan, can_status_sub, 0);
  * which is the whole reason for the atomic: this callback and the LVGL thread
  * touch s_nav_delta concurrently and share no lock.
  *
- * Positive value → CW  (navigate right in carousel)
- * Negative value → CCW (navigate left  in carousel)
+ * The sign is inverted here, so that after this point:
+ *
+ *   Positive accumulated delta → navigate right in the carousel
+ *   Negative accumulated delta → navigate left
+ *
+ * Which physical direction that is comes from how the encoder counts, and
+ * inverting at the input boundary is what keeps that a property of the device:
+ * carousel_navigate() only ever sees a direction, never a raw reading. Flip
+ * this one sign to swap clockwise and counter-clockwise; nothing downstream
+ * needs to know.
  *
  * @param evt        Input event; only INPUT_EV_REL / INPUT_REL_WHEEL is used.
  * @param user_data  Unused.
@@ -491,8 +499,10 @@ static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
  * directional slide the commented-out lines describe follows the
  * phone-launcher convention and can be re-enabled there.
  *
- * @param delta  Signed encoder step count; sign encodes direction
- *               (negative = CCW/left, positive = CW/right).
+ * @param delta  Signed step count; the sign is a navigation direction, not a
+ *               raw encoder reading — negative moves left in the carousel,
+ *               positive moves right. left_encoder_cb() has already mapped
+ *               the physical rotation onto it.
  */
 static void carousel_navigate(int32_t delta)
 {
@@ -823,12 +833,12 @@ void ui_module_init(void)
      */
     s_carousel_pos = 0;
     for (uint8_t i = 0; i < (uint8_t)CAROUSEL_LEN; i++) {
-        if (k_carousel[i] == SCREEN_SDC) {
+        if (k_carousel[i] == SCREEN_BOOT) {
             s_carousel_pos = i;
             break;
         }
     }
-    ui_load_screen(SCREEN_SDC, LV_SCR_LOAD_ANIM_NONE);
+    ui_load_screen(SCREEN_BOOT, LV_SCR_LOAD_ANIM_NONE);
 
     /*
      * lv_timer_handler() and display_blanking_off() are intentionally deferred
