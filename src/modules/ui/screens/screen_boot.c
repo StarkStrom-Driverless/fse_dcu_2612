@@ -78,6 +78,7 @@
 
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
+#include "modules/ui/widgets/ui_hintbar.h"
 
 #ifdef CONFIG_DCU_BENCHMARK_BOOT_PATCH
 #include "generated/ui_subjects_gen.h"
@@ -105,6 +106,7 @@
 #define BENCH_LEVEL_MID         1   /**< → yellow */
 #define BENCH_LEVEL_BRIGHT      2   /**< → white  */
 /** @} */
+
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
@@ -162,7 +164,8 @@ static void bench_patch_create(lv_obj_t *scr)
 
     lv_obj_remove_style_all(patch);
     lv_obj_set_size(patch, BENCH_PATCH_SIZE, BENCH_PATCH_SIZE);
-    lv_obj_align(patch, LV_ALIGN_BOTTOM_LEFT, BENCH_PATCH_MARGIN, -BENCH_PATCH_MARGIN);
+    lv_obj_align(patch, LV_ALIGN_BOTTOM_LEFT, BENCH_PATCH_MARGIN,
+                 -(BENCH_PATCH_MARGIN + UI_HINTBAR_H));
     lv_obj_set_style_bg_opa(patch, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(patch, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -172,6 +175,16 @@ static void bench_patch_create(lv_obj_t *scr)
 
 #endif /* CONFIG_DCU_BENCHMARK_BOOT_PATCH */
 
+
+/**
+ * @brief What each control does on this screen; see @ref ui_hint_input.
+ *
+ * Static storage: ui_hintbar_create() keeps the pointers rather than copying
+ * the strings. Controls left out here are dimmed in the bar.
+ */
+static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
+    [UI_HINT_ENC_LEFT] = "Screen",
+};
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
@@ -193,7 +206,7 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
     lv_obj_t *lbl_dcu = lv_label_create(scr);
     lv_obj_add_style(lbl_dcu, &ui_style_label_value_md, 0);
     lv_label_set_text(lbl_dcu, "DCU");
-    lv_obj_align(lbl_dcu, LV_ALIGN_CENTER, -5, 90);
+    lv_obj_align(lbl_dcu, LV_ALIGN_CENTER, -5, 80);
 
     /*
      * Version comes from the VERSION file via app_version.h, so it cannot
@@ -205,7 +218,7 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
     lv_obj_add_style(lbl_version, &ui_style_label_title, 0);
     lv_label_set_text_fmt(lbl_version, "v%d.%d.%d",
                           DCU_VEHICLE_ID, APP_VERSION_MINOR, APP_PATCHLEVEL);
-    lv_obj_align(lbl_version, LV_ALIGN_CENTER, -5, 130);
+    lv_obj_align(lbl_version, LV_ALIGN_CENTER, -5, 120);
 
     /* ── Logo ────────────────────────────────────────────────────────────── */
 
@@ -254,6 +267,8 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
     /* Built last so it sits on top of everything else. */
     bench_patch_create(scr);
 #endif
+
+    ui_hintbar_create(scr, k_hints);
 
     return scr;
 }

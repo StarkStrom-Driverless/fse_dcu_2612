@@ -43,6 +43,7 @@
 #include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
+#include "modules/ui/widgets/ui_hintbar.h"
 #include "modules/ui/widgets/ui_quantity.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
@@ -57,6 +58,16 @@ LOG_MODULE_REGISTER(screen_debug_pressure, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
+
+/**
+ * @brief What each control does on this screen; see @ref ui_hint_input.
+ *
+ * Static storage: ui_hintbar_create() keeps the pointers rather than copying
+ * the strings. Controls left out here are dimmed in the bar.
+ */
+static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
+    [UI_HINT_ENC_LEFT] = "Screen",
+};
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 static void build_bars(lv_obj_t *scr);
@@ -199,6 +210,8 @@ lv_obj_t *screen_debug_pressure_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "DBG PRESSURE", status_subjects);
     build_bars(scr);
+
+    ui_hintbar_create(scr, k_hints);
 
     return scr;
 }

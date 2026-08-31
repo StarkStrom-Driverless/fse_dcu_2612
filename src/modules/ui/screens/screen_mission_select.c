@@ -64,6 +64,7 @@
 #include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
+#include "modules/ui/widgets/ui_hintbar.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "generated/ui_tx_subjects_gen.h"
@@ -125,8 +126,14 @@ static const char *const k_mission_names[] = {
  */
 #define BTN_HALF_SPACING        55
 
-/** @brief Bottom margin for the button row (pixels from screen bottom). */
-#define BTN_BOTTOM_MARGIN       20
+/**
+ * @brief Bottom margin for the button row, in pixels.
+ *
+ * Measured from the top of the hint bar, not from the screen edge — the
+ * bar owns the bottom UI_HINTBAR_H pixels, and anything anchored to
+ * LV_ALIGN_BOTTOM_* without adding it lands underneath.
+ */
+#define BTN_BOTTOM_MARGIN       (UI_HINTBAR_H + 20)
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -163,6 +170,18 @@ static lv_group_t *s_left_button_group;
 /** @brief Input group for the right button pad — holds SET MISSION. */
 static lv_group_t *s_right_button_group;
 
+
+/**
+ * @brief What each control does on this screen; see @ref ui_hint_input.
+ *
+ * Static storage: ui_hintbar_create() keeps the pointers rather than copying
+ * the strings. Controls left out here are dimmed in the bar.
+ */
+static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
+    [UI_HINT_ENC_LEFT]  = "Screen",
+    [UI_HINT_BTN_RIGHT] = "Set",
+    [UI_HINT_ENC_RIGHT] = "Mission",
+};
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
@@ -388,6 +407,8 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
     s_right_button_group = lv_group_create();
     lv_group_add_obj(s_right_button_group, s_btn_ok);
     lv_group_set_editing(s_right_button_group, true);
+
+    ui_hintbar_create(scr, k_hints);
 
     return scr;
 }

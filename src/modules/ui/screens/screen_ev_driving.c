@@ -71,6 +71,7 @@
 #include "app/app_state.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
+#include "modules/ui/widgets/ui_hintbar.h"
 #include "modules/ui/widgets/ui_quantity.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
@@ -99,8 +100,14 @@ LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
  */
 #define BTN_HALF_SPACING        100
 
-/** @brief Bottom margin for the button row (pixels from screen bottom). */
-#define BTN_BOTTOM_MARGIN       0
+/**
+ * @brief Bottom margin for the button row, in pixels.
+ *
+ * Measured from the top of the hint bar, not from the screen edge — the
+ * bar owns the bottom UI_HINTBAR_H pixels, and anything anchored to
+ * LV_ALIGN_BOTTOM_* without adding it lands underneath.
+ */
+#define BTN_BOTTOM_MARGIN       (UI_HINTBAR_H + 4)
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -153,6 +160,19 @@ static lv_group_t *s_left_button_group;
 /** @brief Input group for the right button pad — holds the TQ Vect button. */
 static lv_group_t *s_right_button_group;
 
+
+/**
+ * @brief What each control does on this screen; see @ref ui_hint_input.
+ *
+ * Static storage: ui_hintbar_create() keeps the pointers rather than copying
+ * the strings. Controls left out here are dimmed in the bar.
+ */
+static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
+    [UI_HINT_ENC_LEFT]  = "Screen",
+    [UI_HINT_BTN_LEFT]  = "PWR Lim",
+    [UI_HINT_BTN_RIGHT] = "TQ Vect",
+    [UI_HINT_ENC_RIGHT] = "TQG R",
+};
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 static void build_sliders(lv_obj_t *scr);
@@ -246,7 +266,7 @@ static void build_sliders(lv_obj_t *scr)
     lv_obj_add_style(s_sldr_left, &ui_style_slider_main, LV_PART_MAIN);
     lv_obj_add_style(s_sldr_left, &ui_style_slider_indicator, LV_PART_INDICATOR);
     lv_obj_set_size(s_sldr_left, 40, 200);
-    lv_obj_set_pos(s_sldr_left, 10, 70);
+    lv_obj_set_pos(s_sldr_left, 10, 80);
 
     lv_slider_set_value(s_sldr_left, (int32_t)lv_subject_get_int(&s_sldr_left_val), LV_ANIM_OFF);
     lv_obj_add_event_cb(s_sldr_left, sldr_left_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
@@ -263,7 +283,7 @@ static void build_sliders(lv_obj_t *scr)
     lv_obj_add_style(s_sldr_right, &ui_style_slider_main, LV_PART_MAIN);
     lv_obj_add_style(s_sldr_right, &ui_style_slider_indicator, LV_PART_INDICATOR);
     lv_obj_set_size(s_sldr_right, 40, 200);
-    lv_obj_set_pos(s_sldr_right, 430, 70);
+    lv_obj_set_pos(s_sldr_right, 430, 80);
 
     lv_slider_set_value(s_sldr_right, (int32_t)lv_subject_get_int(&s_sldr_right_val), LV_ANIM_OFF);
     lv_obj_add_event_cb(s_sldr_right, sldr_right_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
@@ -287,11 +307,12 @@ static void build_sliders(lv_obj_t *scr)
     lv_obj_set_size(s_bar_middle, 300, 20);
     lv_bar_set_range(s_bar_middle, 0, 500);
     lv_bar_bind_value(s_bar_middle, &ui_subj_voltage_accu_hv);
-    lv_obj_align(s_bar_middle, LV_ALIGN_BOTTOM_MID, 0, -60);
+    /* Clears both the hint bar and the button row that moved up with it. */
+    lv_obj_align(s_bar_middle, LV_ALIGN_BOTTOM_MID, 0, -(UI_HINTBAR_H + 60));
 
     lv_obj_t *lbl_bar_middle_title = lv_label_create(scr);
     lv_obj_add_style(lbl_bar_middle_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_middle_title, "HV SoC");
+    lv_label_set_text(lbl_bar_middle_title, "HV Accu Voltage");
     lv_obj_align_to(lbl_bar_middle_title, s_bar_middle, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
 
     lv_obj_t *lbl_bar_middle_value = ui_quantity_create(scr,
@@ -330,7 +351,7 @@ static void build_labels(lv_obj_t *scr)
     // lv_obj_set_size(lbl_temp_hv_accu_value, 60, 30);
     ui_quantity_bind_value(lbl_temp_hv_accu_value, &ui_subj_temperature_accu_hv, "%d");
     // lv_obj_align_to(lbl_temp_hv_accu_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
-    lv_obj_set_pos(lbl_temp_hv_accu_value, 65, 100);
+    lv_obj_set_pos(lbl_temp_hv_accu_value, 85, 100);
 
     lv_obj_t *lbl_temp_hv_accu_title = lv_label_create(scr);
     lv_obj_add_style(lbl_temp_hv_accu_title, &ui_style_label_subtitle, 0);
@@ -349,7 +370,7 @@ static void build_labels(lv_obj_t *scr)
     // lv_obj_set_size(lbl_temp_inverter_value, 60, 30);
     ui_quantity_bind_value(lbl_temp_inverter_value, &ui_subj_temperature_inverter, "%d");
     // lv_obj_align_to(lbl_temp_inverter_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
-    lv_obj_set_pos(lbl_temp_inverter_value, 185, 100);
+    lv_obj_set_pos(lbl_temp_inverter_value, 205, 100);
 
     lv_obj_t *lbl_temp_inverter_title = lv_label_create(scr);
     lv_obj_add_style(lbl_temp_inverter_title, &ui_style_label_subtitle, 0);
@@ -368,7 +389,7 @@ static void build_labels(lv_obj_t *scr)
     // lv_obj_set_size(lbl_temp_motor_value, 60, 30);
     ui_quantity_bind_value(lbl_temp_motor_value, &ui_subj_temperature_motor, "%d");
     // lv_obj_align_to(lbl_temp_motor_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
-    lv_obj_set_pos(lbl_temp_motor_value, 305, 100);
+    lv_obj_set_pos(lbl_temp_motor_value, 325, 100);
 
     lv_obj_t *lbl_temp_motor_title = lv_label_create(scr);
     lv_obj_add_style(lbl_temp_motor_title, &ui_style_label_subtitle, 0);
@@ -562,6 +583,8 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
     s_right_button_group = lv_group_create();
     lv_group_add_obj(s_right_button_group, s_btn_right);
     lv_group_set_editing(s_right_button_group, true);
+
+    ui_hintbar_create(scr, k_hints);
 
     return scr;
 }
