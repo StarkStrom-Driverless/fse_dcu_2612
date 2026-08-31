@@ -95,7 +95,7 @@
 #include "modules/ui/screens/screen_debug_hv_accu.h"
 #include "modules/ui/screens/screen_debug_pressure.h"
 #include "modules/ui/screens/screen_debug_tractive_system.h"
-#include "modules/ui/screens/screen_debug_write.h"
+#include "modules/ui/screens/screen_debug_custom.h"
 #include "modules/ui/screens/screen_ev_driving.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "generated/ui_subjects_gen.h"
@@ -151,7 +151,7 @@ static const enum screen_id k_carousel[] = {
     SCREEN_DEBUG_HV_ACCU,   /* index 1                                  */
     SCREEN_DEBUG_PRESSURE,  /* index 2                                  */
     SCREEN_DEBUG_TS,        /* index 3                                  */
-    SCREEN_DEBUG_WRITE,     /* index 4                                  */
+    SCREEN_DEBUG_CUSTOM,    /* index 4                                  */
     SCREEN_BOOT,            /* index 5 — start position after boot      */
     SCREEN_MISSION_SELECT,  /* index 6                                  */
     SCREEN_SDC,             /* index 7                                  */
@@ -186,7 +186,7 @@ static const screen_factory_fn k_screen_factories[SCREEN_ID_COUNT] = {
     [SCREEN_DEBUG_HV_ACCU]  = screen_debug_hv_accu_create,
     [SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create,
     [SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create,
-    [SCREEN_DEBUG_WRITE]    = screen_debug_write_create,
+    [SCREEN_DEBUG_CUSTOM]    = screen_debug_custom_create,
     [SCREEN_BOOT]           = screen_boot_create,
     [SCREEN_MISSION_SELECT] = screen_mission_select_create,
     [SCREEN_SDC]            = screen_sdc_create,
@@ -401,10 +401,10 @@ static void set_encoder_group(enum screen_id id)
         left_button_group = screen_sdc_get_left_button_group();
         right_button_group = screen_sdc_get_right_button_group();
         break;
-    case SCREEN_DEBUG_WRITE:
-        right_encoder_group = screen_debug_write_get_right_encoder_group();
-        left_button_group = screen_debug_write_get_left_button_group();
-        right_button_group = screen_debug_write_get_right_button_group();
+    case SCREEN_DEBUG_CUSTOM:
+        right_encoder_group = screen_debug_custom_get_right_encoder_group();
+        left_button_group = screen_debug_custom_get_left_button_group();
+        right_button_group = screen_debug_custom_get_right_button_group();
         break;
 
     case SCREEN_EV_DRIVING:

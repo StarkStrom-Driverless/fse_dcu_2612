@@ -140,9 +140,9 @@ messages:
         app_name: voltage_tractive_system
         ui: { label: "HV TS", precision: 0 }
       DCU_Custom_Wert_1:
-        app_name: custom_2
-      DCU_Custom_Wert_2:
         app_name: custom_1
+      DCU_Custom_Wert_2:
+        app_name: custom_2
 
   M01_Brake_Pressure_Front:
     direction: rx

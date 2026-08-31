@@ -1,28 +1,30 @@
 /**
- * @file        screen_debug_write.h
- * @brief       Debug-bits transmit screen factory
+ * @file        screen_debug_custom.h
+ * @brief       Generic value screen factory — read two, write one
  *
  * @ingroup     dcu_ui_screens
  *
- * @details     The one screen that writes to the vehicle for diagnostic
- *              purposes: it sets the three-bit Debug_SETTING signal that the
- *              CAN module puts into every DCU_2_mABX frame.
+ * @details     A scratch screen for generic values: two received ones on the
+ *              left, one transmitted one on the right. None of the three has a
+ *              fixed meaning — the point is that an engineer can bind something
+ *              to them between runs and read or set it from the wheel without
+ *              touching the firmware.
  *
  *              ### Screen layout (480 × 320)
  *
  *              ```
  *              ┌──────────────────────────────────────┐
- *              │ DBG TX                        ▪▪▪▪▪▪ │ ← shared header
+ *              │ DBG CUSTOM                    ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
- *              │              ┌─────────┐             │
- *              │              │    2    │             │ ← roller 0…7,
- *              │              │▶   3   ◀│             │   right encoder
- *              │              │    4    │             │
- *              │              └─────────┘             │
- *              │        Current Debug Bits: 3         │ ← last confirmed
- *              │                   ┌───────────────┐  │
- *              │                   │   SET BITS    │  │ ← right button pad
- *              │                   └───────────────┘  │
+ *              │ DCU_Custom_Wert_1     ┌─────────┐    │
+ *              │ 1234                  │    2    │    │ ← roller 0…7,
+ *              │                       │▶   3   ◀│    │   right encoder
+ *              │ DCU_Custom_Wert_2     │    4    │    │
+ *              │ 5678                  └─────────┘    │
+ *              │                  Current Debug Bits: 3
+ *              │                       ┌───────────┐  │
+ *              │                       │ SET BITS  │  │ ← right button pad
+ *              │                       └───────────┘  │
  *              └──────────────────────────────────────┘
  *              ```
  *
@@ -34,6 +36,8 @@
  *              | Right encoder | The roller, permanently in edit mode        |
  *              | Right buttons | The SET BITS button                         |
  *              | Left buttons  | Nothing; the group accessor returns NULL    |
+ *
+ *              The read column is display-only and takes no input at all.
  *
  *              ### Selecting versus confirming
  *              Scrolling the roller changes nothing outside this screen. Only
@@ -59,8 +63,8 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
-#ifndef MODULES_UI_SCREENS_SCREEN_DEBUG_WRITE_H
-#define MODULES_UI_SCREENS_SCREEN_DEBUG_WRITE_H
+#ifndef MODULES_UI_SCREENS_SCREEN_DEBUG_CUSTOM_H
+#define MODULES_UI_SCREENS_SCREEN_DEBUG_CUSTOM_H
 
 /* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
 
@@ -70,39 +74,39 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the debug-bits transmit screen.
+ * @brief Create the generic value screen.
  *
- * Builds the header, the 0…7 roller with its confirmed-value label, the
- * SET BITS button and the two input groups.
+ * Builds the header, the two read labels, the 0…7 roller with its
+ * confirmed-value label, the SET BITS button and the two input groups.
  * Must be called after ui_styles_init().
  *
  * @param status_subjects  Device-status subjects for the header widget.
  * @return                 Pointer to the top-level screen object. Never NULL.
  */
-lv_obj_t *screen_debug_write_create(lv_subject_t *status_subjects);
+lv_obj_t *screen_debug_custom_create(lv_subject_t *status_subjects);
 
 /**
  * @brief Return the LVGL input group for the right encoder.
  *
  * Contains the roller only, in edit mode, so a turn scrolls the value list.
  *
- * @return  The group. Valid only after screen_debug_write_create().
+ * @return  The group. Valid only after screen_debug_custom_create().
  */
-lv_group_t *screen_debug_write_get_right_encoder_group(void);
+lv_group_t *screen_debug_custom_get_right_encoder_group(void);
 
 /**
  * @brief Return the LVGL input group for the left button pad.
  * @return Always NULL — this screen has nothing on the left pad.
  */
-lv_group_t *screen_debug_write_get_left_button_group(void);
+lv_group_t *screen_debug_custom_get_left_button_group(void);
 
 /**
  * @brief Return the LVGL input group for the right button pad.
  *
  * Contains the SET BITS button.
  *
- * @return  The group. Valid only after screen_debug_write_create().
+ * @return  The group. Valid only after screen_debug_custom_create().
  */
-lv_group_t *screen_debug_write_get_right_button_group(void);
+lv_group_t *screen_debug_custom_get_right_button_group(void);
 
-#endif /* MODULES_UI_SCREENS_SCREEN_DEBUG_WRITE_H */
+#endif /* MODULES_UI_SCREENS_SCREEN_DEBUG_CUSTOM_H */

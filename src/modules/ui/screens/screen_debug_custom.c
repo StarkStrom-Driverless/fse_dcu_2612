@@ -1,10 +1,21 @@
 /**
- * @file        screen_debug_write.c
- * @brief       Debug-bits transmit screen implementation
+ * @file        screen_debug_custom.c
+ * @brief       Generic value screen implementation
  *
  * @ingroup     dcu_ui_screens
  *
- * @details     Builds the debug-bits screen with:
+ * @details     A scratch screen for values with no fixed meaning, so an
+ *              engineer can bind something to them between runs and read or
+ *              set it from the wheel without a firmware change.
+ *
+ *              ### Read column (left)
+ *
+ *              DCU_Custom_Wert_1 and _2 as plain labels, bound straight to
+ *              their generated subjects. Raw integers, no unit and no
+ *              thresholds — whatever the values mean today is written down
+ *              somewhere else, not here.
+ *
+ *              ### Send column (right)
  *
  *                – Roller     : the values 0…7, scrolled by the right encoder.
  *                               Scrolling publishes nothing.
@@ -18,6 +29,9 @@
  *                               the settings service, which clamps and owns it;
  *                               the CAN module reads it back on its next cycle.
  *
+ *              The whole column sits SEND_COL_OFFSET_X right of centre, which
+ *              is what leaves room for the read column.
+ *
  *              ### Range and ownership
  *              The roller offers 0…7 because Debug_SETTING is three bits wide
  *              in the DBC.  The bound is not enforced here — the settings
@@ -28,7 +42,9 @@
  *              The screen is destroyed on leaving, so the roller position is
  *              kept in the file-scope subject s_roller_sel and restored on the
  *              next visit.  The confirmed value needs no such handling — it
- *              lives in the generated TX subject.
+ *              lives in the generated TX subject. The read labels need none
+ *              either: they rebind on creation and the next CAN snapshot fills
+ *              them.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-09
@@ -49,7 +65,7 @@
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
 
-#include "modules/ui/screens/screen_debug_write.h"
+#include "modules/ui/screens/screen_debug_custom.h"
 
 /* ── Zephyr Includes ─────────────────────────────────────────────────────────────────────────── */
 
@@ -63,11 +79,12 @@
 #include "modules/ui/widgets/ui_header.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "generated/ui_subjects_gen.h"
 #include "generated/ui_tx_subjects_gen.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
-LOG_MODULE_REGISTER(screen_debug_write, CONFIG_LOG_DEFAULT_LEVEL);
+LOG_MODULE_REGISTER(screen_debug_custom, CONFIG_LOG_DEFAULT_LEVEL);
 
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
@@ -112,6 +129,24 @@ LOG_MODULE_REGISTER(screen_debug_write, CONFIG_LOG_DEFAULT_LEVEL);
 
 /** @brief Bottom margin for the button row (pixels from screen bottom). */
 #define BTN_BOTTOM_MARGIN       20
+
+/**
+ * @brief Horizontal offset of the whole send column from the screen centre.
+ *
+ * Shifts roller, confirmed-value label and button together to the right, which
+ * is what frees the left half for the received values. One constant moves the
+ * entire column.
+ */
+#define SEND_COL_OFFSET_X       110
+
+/** @brief Left margin of the read column, in pixels. */
+#define READ_COL_X              20
+
+/** @brief Y position of the first read row, below header and page indicator. */
+#define READ_ROW1_Y             75
+
+/** @brief Vertical distance between the two read rows, in pixels. */
+#define READ_ROW_SPACING        90
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -209,16 +244,58 @@ static void build_roller(lv_obj_t *scr)
     lv_obj_set_style_text_color(s_roller, UI_C_DARK,                       LV_PART_SELECTED);
 
     /* Vertically centred in the content area below the 15 % header. */
-    lv_obj_align(s_roller, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_align(s_roller, LV_ALIGN_CENTER, SEND_COL_OFFSET_X, -30);
     lv_obj_add_event_cb(s_roller, roller_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* ── Confirmed bits label (observer-driven) ─────────────────────────── */
 
     s_roller_lbl = lv_label_create(scr);
     lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
-    lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, 0, 35);
+    lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, SEND_COL_OFFSET_X, 35);
     lv_subject_add_observer_obj(&ui_tx_subj_debug_bits, confirmed_bits_observer_cb,
                                 s_roller_lbl, NULL);
+}
+
+/**
+ * @brief Build one read row: a caption with the live value underneath.
+ *
+ * @param scr      Screen object to build into.
+ * @param y        Y position of the caption, from the top of the screen.
+ * @param caption  Static text naming the signal.
+ * @param subject  Generated RX subject holding the value.
+ */
+static void build_read_row(lv_obj_t *scr, int32_t y,
+                           const char *caption, lv_subject_t *subject)
+{
+    lv_obj_t *lbl_caption = lv_label_create(scr);
+    lv_obj_add_style(lbl_caption, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_caption, caption);
+    lv_obj_align(lbl_caption, LV_ALIGN_TOP_LEFT, READ_COL_X, y);
+
+    lv_obj_t *lbl_value = lv_label_create(scr);
+    lv_obj_add_style(lbl_value, &ui_style_label_title, 0);
+    lv_label_bind_text(lbl_value, subject, "%d");
+    lv_obj_align_to(lbl_value, lbl_caption, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
+}
+
+/**
+ * @brief Build the read column — the two generic values coming from the vehicle.
+ *
+ * Plain labels bound straight to their subjects: no unit, no thresholds, no
+ * formatting beyond the raw integer. The values have no fixed meaning, so there
+ * is nothing to dress them up with.
+ *
+ * The captions name the DBC signals; the subjects carry the app_names from
+ * dbc/dcu_app.yaml, which map one to one onto them.
+ *
+ * @param scr  Screen object to build into.
+ */
+static void build_read_column(lv_obj_t *scr)
+{
+    build_read_row(scr, READ_ROW1_Y,
+                   "Custom Value 1", &ui_subj_custom_1);
+    build_read_row(scr, READ_ROW1_Y + READ_ROW_SPACING,
+                   "Custom Value 2", &ui_subj_custom_2);
 }
 
 /**
@@ -236,7 +313,7 @@ static void build_buttons(lv_obj_t *scr)
     lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_PRESSED);
     lv_obj_add_style(s_btn_ok, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
     lv_obj_set_size(s_btn_ok, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_align(s_btn_ok, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
+    lv_obj_align(s_btn_ok, LV_ALIGN_BOTTOM_MID, SEND_COL_OFFSET_X, -BTN_BOTTOM_MARGIN);
 
     lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
     lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
@@ -330,7 +407,7 @@ static void btn_ok_event_cb(lv_event_t *e)
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
-lv_obj_t *screen_debug_write_create(lv_subject_t *status_subjects)
+lv_obj_t *screen_debug_custom_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
@@ -346,7 +423,8 @@ lv_obj_t *screen_debug_write_create(lv_subject_t *status_subjects)
 
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
-    ui_header_create(scr, "DBG TX", status_subjects);
+    ui_header_create(scr, "DBG CUSTOM", status_subjects);
+    build_read_column(scr);
     build_roller(scr);
     build_buttons(scr);
 
@@ -368,17 +446,17 @@ lv_obj_t *screen_debug_write_create(lv_subject_t *status_subjects)
     return scr;
 }
 
-lv_group_t *screen_debug_write_get_right_encoder_group(void)
+lv_group_t *screen_debug_custom_get_right_encoder_group(void)
 {
     return s_right_encoder_group;
 }
 
-lv_group_t *screen_debug_write_get_left_button_group(void)
+lv_group_t *screen_debug_custom_get_left_button_group(void)
 {
     return s_left_button_group;
 }
 
-lv_group_t *screen_debug_write_get_right_button_group(void)
+lv_group_t *screen_debug_custom_get_right_button_group(void)
 {
     return s_right_button_group;
 }

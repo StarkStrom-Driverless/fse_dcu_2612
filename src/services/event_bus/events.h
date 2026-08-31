@@ -88,7 +88,7 @@ enum screen_id {
     SCREEN_DEBUG_LV_ACCU,     /**< Debug values of the low-voltage accumulator.    */
     SCREEN_DEBUG_PRESSURE,    /**< Debug values of air and brake pressure.         */
     SCREEN_DEBUG_TS,          /**< Debug values of the tractive system.            */
-    SCREEN_DEBUG_WRITE,       /**< Send generic debug bits to the vehicle.         */
+    SCREEN_DEBUG_CUSTOM,      /**< Read and write generic, unassigned values.      */
     SCREEN_BOOT,              /**< Splash screen; carousel starting position.      */
     SCREEN_MISSION_SELECT,    /**< Mission roller + SET MISSION button.            */
     SCREEN_SDC,               /**< Shutdown-circuit node overview.                 */
@@ -182,7 +182,7 @@ struct can_status_event {
  *  UI_INPUT_MISSION_SELECTED     screen_mission_select.c (SET MISSION button)
  *  UI_INPUT_RTD_REQUEST/_RELEASE screen_checklist.c      (RTD button hold)
  *  UI_INPUT_TORQUE_VECT_ON/_OFF  screen_ev_driving.c     (TQ Vect toggle)
- *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_write.c    (SET BITS button)
+ *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SET BITS button)
  */
 enum ui_input_type {
     UI_INPUT_CONFIRM          = 0, /**< Reserved. Also the channel's initial value.*/
