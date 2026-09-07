@@ -94,9 +94,10 @@ debug screens, to the right the screens for EV and DV operation:
 
 The carousel does not wrap around: at either end the display simply stops.
 
-**EV DRIVING** is not on the carousel. It appears only when RTD is activated
-from the PRE RTD screen and cannot be left again except by powering the DCU
-off.
+**EV DRIVING** and **DV DRIVING** are not on the carousel. EV DRIVING appears
+when RTD is activated from the PRE RTD screen; DV DRIVING appears when the
+autonomous system enters the *AS driving* state. Neither can be left again
+except by powering the DCU off.
 
 
 <!-- ## Operating modes
@@ -233,6 +234,16 @@ and motor.
 
 The configured values for power limit and torque vectoring are retained across
 a restart.
+
+### DV DRIVING
+
+Shown automatically once the vehicle reports the autonomous system in the
+**AS driving** state. For now it displays only the DV mission selected on the
+DV MISSION screen.
+
+Like EV DRIVING it is not on the carousel and cannot be left — the only way
+back is to power-cycle the DCU. It stays up even after the autonomous system
+moves on to *AS finished* or *AS emergency*.
 
 ## Other screens
 

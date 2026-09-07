@@ -98,6 +98,7 @@
 #include "modules/ui/screens/screen_debug_custom.h"
 #include "modules/ui/screens/screen_settings.h"
 #include "modules/ui/screens/screen_ev_driving.h"
+#include "modules/ui/screens/screen_dv_driving.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "generated/ui_subjects_gen.h"
 #include "generated/ui_tx_subjects_gen.h"
@@ -199,6 +200,7 @@ static const screen_factory_fn k_screen_factories[SCREEN_ID_COUNT] = {
     [SCREEN_SDC]            = screen_sdc_create,
     [SCREEN_PRE_RTD]        = screen_checklist_create,
     [SCREEN_EV_DRIVING]     = screen_ev_driving_create,
+    [SCREEN_DV_DRIVING]     = screen_dv_driving_create,
 };
 
 
@@ -564,6 +566,11 @@ static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
  * directional slide the commented-out lines describe follows the
  * phone-launcher convention and can be re-enabled there.
  *
+ * Does nothing when the active screen is not itself a carousel stop — a
+ * screen reached only through UI_CMD_SET_SCREEN (EV_DRIVING, DV_DRIVING) is a
+ * dead end, so a stray left-encoder turn there must not move the carousel that
+ * sits behind it.
+ *
  * @param delta  Signed step count; the sign is a navigation direction, not a
  *               raw encoder reading — negative moves left in the carousel,
  *               positive moves right. left_encoder_cb() has already mapped
@@ -571,6 +578,17 @@ static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
  */
 static void carousel_navigate(int32_t delta)
 {
+    bool in_carousel = false;
+    for (uint8_t i = 0U; i < (uint8_t)CAROUSEL_LEN; i++) {
+        if (k_carousel[i] == s_active_screen) {
+            in_carousel = true;
+            break;
+        }
+    }
+    if (!in_carousel) {
+        return;
+    }
+
     int new_pos = (int)s_carousel_pos + (delta < 0 ? -1 : 1);
 
     /* Clamp — no wrap-around in the carousel */

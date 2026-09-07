@@ -107,6 +107,7 @@ enum screen_id {
     SCREEN_PRE_RTD,           /**< Pre-drive screen; carries the RTD button.       */
     SCREEN_RTD,               /**< Reserved: live telemetry during mission.        */
     SCREEN_EV_DRIVING,        /**< Telemetry plus torque-vectoring / power limit.  */
+    SCREEN_DV_DRIVING,        /**< Driverless mission running; shows the mission.  */
     SCREEN_POST_RTD,          /**< Reserved: return-to-idle confirmation.          */
     SCREEN_ERROR,             /**< Reserved: safety-fault overlay. Keep last.      */
 };

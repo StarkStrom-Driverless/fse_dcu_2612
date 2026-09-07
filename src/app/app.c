@@ -103,6 +103,14 @@ static struct k_thread s_app_thread;
 /** @brief Last rtd_sound value — detect transitions to avoid redundant publishes. */
 static bool s_last_rtd_sound;
 
+/**
+ * @brief Last raw AS_state value — feed the DV state machine only on a change.
+ *
+ * 0xFF is not a valid 3-bit value, so the first snapshot always syncs the
+ * machine once, whatever AS_state it carries.
+ */
+static uint8_t s_last_as_state = 0xFFU;
+
 /** @brief Stack storage for the App thread. */
 static K_THREAD_STACK_DEFINE(s_app_stack, APP_THREAD_STACK_SIZE);
 
@@ -351,12 +359,12 @@ static void handle_can_status(const struct can_status_event *evt)
 /**
  * @brief Handle a decoded CAN snapshot from the CAN module.
  *
- * Stores the snapshot in app_state, forwards it to the UI, and turns the
- * rtd_sound signal into piezo commands.
+ * Stores the snapshot in app_state, forwards it to the UI, turns the rtd_sound
+ * signal into piezo commands and feeds AS_state to the DV state machine.
  *
- * The RTD sound is edge-triggered: only a change of snap->rtd_sound produces
- * an audio command, so the ~10 Hz snapshot rate does not flood audio_cmd_chan
- * with identical messages.
+ * Both the rtd_sound and the AS_state paths are edge-triggered: they act only
+ * on a change of the value, so the snapshot rate does not flood the audio
+ * channel or churn the state machine.
  *
  * @param snap  Snapshot read from can_data_chan.
  */
@@ -394,6 +402,12 @@ static void handle_can_data(const struct can_data_snapshot *snap)
         if (ret != 0) {
             LOG_ERR("audio_cmd_chan publish failed: %d", ret);
         }
+    }
+
+    /* AS_state: drive the DV state machine only when the raw value changes. */
+    if (snap->as_state != s_last_as_state) {
+        s_last_as_state = snap->as_state;
+        state_machine_notify_as_state(snap->as_state);
     }
 }
 
