@@ -174,6 +174,11 @@ static void pub_ui_cmd(const struct ui_cmd *cmd)
  *   Hands the raw value to the Settings service, which clamps, persists and
  *   owns it.  app_state_set_debug_bits() is deliberately not used here.
  *
+ * UI_INPUT_SETTING_SELECTED
+ *   The generic form of the above, published by the settings screen: carries a
+ *   setting_id and a value, both forwarded straight to settings_set().  The
+ *   settings service clamps against the generated schema and persists.
+ *
  * UI_INPUT_TIMESTAMP
  *   Logs the current Zephyr uptime as an event marker.  Useful for
  *   synchronising external measurements with the firmware timeline.
@@ -246,6 +251,19 @@ static void handle_ui_input(const struct ui_input_event *evt)
          */
         (void)settings_set(SETTING_DEBUG_BITS, bits);
         LOG_INF("Debug bits set: %u (0x%02X)", (unsigned)bits, (unsigned)bits);
+        break;
+    }
+
+    case UI_INPUT_SETTING_SELECTED: {
+        enum setting_id id  = evt->data.setting.id;
+        uint8_t         val = evt->data.setting.val;
+        /*
+         * Same contract as UI_INPUT_DEBUG_BITS_SELECTED, one setting wider:
+         * the Settings service clamps to the schema range, persists and owns
+         * the value; the CAN TX path reads it back on its next cycle.
+         */
+        (void)settings_set(id, val);
+        LOG_INF("Setting %d set: %u", (int)id, (unsigned)val);
         break;
     }
 

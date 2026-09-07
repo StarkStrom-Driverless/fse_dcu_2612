@@ -96,6 +96,7 @@
 #include "modules/ui/screens/screen_debug_pressure.h"
 #include "modules/ui/screens/screen_debug_tractive_system.h"
 #include "modules/ui/screens/screen_debug_custom.h"
+#include "modules/ui/screens/screen_settings.h"
 #include "modules/ui/screens/screen_ev_driving.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "generated/ui_subjects_gen.h"
@@ -152,11 +153,12 @@ static const enum screen_id k_carousel[] = {
     SCREEN_DEBUG_PRESSURE,  /* index 2                                  */
     SCREEN_DEBUG_TS,        /* index 3                                  */
     SCREEN_DEBUG_CUSTOM,    /* index 4                                  */
-    SCREEN_BOOT,            /* index 5 — start position after boot      */
-    SCREEN_MISSION_SELECT,  /* index 6                                  */
-    SCREEN_SDC,             /* index 7                                  */
-    SCREEN_PRE_RTD,         /* index 8 — carries the RTD button         */
-    SCREEN_EV_DRIVING,      /* index 9 — rightmost                      */
+    SCREEN_SETTINGS,        /* index 5                                  */
+    SCREEN_BOOT,            /* index 6 — start position after boot      */
+    SCREEN_MISSION_SELECT,  /* index 7                                  */
+    SCREEN_SDC,             /* index 8                                  */
+    SCREEN_PRE_RTD,         /* index 9 — carries the RTD button         */
+    SCREEN_EV_DRIVING,      /* index 10 — rightmost                     */
 };
 
 /** @brief Number of screens in the carousel. */
@@ -187,6 +189,7 @@ static const screen_factory_fn k_screen_factories[SCREEN_ID_COUNT] = {
     [SCREEN_DEBUG_PRESSURE] = screen_debug_pressure_create,
     [SCREEN_DEBUG_TS]       = screen_debug_tractive_system_create,
     [SCREEN_DEBUG_CUSTOM]    = screen_debug_custom_create,
+    [SCREEN_SETTINGS]       = screen_settings_create,
     [SCREEN_BOOT]           = screen_boot_create,
     [SCREEN_MISSION_SELECT] = screen_mission_select_create,
     [SCREEN_SDC]            = screen_sdc_create,
@@ -413,6 +416,11 @@ static void set_encoder_group(enum screen_id id)
         right_encoder_group = screen_debug_custom_get_right_encoder_group();
         left_button_group = screen_debug_custom_get_left_button_group();
         right_button_group = screen_debug_custom_get_right_button_group();
+        break;
+    case SCREEN_SETTINGS:
+        right_encoder_group = screen_settings_get_right_encoder_group();
+        left_button_group = screen_settings_get_left_button_group();
+        right_button_group = screen_settings_get_right_button_group();
         break;
 
     case SCREEN_EV_DRIVING:

@@ -45,6 +45,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
+
+/*
+ * enum setting_id and the schema bounds, generated from the `persist:` blocks
+ * and the `settings:` section of dcu_app.yaml.  Pulled in here because
+ * UI_INPUT_SETTING_SELECTED carries a setting_id.  The header depends on
+ * nothing but stdint / stdbool, so this stays within the "no Zephyr, no LVGL"
+ * rule for events.h.
+ */
+#include "generated/settings_schema_gen.h"
+
 
 /* ── Common Enumerations ─────────────────────────────────────────────────────────────────────── */
 
@@ -89,6 +100,7 @@ enum screen_id {
     SCREEN_DEBUG_PRESSURE,    /**< Debug values of air and brake pressure.         */
     SCREEN_DEBUG_TS,          /**< Debug values of the tractive system.            */
     SCREEN_DEBUG_CUSTOM,      /**< Read and write generic, unassigned values.      */
+    SCREEN_SETTINGS,          /**< Editor for every persistent setting.            */
     SCREEN_BOOT,              /**< Splash screen; carousel starting position.      */
     SCREEN_MISSION_SELECT,    /**< Mission roller + SET MISSION button.            */
     SCREEN_SDC,               /**< Shutdown-circuit node overview.                 */
@@ -183,6 +195,7 @@ struct can_status_event {
  *  UI_INPUT_RTD_REQUEST/_RELEASE screen_checklist.c      (RTD button hold)
  *  UI_INPUT_TORQUE_VECT_ON/_OFF  screen_ev_driving.c     (TQ Vect toggle)
  *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SET BITS button)
+ *  UI_INPUT_SETTING_SELECTED     screen_settings.c        (− / + on a setting)
  *  UI_INPUT_SCREEN_CHANGED       ui.c                     (every screen load)
  */
 enum ui_input_type {
@@ -197,6 +210,7 @@ enum ui_input_type {
     UI_INPUT_TORQUE_VECT_ON,       /**< Driver enabled torque vectoring.           */
     UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled torque vectoring.          */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Debug bits set; payload: data.debug_bits.  */
+    UI_INPUT_SETTING_SELECTED,     /**< Persistent setting changed; payload: data.setting. */
     UI_INPUT_TIMESTAMP,            /**< Reserved: log an event marker.             */
     UI_INPUT_SCREEN_CHANGED,       /**< Carousel moved; payload: data.screen.      */
 };
@@ -225,6 +239,15 @@ struct ui_input_event {
         uint8_t debug_bits;
         /** Valid when type == UI_INPUT_SCREEN_CHANGED. The screen now loaded. */
         enum screen_id screen;
+        /**
+         * Valid when type == UI_INPUT_SETTING_SELECTED.
+         * The setting screen has already clamped @c val against the schema;
+         * the settings service clamps it again and owns the stored value.
+         */
+        struct {
+            enum setting_id id;  /**< Which persistent setting.        */
+            uint8_t         val; /**< Desired value (clamped downstream).*/
+        } setting;
     } data;
 };
 

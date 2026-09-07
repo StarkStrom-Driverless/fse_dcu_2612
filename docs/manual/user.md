@@ -88,7 +88,7 @@ debug screens, to the right the screens for EV and DV operation:
 
 | Turning the encoder | Screens, in order from BOOT |
 |---|---|
-| Counter-clockwise | DBG TX, DBG TS, DBG PRESSURE, DBG HV ACCU, DBG LV ACCU |
+| Counter-clockwise | DV SETTINGS, DBG TX, DBG TS, DBG PRESSURE, DBG HV ACCU, DBG LV ACCU |
 | *(start position)* | **BOOT** |
 | Clockwise | DV MISSION, SDC, PRE RTD, EV DRIVING |
 
@@ -244,9 +244,14 @@ the exact firmware build.
 
 ### Settings
 
-A dedicated settings screen is currently **not implemented**. The persistent
-settings are configured through the respective functional screens (DBG TX,
-EV DRIVING) and saved automatically.
+**DV SETTINGS** is the central editor for every persistent setting: debug bits,
+ASR, recuperation, torque vectoring, power limit and display brightness. Each
+setting is one row; the **right encoder** moves the highlight between rows, the
+**left button** lowers the highlighted value and the **right button** raises it.
+
+Changes take effect immediately — there is no separate confirm step. The same
+values can still be reached from the functional screens (DBG CUSTOM,
+EV DRIVING); all paths write to the same store, so the screens always agree.
 
 ## Diagnostics
 
