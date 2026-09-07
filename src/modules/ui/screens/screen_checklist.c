@@ -92,7 +92,7 @@ LOG_MODULE_REGISTER(screen_checklist, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
-/** @brief RTD button — held to request Ready-to-Drive. */
+/** @brief RTD button — long-pressed to request Ready-to-Drive. */
 static lv_obj_t   *s_btn_rtd;
 
 /** @brief Input group for the right encoder. Created empty — no focusable widget. */
@@ -101,8 +101,11 @@ static lv_group_t *s_right_encoder_group;
 /** @brief Input group for the left button pad. Never created; stays NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief Input group for the right button pad — holds the RTD button. */
+/** @brief Input group for the right button pad. Never created; stays NULL. */
 static lv_group_t *s_right_button_group;
+
+/** @brief Input group for the dedicated RTD button pad — holds the RTD button. */
+static lv_group_t *s_rtd_button_group;
 
 
 /**
@@ -112,8 +115,8 @@ static lv_group_t *s_right_button_group;
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT]  = "Screen",
-    [UI_HINT_BTN_RIGHT] = "RTD",
+    [UI_HINT_ENC_LEFT] = "Screen",
+    [UI_HINT_BTN_MID]  = "RTD",
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
@@ -126,8 +129,9 @@ static void btn_rtd_event_cb(lv_event_t *e);
 /**
  * @brief Build the RTD button.
  *
- * The same callback is registered for both press and release; it tells them
- * apart by the event code.
+ * Only LV_EVENT_LONG_PRESSED is handled: a brush against the button must not
+ * put the car into RTD, and there is no release to react to — the request
+ * latches (see btn_rtd_event_cb()).
  *
  * @param scr  Screen object to build into.
  */
@@ -149,42 +153,33 @@ static void build_buttons(lv_obj_t *scr)
     lv_label_set_text(lbl_rtd, "RTD");
     lv_obj_align(lbl_rtd, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_LONG_PRESSED,  NULL);
-    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_LONG_PRESSED, NULL);
 }
 
 /**
- * @brief RTD button press/release handler.
+ * @brief RTD button long-press handler.
  *
- * LONG_PRESSED → UI_INPUT_RTD_REQUEST  (App sets mode RTD   → CAN rtd_button=1)
- * RELEASED     → UI_INPUT_RTD_RELEASE  (App sets mode DEBUG → CAN rtd_button=0)
+ * Publishes UI_INPUT_RTD_REQUEST. The App Layer's state machine latches
+ * OPERATING_MODE_RTD (→ CAN rtd_button = 1) and loads the EV driving screen,
+ * which replaces this one. There is no release event and no way back to DEBUG
+ * short of a power cycle.
  *
- * The visual state is set before publishing, so the button reflects the
- * driver's input even if the publish fails. That is the right way round for a
- * held control: a release event follows regardless and clears it again.
+ * The visual state is set first so the button flashes armed even if the
+ * publish fails; the screen is torn down a moment later regardless.
  *
- * A RELEASED after a short press publishes UI_INPUT_RTD_RELEASE without a
- * preceding request. Harmless — it sets the operating mode to DEBUG, which is
- * where it already was.
- *
- * @param e  LV_EVENT_LONG_PRESSED or LV_EVENT_RELEASED from the RTD button.
+ * @param e  LV_EVENT_LONG_PRESSED from the RTD button.
  */
 static void btn_rtd_event_cb(lv_event_t *e)
 {
-    lv_obj_t * button = lv_event_get_target_obj(e);
-    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_set_state(lv_event_get_target_obj(e), LV_STATE_USER_1, true);
 
-    lv_obj_set_state(button, LV_STATE_USER_1, (code == LV_EVENT_LONG_PRESSED) ? true : false);
-
-    struct ui_input_event evt = {
-        .type = (code == LV_EVENT_LONG_PRESSED) ? UI_INPUT_RTD_REQUEST : UI_INPUT_RTD_RELEASE,
-    };
+    struct ui_input_event evt = { .type = UI_INPUT_RTD_REQUEST };
 
     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
     if (ret != 0) {
-        LOG_WRN("RTD event publish failed: %d", ret);
+        LOG_WRN("RTD request publish failed: %d", ret);
     } else {
-        LOG_DBG("RTD %s", (code == LV_EVENT_LONG_PRESSED) ? "pressed" : "released");
+        LOG_DBG("RTD requested");
     }
 }
 
@@ -209,15 +204,16 @@ lv_obj_t *screen_checklist_create(lv_subject_t *status_subjects)
 
     /*
      * The encoder group is created empty, so the encoder stays attached and a
-     * widget added here later needs no change in ui.c.  The button group holds
-     * the RTD button as its only member and therefore stays in edit mode.
+     * widget added here later needs no change in ui.c.  The RTD button lives in
+     * its own group, bound to the dedicated keypad_rtd pad in ui.c, and stays
+     * in edit mode as its only member.
      */
     s_right_encoder_group = lv_group_create();
     lv_group_set_editing(s_right_encoder_group, true);
 
-    s_right_button_group = lv_group_create();
-    lv_group_add_obj(s_right_button_group, s_btn_rtd);
-    lv_group_set_editing(s_right_button_group, true);
+    s_rtd_button_group = lv_group_create();
+    lv_group_add_obj(s_rtd_button_group, s_btn_rtd);
+    lv_group_set_editing(s_rtd_button_group, true);
 
     ui_hintbar_create(scr, k_hints);
 
@@ -237,6 +233,11 @@ lv_group_t *screen_checklist_get_left_button_group(void)
 lv_group_t *screen_checklist_get_right_button_group(void)
 {
     return s_right_button_group;
+}
+
+lv_group_t *screen_checklist_get_rtd_button_group(void)
+{
+    return s_rtd_button_group;
 }
 
 

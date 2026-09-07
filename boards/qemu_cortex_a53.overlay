@@ -5,14 +5,16 @@
  * Die Anwendung greift an sieben Stellen fest auf den Devicetree zu, jeweils
  * über DEVICE_DT_GET zur Compile-Zeit:
  *
- *   chosen zephyr,display    ui.c        Backlight
- *   chosen zephyr,canbus     can.c       CAN-Controller
- *   alias  qdec-input-left   ui.c        Screen-Karussell
- *   alias  qdec-input-right  ui.c        Widget-Navigation
- *   alias  keypad-left       ui.c        Tastenfeld links
- *   alias  keypad-right      ui.c        Tastenfeld rechts
- *   alias  piezo             audio.c     Summer
- *   alias  led-strip         lighting.c  LED-Streifen
+ *   chosen zephyr,display      ui.c        Backlight
+ *   chosen zephyr,canbus       can.c       CAN-Controller
+ *   alias    qdec-input-left   ui.c        Screen-Karussell (rohes Gerät)
+ *   nodelabel lvgl_encoder0    ui.c        linker Encoder als LVGL-Gerät (TQG Front)
+ *   alias    qdec-input-right  ui.c        Widget-Navigation
+ *   alias    keypad-left       ui.c        Tastenfeld links
+ *   alias    keypad-right      ui.c        Tastenfeld rechts
+ *   alias    keypad-rtd        ui.c        RTD-Taster (nur PRE-RTD-Screen)
+ *   alias    piezo             audio.c     Summer
+ *   alias    led-strip         lighting.c  LED-Streifen
  *
  * Fehlt einer davon, bricht schon der Build ab — nicht erst der Start. Dieses
  * Overlay stellt deshalb für jeden einen emulierten Ersatz bereit. Es bildet
@@ -55,6 +57,7 @@
 		qdec-input-right = &lvgl_encoder1;
 		keypad-left      = &keypad_left;
 		keypad-right     = &keypad_right;
+		keypad-rtd       = &keypad_rtd;
 		piezo            = &piezo_gpio;
 		led-strip        = &led_strip0;
 	};
@@ -138,6 +141,12 @@
 		status = "okay";
 	};
 
+	lvgl_encoder0: lvgl-encoder0 {
+		compatible = "zephyr,lvgl-encoder-input";
+		rotation-input-code = <INPUT_REL_WHEEL>;
+		status = "okay";
+	};
+
 	lvgl_encoder1: lvgl-encoder1 {
 		compatible = "zephyr,lvgl-encoder-input";
 		rotation-input-code = <INPUT_REL_HWHEEL>;
@@ -160,6 +169,14 @@
 		};
 	};
 
+	buttons2: gpio_keys2 {
+		compatible = "gpio-keys";
+		rtd_button: button_3 {
+			gpios = <&gpio_emul0 8 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
 	keypad_left: keypad0 {
 		compatible = "zephyr,lvgl-keypad-input";
 		input = <&buttons0>;
@@ -170,6 +187,13 @@
 	keypad_right: keypad1 {
 		compatible = "zephyr,lvgl-keypad-input";
 		input = <&buttons1>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+
+	keypad_rtd: keypad2 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons2>;
 		input-codes = <INPUT_KEY_ENTER>;
 		lvgl-codes = <LV_KEY_ENTER>;
 	};

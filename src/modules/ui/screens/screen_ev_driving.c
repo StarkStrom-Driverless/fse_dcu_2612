@@ -6,9 +6,8 @@
  *
  * @details     Builds the EV driving screen with:
  *
- *                – Two sliders   : torque gain front (left edge) and rear
- *                                  (right edge). Only the rear one is
- *                                  reachable, through the right encoder.
+ *                – Two sliders   : torque gain front (left edge, left encoder)
+ *                                  and rear (right edge, right encoder).
  *
  *                – One bar       : HV accumulator voltage along the bottom.
  *                                  A bar rather than a slider because the
@@ -34,10 +33,10 @@
  *
  *              ### What is not wired up
  *              The torque-gain sliders keep their positions across visits, in
- *              s_sldr_left_val and s_sldr_right_val, but nothing reads those
- *              subjects: the values reach neither a setting nor a CAN signal.
- *              The left slider is in no input group at all, so it cannot be
- *              moved. Both are placeholders for the torque-gain settings.
+ *              s_sldr_left_val and s_sldr_right_val, and both are now movable —
+ *              TQG F on the left encoder, TQG R on the right — but nothing
+ *              reads those subjects yet: the values reach neither a setting nor
+ *              a CAN signal.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
@@ -124,7 +123,7 @@ static lv_subject_t s_sldr_right_val; /**< TQG R slider value. */
 /** @brief Guard so the two subjects above are initialised exactly once. */
 static bool         s_subjects_init;
 
-/** @brief Torque gain front — vertical slider at the left edge. Not reachable. */
+/** @brief Torque gain front — vertical slider at the left edge, on the left encoder. */
 static lv_obj_t   *s_sldr_left;
 
 /** @brief Torque gain rear — vertical slider at the right edge, on the encoder. */
@@ -154,6 +153,9 @@ static lv_obj_t   *s_lbl_btn_left_value;
 /** @brief Input group for the right encoder — holds the TQG R slider. */
 static lv_group_t *s_right_encoder_group;
 
+/** @brief Input group for the left encoder — holds the TQG F slider. */
+static lv_group_t *s_left_encoder_group;
+
 /** @brief Input group for the left button pad — holds the PWR Limit button. */
 static lv_group_t *s_left_button_group;
 
@@ -168,7 +170,7 @@ static lv_group_t *s_right_button_group;
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT]  = "Screen",
+    [UI_HINT_ENC_LEFT]  = "TQG F",
     [UI_HINT_BTN_LEFT]  = "PWR Lim",
     [UI_HINT_BTN_RIGHT] = "TQ Vect",
     [UI_HINT_ENC_RIGHT] = "TQG R",
@@ -576,6 +578,15 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
     lv_group_add_obj(s_right_encoder_group, s_sldr_right);
     lv_group_set_editing(s_right_encoder_group, true);
 
+    /*
+     * The left encoder drives TQG F here instead of the screen carousel — ui.c
+     * routes it to this group and, seeing a non-NULL group, stops feeding the
+     * carousel. That is what makes EV driving a navigation dead end.
+     */
+    s_left_encoder_group = lv_group_create();
+    lv_group_add_obj(s_left_encoder_group, s_sldr_left);
+    lv_group_set_editing(s_left_encoder_group, true);
+
     s_left_button_group = lv_group_create();
     lv_group_add_obj(s_left_button_group, s_btn_left);
     lv_group_set_editing(s_left_button_group, true);
@@ -592,6 +603,11 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
 lv_group_t *screen_ev_driving_get_right_encoder_group(void)
 {
     return s_right_encoder_group;
+}
+
+lv_group_t *screen_ev_driving_get_left_encoder_group(void)
+{
+    return s_left_encoder_group;
 }
 
 lv_group_t *screen_ev_driving_get_left_button_group(void)

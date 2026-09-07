@@ -29,10 +29,15 @@
  *
  *              | Input         | Drives                                      |
  *              |---------------|---------------------------------------------|
- *              | Left encoder  | Screen carousel — handled in ui.c, not here |
+ *              | Left encoder  | The left torque-gain slider (TQG F)         |
  *              | Right encoder | The right torque-gain slider (TQG R)        |
  *              | Left buttons  | The PWR Limit button                        |
  *              | Right buttons | The TQ Vect button                          |
+ *
+ *              This screen is not in the carousel. It is loaded only when the
+ *              state machine latches RTD, and the left encoder is claimed for
+ *              TQG F, so there is no input left to navigate away with — the
+ *              driver stays here until the car is powered down.
  *
  *              Both buttons are checkable and mirror a generated TX subject
  *              through an observer, so their visual state follows the value
@@ -40,8 +45,7 @@
  *
  *              @note The torque-gain sliders are display-only so far: their
  *              positions are remembered across visits but are not written to
- *              any setting or CAN signal, and the left slider is not reachable
- *              by any input device.
+ *              any setting or CAN signal.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
@@ -91,6 +95,17 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects);
  * @return  The group. Valid only after screen_ev_driving_create().
  */
 lv_group_t *screen_ev_driving_get_right_encoder_group(void);
+
+/**
+ * @brief Return the LVGL input group for the left encoder.
+ *
+ * Contains the left torque-gain slider, in edit mode. ui.c routes the left
+ * encoder here for this screen; a non-NULL group is also what tells ui.c to
+ * stop driving the carousel with that encoder.
+ *
+ * @return  The group. Valid only after screen_ev_driving_create().
+ */
+lv_group_t *screen_ev_driving_get_left_encoder_group(void);
 
 /**
  * @brief Return the LVGL input group for the left button pad.

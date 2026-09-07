@@ -90,9 +90,13 @@ debug screens, to the right the screens for EV and DV operation:
 |---|---|
 | Counter-clockwise | DV SETTINGS, DBG TX, DBG TS, DBG PRESSURE, DBG HV ACCU, DBG LV ACCU |
 | *(start position)* | **BOOT** |
-| Clockwise | DV MISSION, SDC, PRE RTD, EV DRIVING |
+| Clockwise | DV MISSION, SDC, PRE RTD |
 
 The carousel does not wrap around: at either end the display simply stops.
+
+**EV DRIVING** is not on the carousel. It appears only when RTD is activated
+from the PRE RTD screen and cannot be left again except by powering the DCU
+off.
 
 
 <!-- ## Operating modes
@@ -207,10 +211,12 @@ must be met before RTD can be requested. -->
 
 ### EV DRIVING {#manual-user-ev}
 
-Shown automatically as soon as RTD has been activated via the DCU.
+Shown automatically as soon as RTD has been activated — hold the **middle
+button** (RTD) on the PRE RTD screen.
 
 **Paging to other screens is locked on this screen.** This is intentional and
-prevents accidental input while driving.
+prevents accidental input while driving. The only way back is to power-cycle
+the DCU.
 
 The controls have a fixed assignment here:
 

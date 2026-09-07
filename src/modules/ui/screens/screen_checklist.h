@@ -20,7 +20,7 @@
  *              │            (checklist to follow)     │
  *              │                                      │
  *              │                   ┌───────────┐      │
- *              │                   │    RTD    │      │ ← right button pad
+ *              │                   │    RTD    │      │ ← dedicated RTD pad
  *              │                   └───────────┘      │
  *              └──────────────────────────────────────┘```
  *
@@ -30,16 +30,17 @@
  *              |---------------|---------------------------------------------|
  *              | Left encoder  | Screen carousel — handled in ui.c, not here |
  *              | Right encoder | Empty group; nothing to focus yet           |
- *              | Right buttons | The RTD button                              |
- *              | Left buttons  | Nothing; the group accessor returns NULL    |
+ *              | Middle button | The RTD button (dedicated keypad_rtd pad)    |
+ *              | Left / right buttons | Nothing; the accessors return NULL   |
  *
- *              ### Hold to drive
- *              RTD is a dead-man action, not a toggle. A long press publishes
- *              UI_INPUT_RTD_REQUEST and the release publishes
- *              UI_INPUT_RTD_RELEASE; the App Layer turns the pair into
- *              operating mode RTD and back, which the CAN module transmits as
- *              the RTD_Button bit. Letting go therefore drops the request,
- *              and a short tap does nothing at all.
+ *              ### Long press to enter RTD
+ *              RTD latches. A long press of the dedicated RTD button publishes
+ *              UI_INPUT_RTD_REQUEST; the App Layer's state machine raises
+ *              operating mode RTD (→ CAN RTD_Button bit) and switches the
+ *              display to EV DRIVING, which replaces this screen. There is no
+ *              release event and no way back short of a power cycle. Requiring
+ *              a long press keeps a brush against the button from starting the
+ *              car.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
@@ -98,11 +99,18 @@ lv_group_t *screen_checklist_get_left_button_group(void);
 
 /**
  * @brief Return the LVGL input group for the right button pad.
+ * @return Always NULL — the RTD button is on the dedicated RTD pad instead.
+ */
+lv_group_t *screen_checklist_get_right_button_group(void);
+
+/**
+ * @brief Return the LVGL input group for the dedicated RTD button pad.
  *
- * Contains the RTD button.
+ * Contains the RTD button, in edit mode. ui.c binds this to the keypad_rtd
+ * device for the PRE_RTD screen only.
  *
  * @return  The group. Valid only after screen_checklist_create().
  */
-lv_group_t *screen_checklist_get_right_button_group(void);
+lv_group_t *screen_checklist_get_rtd_button_group(void);
 
 #endif /* MODULES_UI_SCREENS_SCREEN_CHECKLIST_H */

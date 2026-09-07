@@ -192,7 +192,7 @@ struct can_status_event {
  *
  * ### Who publishes what
  *  UI_INPUT_MISSION_SELECTED     screen_mission_select.c (SET MISSION button)
- *  UI_INPUT_RTD_REQUEST/_RELEASE screen_checklist.c      (RTD button hold)
+ *  UI_INPUT_RTD_REQUEST          screen_checklist.c      (RTD button, long press)
  *  UI_INPUT_TORQUE_VECT_ON/_OFF  screen_ev_driving.c     (TQ Vect toggle)
  *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SET BITS button)
  *  UI_INPUT_SETTING_SELECTED     screen_settings.c        (− / + on a setting)
@@ -205,8 +205,8 @@ enum ui_input_type {
     UI_INPUT_ENCODER_DOWN,         /**< Reserved: spare encoder step.              */
     UI_INPUT_ENCODER_CLICK,        /**< Reserved: encoder button press.            */
     UI_INPUT_MISSION_SELECTED,     /**< Mission confirmed; payload: data.mission.  */
-    UI_INPUT_RTD_REQUEST,          /**< RTD button held: raise the RTD signal.     */
-    UI_INPUT_RTD_RELEASE,          /**< RTD button released: drop the RTD signal.  */
+    UI_INPUT_RTD_REQUEST,          /**< RTD button long-pressed: latch RTD, load EV driving. */
+    UI_INPUT_RTD_RELEASE,          /**< Reserved: no RTD exit path (power cycle only). */
     UI_INPUT_TORQUE_VECT_ON,       /**< Driver enabled torque vectoring.           */
     UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled torque vectoring.          */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Debug bits set; payload: data.debug_bits.  */

@@ -35,14 +35,16 @@
  *              mission and operating mode out of app_state on its own TX cycle,
  *              so can_tx_cmd_chan stays unused (see modules/can/can.c).
  *
- *              ### Operating mode transitions implemented so far
+ *              ### Operating mode transitions
  *
- *              - `DEBUG` → RTD button held → `RTD`
- *              - `RTD` → RTD button released → `DEBUG`
+ *              Owned by src/app/state_machine.c (Zephyr SMF), not by this file.
+ *              app.c only forwards the trigger: a long press of the RTD button
+ *              becomes SM_EVENT_RTD_REQUEST, and the state machine's entry
+ *              action raises the mode and switches the UI to the EV driving
+ *              screen. There is no path back to `DEBUG` — leaving RTD means a
+ *              power cycle. PRE_RTD and POST_RTD are still unused.
  *
  *              The mode is what the CAN module turns into the RTD_Button bit.
- *              The remaining states of enum operating_mode (PRE_RTD, POST_RTD)
- *              and the error handling around them are not reached yet.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
@@ -74,6 +76,7 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "app/app_state.h"
+#include "app/state_machine.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "services/settings/settings.h"
@@ -162,9 +165,11 @@ static void pub_ui_cmd(const struct ui_cmd *cmd)
  *   Records the selected mission in app_state, unlocked and inactive — the
  *   driver may still change it.  The CAN module reads it every cycle.
  *
- * UI_INPUT_RTD_REQUEST / UI_INPUT_RTD_RELEASE
- *   Switch the operating mode to RTD and back to DEBUG.  The CAN module
- *   derives RTD_Button from the mode, so the bit follows the button.
+ * UI_INPUT_RTD_REQUEST
+ *   Forwarded to the state machine as SM_EVENT_RTD_REQUEST, which latches
+ *   OPERATING_MODE_RTD and loads the EV driving screen.  UI_INPUT_RTD_RELEASE
+ *   is no longer produced (the on-screen button latches on long press); the
+ *   case is kept only so an old event cannot fall through to the warning.
  *
  * UI_INPUT_BACK
  *   Navigates back to the boot screen.  The left-encoder carousel is handled
@@ -214,21 +219,16 @@ static void handle_ui_input(const struct ui_input_event *evt)
 
     case UI_INPUT_RTD_REQUEST:
         /*
-         * RTD button pressed — activate RTD signal.
-         * The CAN module reads app_state_get_mode() every cycle; setting
-         * OPERATING_MODE_RTD causes it to set RTD_Button = 1 immediately.
+         * RTD button long-pressed. The state machine latches
+         * OPERATING_MODE_RTD (→ CAN RTD_Button = 1 on the next TX cycle) and
+         * loads the EV driving screen. No direct app_state write here.
          */
-        app_state_set_mode(OPERATING_MODE_RTD);
-        LOG_INF("RTD pressed — RTD=1");
+        state_machine_post(SM_EVENT_RTD_REQUEST);
+        LOG_INF("RTD requested");
         break;
 
     case UI_INPUT_RTD_RELEASE:
-        /*
-         * RTD button released — deactivate RTD signal.
-         * Return to DEBUG so the CAN module sends RTD_Button = 0.
-         */
-        app_state_set_mode(OPERATING_MODE_DEBUG);
-        LOG_INF("RTD released — RTD=0");
+        /* Reserved: there is no RTD exit path — see app/state_machine.c. */
         break;
 
     case UI_INPUT_BACK: {
@@ -487,6 +487,9 @@ void app_module_init(void)
 {
     /* Reset all state fields to safe defaults */
     app_state_init();
+
+    /* Operating-mode state machine — starts in MANUAL_IDLE (mode DEBUG). */
+    state_machine_init();
 
     k_thread_create(&s_app_thread,
                     s_app_stack,

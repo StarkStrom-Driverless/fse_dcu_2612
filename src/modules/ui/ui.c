@@ -146,6 +146,11 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  *
  * The list is a subset of enum screen_id: a screen may exist and be reachable
  * only through UI_CMD_SET_SCREEN. Every entry must have a factory below.
+ *
+ * SCREEN_EV_DRIVING is deliberately absent: it is entered only when the state
+ * machine latches RTD, and while it is active the left encoder drives the TQG
+ * Front slider instead of this carousel (see set_encoder_group() and the
+ * s_left_encoder_claimed check in ui_thread_fn()). That is the carousel lock.
  */
 static const enum screen_id k_carousel[] = {
     SCREEN_DEBUG_LV_ACCU,   /* index 0 — leftmost                       */
@@ -157,8 +162,7 @@ static const enum screen_id k_carousel[] = {
     SCREEN_BOOT,            /* index 6 — start position after boot      */
     SCREEN_MISSION_SELECT,  /* index 7                                  */
     SCREEN_SDC,             /* index 8                                  */
-    SCREEN_PRE_RTD,         /* index 9 — carries the RTD button         */
-    SCREEN_EV_DRIVING,      /* index 10 — rightmost                     */
+    SCREEN_PRE_RTD,         /* index 9 — rightmost; carries the RTD button */
 };
 
 /** @brief Number of screens in the carousel. */
@@ -231,25 +235,43 @@ static uint8_t s_carousel_pos = SCREEN_BOOT;    /* starts at SCREEN_BOOT */
 static atomic_t s_nav_delta;
 
 /*
- * The three LVGL input devices routed to the active screen.
+ * The LVGL input devices routed to the active screen.
  *
- * Each is resolved once in ui_module_init() from its devicetree alias and
- * re-pointed at a new group on every screen transition (set_encoder_group()).
- * NULL means the device was not found; routing then skips it and that input
- * is simply inactive.
+ * Each is resolved once in ui_module_init() and re-pointed at a new group on
+ * every screen transition (set_encoder_group()). NULL means the device was not
+ * found; routing then skips it and that input is simply inactive.
  *
- * The left encoder is deliberately absent here: it drives the carousel in this
- * module and is never given to LVGL.
+ * The left encoder is a special case: for a carousel screen it has no LVGL
+ * group and its rotation is handled by left_encoder_cb() below (screen
+ * navigation). A screen can instead claim it for a widget by returning a
+ * group from its own accessor — today only the EV driving screen does, for the
+ * TQG Front slider — and then the carousel is not fed (see
+ * s_left_encoder_claimed).
  */
 
 /** @brief Right encoder (alias qdec_input_right) — moves within a screen. */
 static lv_indev_t *s_right_enc_indev;
+
+/** @brief Left encoder as an LVGL indev (node lvgl_encoder0) — TQG Front on EV driving. */
+static lv_indev_t *s_left_enc_indev;
 
 /** @brief Left button pad (alias keypad_left). */
 static lv_indev_t *s_left_btn_indev;
 
 /** @brief Right button pad (alias keypad_right). */
 static lv_indev_t *s_right_btn_indev;
+
+/** @brief Dedicated RTD button pad (alias keypad_rtd) — routed to PRE_RTD only. */
+static lv_indev_t *s_rtd_btn_indev;
+
+/**
+ * @brief True while the active screen has claimed the left encoder for a widget.
+ *
+ * Written by set_encoder_group(), read by ui_thread_fn(). When true the
+ * accumulated left-encoder delta is dropped instead of driving the carousel —
+ * LVGL moves the claimed widget through s_left_enc_indev's group instead.
+ */
+static bool s_left_encoder_claimed;
 
 /** @brief Thread control block for the LVGL task thread. */
 static struct k_thread s_ui_thread;
@@ -377,13 +399,18 @@ static lv_indev_t *get_encoder_indev(uint8_t index)
 }
 
 /**
- * @brief Point the right encoder and both button pads at the target screen's groups.
+ * @brief Point every routable input device at the target screen's groups.
  *
- * Every interactive screen exposes three group accessors; screens without
- * interactive content have none and fall through to the default branch, where
- * all three groups stay NULL. Assigning NULL detaches the device, so LVGL
- * discards its events instead of delivering them to the previous screen's
- * widgets — which by then are about to be deleted.
+ * Interactive screens expose group accessors; screens without interactive
+ * content have none and fall through to the default branch, where every group
+ * stays NULL. Assigning NULL detaches the device, so LVGL discards its events
+ * instead of delivering them to the previous screen's widgets — which by then
+ * are about to be deleted.
+ *
+ * Two devices are only ever claimed by a single screen: the dedicated RTD
+ * button pad (PRE_RTD) and the left encoder (EV_DRIVING, for the TQG Front
+ * slider). A non-NULL left-encoder group also flips s_left_encoder_claimed,
+ * which is what stops the carousel from moving on that screen.
  *
  * Called before the screen load, so focus is already correct when the new
  * screen appears.
@@ -395,6 +422,8 @@ static void set_encoder_group(enum screen_id id)
     lv_group_t *right_encoder_group = NULL;
     lv_group_t *right_button_group = NULL;
     lv_group_t *left_button_group = NULL;
+    lv_group_t *left_encoder_group = NULL;
+    lv_group_t *rtd_button_group = NULL;
 
     switch (id) {
     case SCREEN_MISSION_SELECT:
@@ -406,6 +435,7 @@ static void set_encoder_group(enum screen_id id)
         right_encoder_group = screen_checklist_get_right_encoder_group();
         left_button_group = screen_checklist_get_left_button_group();
         right_button_group = screen_checklist_get_right_button_group();
+        rtd_button_group = screen_checklist_get_rtd_button_group();
         break;
     case SCREEN_SDC:
         right_encoder_group = screen_sdc_get_right_encoder_group();
@@ -427,19 +457,26 @@ static void set_encoder_group(enum screen_id id)
         right_encoder_group = screen_ev_driving_get_right_encoder_group();
         left_button_group = screen_ev_driving_get_left_button_group();
         right_button_group = screen_ev_driving_get_right_button_group();
+        left_encoder_group = screen_ev_driving_get_left_encoder_group();
         break;
 
     default:
         right_encoder_group = NULL;
         right_button_group = NULL;
         left_button_group = NULL;
+        left_encoder_group = NULL;
+        rtd_button_group = NULL;
         break;
     }
 
     if (s_right_enc_indev != NULL) {
         lv_indev_set_group(s_right_enc_indev, right_encoder_group);
     }
-    
+
+    if (s_left_enc_indev != NULL) {
+        lv_indev_set_group(s_left_enc_indev, left_encoder_group);
+    }
+
     if (s_left_btn_indev != NULL) {
         lv_indev_set_group(s_left_btn_indev, left_button_group);
     }
@@ -447,6 +484,12 @@ static void set_encoder_group(enum screen_id id)
     if (s_right_btn_indev != NULL) {
         lv_indev_set_group(s_right_btn_indev, right_button_group);
     }
+
+    if (s_rtd_btn_indev != NULL) {
+        lv_indev_set_group(s_rtd_btn_indev, rtd_button_group);
+    }
+
+    s_left_encoder_claimed = (left_encoder_group != NULL);
 }
 
 /**
@@ -756,11 +799,15 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
         /* ── LVGL tick ──────────────────────────────────────────────────── */
         lv_timer_handler();
 
-        /* ── Left encoder carousel navigation ──────────────────────────── */
+        /* ── Left encoder: carousel, unless the active screen claimed it ── */
         int32_t delta = (int32_t)atomic_set(&s_nav_delta, 0);
-        if (delta != 0) {
+        if (delta != 0 && !s_left_encoder_claimed) {
             carousel_navigate(delta);
         }
+        /*
+         * When claimed (EV driving), the delta is read and dropped here;
+         * LVGL moves the TQG Front slider through s_left_enc_indev's group.
+         */
 
         /* ── Zbus commands from App Layer (non-blocking) ────────────────── */
         const struct zbus_channel *chan;
@@ -871,9 +918,10 @@ void ui_module_init(void)
 
     /* ── 4. Resolve the LVGL input devices ──────────────────────────────── */
     /*
-     * Looked up by devicetree alias, so the mapping is defined by the shield
-     * and not by Zephyr's init order.  A missing device is a warning, not a
-     * failure: the display keeps working, that one input does not.
+     * Looked up by devicetree alias (or node label, where no alias exists), so
+     * the mapping is defined by the shield and not by Zephyr's init order.  A
+     * missing device is a warning, not a failure: the display keeps working,
+     * that one input does not.
      */
 
     s_right_enc_indev = lvgl_input_get_indev(DEVICE_DT_GET(DT_ALIAS(qdec_input_right)));
@@ -881,6 +929,26 @@ void ui_module_init(void)
         LOG_WRN("Right encoder indev not found — in-screen navigation disabled");
     } else {
         LOG_DBG("Right encoder indev found");
+    }
+
+    /*
+     * Left encoder: the qdec_input_left alias points at the raw device that
+     * left_encoder_cb() hooks for the carousel; the LVGL wrapper for the same
+     * physical encoder is the lvgl_encoder0 node, used only when a screen
+     * claims the left encoder for a widget.
+     */
+    s_left_enc_indev = lvgl_input_get_indev(DEVICE_DT_GET(DT_NODELABEL(lvgl_encoder0)));
+    if (s_left_enc_indev == NULL) {
+        LOG_WRN("Left encoder indev not found — TQG Front control disabled");
+    } else {
+        LOG_DBG("Left encoder indev found");
+    }
+
+    s_rtd_btn_indev = lvgl_input_get_indev(DEVICE_DT_GET(DT_ALIAS(keypad_rtd)));
+    if (s_rtd_btn_indev == NULL) {
+        LOG_WRN("RTD button indev not found — RTD request disabled");
+    } else {
+        LOG_DBG("RTD button indev found");
     }
 
     s_left_btn_indev = lvgl_input_get_indev(DEVICE_DT_GET(DT_ALIAS(keypad_left)));

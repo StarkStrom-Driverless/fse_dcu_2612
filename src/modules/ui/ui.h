@@ -23,12 +23,13 @@
  *
  *              ### Input devices (devicetree aliases)
  *
- *              | Alias            | Routed to                                   |
+ *              | Alias / node     | Routed to                                   |
  *              |------------------|---------------------------------------------|
- *              | qdec_input_left  | Screen carousel — consumed in ui.c, never handed to LVGL |
+ *              | qdec_input_left  | Screen carousel (ui.c callback) — except on the EV driving screen, where lvgl_encoder0 drives the TQG Front slider |
  *              | qdec_input_right | Focused widget of the active screen         |
  *              | keypad_left      | Left button pad → active screen's group     |
  *              | keypad_right     | Right button pad → active screen's group    |
+ *              | keypad_rtd       | Dedicated RTD button → PRE_RTD screen only  |
  *
  *              Buttons act on LVGL widgets. A screen decides what that means
  *              and publishes the semantic event on ui_input_chan itself; the
