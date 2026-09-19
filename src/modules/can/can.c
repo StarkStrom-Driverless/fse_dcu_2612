@@ -136,6 +136,20 @@ LOG_MODULE_REGISTER(can_module, CONFIG_LOG_DEFAULT_LEVEL);
  */
 #define CAN_TX_PERIOD_MS        10U
 
+/**
+ * @brief Number of base ticks after which the TX schedule repeats.
+ *
+ * s_tx_tick wraps here instead of running to the limit of its own type. The
+ * whole schedule repeats every CAN_TX_GEN_PERIOD_LCM_MS, so wrapping at that
+ * point is invisible — while a wrap at 2^32 would not be, because 2^32 is not
+ * a multiple of the tick count per period: the phase of every message would
+ * shift once, after roughly 497 days of continuous operation.
+ */
+#define CAN_TX_TICK_WRAP        (CAN_TX_GEN_PERIOD_LCM_MS / CAN_TX_PERIOD_MS)
+
+BUILD_ASSERT(CAN_TX_GEN_PERIOD_LCM_MS % CAN_TX_PERIOD_MS == 0U,
+             "CAN_TX_PERIOD_MS must divide every TX period evenly");
+
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -157,7 +171,8 @@ static struct k_thread s_can_thread;
 static bool s_hw_ready;
 
 /** @brief Tick counter incremented once per CAN_TX_PERIOD_MS cycle. Used to
- *         schedule TX messages at their individual period_ms via modulo. */
+ *         schedule TX messages at their individual period_ms via modulo.
+ *         Wraps at CAN_TX_TICK_WRAP, so it stays bounded. */
 static uint32_t s_tx_tick;
 
 /**
@@ -409,7 +424,8 @@ static inline uint8_t mission_to_drive_mode(enum mission_id mission)
  *   2. For each TX message: check s_tx_tick % (period_ms / CAN_TX_PERIOD_MS).
  *      If zero, read the current values from their owners and transmit.
  *   3. Poll the controller state and publish it on change.
- *   4. Increment s_tx_tick and sleep for the base tick.
+ *   4. Advance s_tx_tick, wrapping at CAN_TX_TICK_WRAP, and sleep for the
+ *      base tick.
  *
  * TX periods come from can_tx_gen.h (generated from dcu_app.yaml period_ms).
  * Adding a TX message there requires updating only the send_* call below.
@@ -498,7 +514,7 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
         }
 
         /* ── 4. Advance tick and wait for next base slot ─────────────── */
-        s_tx_tick++;
+        s_tx_tick = (s_tx_tick + 1U) % CAN_TX_TICK_WRAP;
         k_msleep(CAN_TX_PERIOD_MS);
     }
 }

@@ -36,6 +36,7 @@ Copyright (c) 2026 Mario Wegmann
 from __future__ import annotations
 
 import argparse
+import math
 import hashlib
 import subprocess
 import sys
@@ -706,7 +707,8 @@ def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
 def emit_tx_header(tx_messages: list[dict]) -> str:
     """
     Emit can_tx_gen.h: per TX message a PERIOD_MS #define and, if it carries
-    persisted signals, an apply-settings helper.
+    persisted signals, an apply-settings helper, plus the period LCM the
+    scheduling tick wraps at.
 
     Usage in can.c (CAN_TX_PERIOD_MS is the thread base tick):
       if (s_tx_tick % (CAN_TX_GEN_<MSG>_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) { ... }
@@ -745,6 +747,19 @@ def emit_tx_header(tx_messages: list[dict]) -> str:
         define_name = f"CAN_TX_GEN_{snake.upper()}_PERIOD_MS"
         lines.append(f"/** @brief {msg.name} (0x{msg.frame_id:03X}) TX period. */")
         lines.append(f"#define {define_name:<44} {ms}U\n")
+
+    period_lcm = math.lcm(*(e["period_ms"] for e in tx_messages)) if tx_messages else 1
+    lines.append(f"""\
+/**
+ * @brief Least common multiple of all TX periods, in milliseconds.
+ *
+ * The schedule above repeats itself every {period_lcm} ms, so a tick counter
+ * wrapped at this value keeps every message's phase for good. Letting the
+ * counter run to its own integer limit instead would shift the phase on
+ * overflow, because the limit is not a multiple of the periods.
+ */
+#define CAN_TX_GEN_PERIOD_LCM_MS                     {period_lcm}U
+""")
 
     for entry in tx_messages:
         if not entry["settings"]:
