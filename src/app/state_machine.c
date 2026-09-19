@@ -9,7 +9,7 @@
  *
  *              | Context   | Driven by            | Drives                     |
  *              |-----------|----------------------|----------------------------|
- *              | manual    | RTD button           | operating mode, EV screen  |
+ *              | manual    | CAN `RTD_State`      | operating mode, EV screen  |
  *              | driverless| CAN `AS_state`       | DV screen                  |
  *
  *              ### Why SMF
@@ -82,21 +82,18 @@ LOG_MODULE_REGISTER(state_machine, CONFIG_LOG_DEFAULT_LEVEL);
 /**
  * @brief Ask the UI module to load a screen.
  *
- * The state machine never touches LVGL; it publishes the same ui_cmd a
- * carousel move would, and the UI thread does the work on its next tick.
+ * The state machine never touches LVGL; it publishes on ui_nav_chan and the UI
+ * thread does the work on its next tick.
  *
  * @param screen  Screen to load.
  */
 static void request_screen(enum screen_id screen)
 {
-    struct ui_cmd cmd = {
-        .type        = UI_CMD_SET_SCREEN,
-        .data.screen = screen,
-    };
+    const struct ui_nav_cmd cmd = { .screen = screen };
 
-    int ret = zbus_chan_pub(&ui_cmd_chan, &cmd, K_NO_WAIT);
+    int ret = zbus_chan_pub(&ui_nav_chan, &cmd, K_NO_WAIT);
     if (ret != 0) {
-        LOG_ERR("ui_cmd_chan publish failed: %d", ret);
+        LOG_ERR("ui_nav_chan publish failed: %d", ret);
     }
 }
 
@@ -108,7 +105,7 @@ static void request_screen(enum screen_id screen)
 /** @brief Index into manual_states[]. */
 enum manual_state_id {
     MANUAL_STATE_IDLE = 0, /**< Not driving; full screen navigation.        */
-    MANUAL_STATE_RTD,      /**< RTD latched; EV driving screen; no way back. */
+    MANUAL_STATE_RTD,      /**< Vehicle in R2D; EV driving screen.              */
 };
 
 /**
@@ -118,9 +115,10 @@ enum manual_state_id {
  * it.
  */
 struct manual_sm {
-    struct smf_ctx ctx;         /**< SMF bookkeeping.                        */
-    enum sm_event  event;       /**< Event currently being processed.        */
-    bool           event_valid; /**< True only for the duration of one post. */
+    struct smf_ctx ctx;           /**< SMF bookkeeping.                        */
+    enum sm_event  event;         /**< Event currently being processed.        */
+    bool           event_valid;   /**< True only for the duration of one post. */
+    enum screen_id return_screen; /**< Screen to restore when R2D ends.        */
 };
 
 static struct manual_sm s_manual;
@@ -129,18 +127,30 @@ static const struct smf_state manual_states[];
 
 /**
  * @brief Enter idle — operating mode DEBUG, all screens reachable.
- * @param obj  Unused.
+ *
+ * Coming back from RTD, this restores the screen the driver was on before the
+ * car went ready-to-drive; the UI deletes the EV screen as part of that switch.
+ * On the initial transition there is nothing to restore — the UI has not even
+ * built its first screen yet — and the request is skipped.
+ *
+ * @param obj  The manual_sm.
  */
 static void manual_idle_entry(void *obj)
 {
-    ARG_UNUSED(obj);
+    struct manual_sm *o = obj;
 
     app_state_set_mode(OPERATING_MODE_DEBUG);
+
+    if (o->return_screen != SCREEN_NONE) {
+        request_screen(o->return_screen);
+        o->return_screen = SCREEN_NONE;
+    }
+
     LOG_INF("SM manual: IDLE");
 }
 
 /**
- * @brief Idle run — the only exit is a driver RTD request.
+ * @brief Idle run — the only exit is the vehicle reporting R2D.
  * @param obj  The manual_sm.
  * @return SMF_EVENT_HANDLED (flat machine — the result is not propagated).
  */
@@ -148,7 +158,7 @@ static enum smf_state_result manual_idle_run(void *obj)
 {
     struct manual_sm *o = obj;
 
-    if (o->event_valid && o->event == SM_EVENT_RTD_REQUEST) {
+    if (o->event_valid && o->event == SM_EVENT_VEHICLE_RTD) {
         smf_set_state(SMF_CTX(o), &manual_states[MANUAL_STATE_RTD]);
     }
 
@@ -156,31 +166,48 @@ static enum smf_state_result manual_idle_run(void *obj)
 }
 
 /**
- * @brief Enter RTD — raise the mode and pull the driver onto the EV screen.
+ * @brief Enter RTD — record the mode and pull the driver onto the EV screen.
  *
- * The CAN module turns @c OPERATING_MODE_RTD into the RTD_Button bit on its
- * next TX cycle; the UI module locks the carousel and repurposes the left
+ * The screen the driver is leaving is remembered, so the end of R2D can put
+ * them back there. Two values are not worth returning to: SCREEN_NONE, when
+ * the car was already in R2D before the UI built anything, and EV_DRIVING
+ * itself, which cannot happen today but would strand the driver there; both
+ * fall back to the boot screen.
+ *
+ * The mode has no effect on the CAN bus. Leaving the PRE_RTD screen releases
+ * the RTD button (see screen_checklist.c), which is harmless here: the vehicle
+ * is already in R2D. The UI module locks the carousel and repurposes the left
  * encoder as a side effect of EV_DRIVING being the active screen.
  *
- * @param obj  Unused.
+ * @param obj  The manual_sm.
  */
 static void manual_rtd_entry(void *obj)
 {
-    ARG_UNUSED(obj);
+    struct manual_sm *o = obj;
+
+    enum screen_id from = app_state_get_active_screen();
+
+    o->return_screen = (from == SCREEN_NONE || from == SCREEN_EV_DRIVING)
+                       ? SCREEN_BOOT
+                       : from;
 
     app_state_set_mode(OPERATING_MODE_RTD);
     request_screen(SCREEN_EV_DRIVING);
-    LOG_INF("SM manual: RTD — EV driving");
+    LOG_INF("SM manual: RTD — EV driving (return to %d)", (int)o->return_screen);
 }
 
 /**
- * @brief RTD run — terminal for now; leaving RTD means a power cycle.
- * @param obj  Unused.
- * @return SMF_EVENT_HANDLED.
+ * @brief RTD run — the only exit is the vehicle leaving R2D.
+ * @param obj  The manual_sm.
+ * @return SMF_EVENT_HANDLED (flat machine — the result is not propagated).
  */
 static enum smf_state_result manual_rtd_run(void *obj)
 {
-    ARG_UNUSED(obj);
+    struct manual_sm *o = obj;
+
+    if (o->event_valid && o->event == SM_EVENT_VEHICLE_IDLE) {
+        smf_set_state(SMF_CTX(o), &manual_states[MANUAL_STATE_IDLE]);
+    }
 
     return SMF_EVENT_HANDLED;
 }

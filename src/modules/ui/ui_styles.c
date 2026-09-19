@@ -68,6 +68,7 @@ lv_style_t ui_style_label_value_md;
 lv_style_t ui_style_btn_default;
 lv_style_t ui_style_btn_checked;
 lv_style_t ui_style_btn_focused;
+lv_style_t ui_style_btn_pending;
 
 lv_style_t ui_style_slider_main;
 lv_style_t ui_style_slider_indicator;
@@ -203,7 +204,7 @@ static void init_label_styles(void)
 }
 
 /**
- * @brief Button styles for the three visual states.
+ * @brief Button styles for the four visual states.
  *
  * Outline rather than border, so the frame does not eat into the button's
  * content area and the three states stay the same size.
@@ -239,6 +240,16 @@ static void init_button_styles(void)
     lv_style_set_outline_color(&ui_style_btn_focused, UI_C_DARK);
     lv_style_set_text_color(&ui_style_btn_focused,    UI_C_DARK);
     lv_style_set_pad_all(&ui_style_btn_focused,       2);
+
+    /* Pending — accent (gold) bg, dark outline, dark text */
+    lv_style_init(&ui_style_btn_pending);
+    lv_style_set_radius(&ui_style_btn_pending,        0);
+    lv_style_set_bg_opa(&ui_style_btn_pending,        LV_OPA_COVER);
+    lv_style_set_bg_color(&ui_style_btn_pending,      UI_C_ACCENT);
+    lv_style_set_outline_width(&ui_style_btn_pending, 2);
+    lv_style_set_outline_color(&ui_style_btn_pending, UI_C_DARK);
+    lv_style_set_text_color(&ui_style_btn_pending,    UI_C_DARK);
+    lv_style_set_pad_all(&ui_style_btn_pending,       2);
 }
 
 /**

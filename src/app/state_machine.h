@@ -10,15 +10,24 @@
  *
  *              Two independent SMF contexts:
  *
- *              ### Manual / EV driving  — driven by the RTD button
+ *              ### Manual / EV driving  — driven by the vehicle's RTD_State
  *
  *              | State         | operating_mode        | On entry         |
  *              |---------------|-----------------------|------------------|
  *              | `MANUAL_IDLE` | `OPERATING_MODE_DEBUG` | –                |
  *              | `MANUAL_RTD`  | `OPERATING_MODE_RTD`   | load `EV_DRIVING` |
  *
- *              `MANUAL_IDLE → MANUAL_RTD` on @ref SM_EVENT_RTD_REQUEST. No
- *              transition back: leaving RTD means power-cycling the car.
+ *              `MANUAL_IDLE → MANUAL_RTD` on @ref SM_EVENT_VEHICLE_RTD, i.e.
+ *              when the MABX reports that the car entered R2D, and back on
+ *              @ref SM_EVENT_VEHICLE_IDLE when it reports that R2D ended —
+ *              which per EV 4.11.8 happens as soon as the SDC opens. Returning
+ *              restores the screen the driver was on before, and the EV screen
+ *              is destroyed with the switch.
+ *
+ *              The RTD button is deliberately not an input here. It drives the
+ *              CAN RTD_Button bit directly (app_state_is_rtd_request_active()),
+ *              and switching screens on the press would tear the button down
+ *              while the driver is still holding it.
  *
  *              ### Driverless  — driven by the CAN `AS_state` signal
  *
@@ -73,7 +82,8 @@
  * the shape of the UI event payloads. app.c maps the one onto the other.
  */
 enum sm_event {
-    SM_EVENT_RTD_REQUEST = 0, /**< Driver long-pressed the RTD button. */
+    SM_EVENT_VEHICLE_RTD = 0, /**< MABX RTD_State went from 0 to 1. */
+    SM_EVENT_VEHICLE_IDLE,    /**< MABX RTD_State went from 1 to 0. */
 };
 
 

@@ -82,7 +82,7 @@ enum mission_id {
 /**
  * @brief UI screen identifiers.
  *
- * Used both as the payload of UI_CMD_SET_SCREEN and as the index into the
+ * Used both as the payload of ui_nav_chan and as the index into the
  * screen-factory table in ui.c. SCREEN_NONE is the initial state before the
  * first screen is loaded.
  *
@@ -193,10 +193,10 @@ struct can_status_event {
  *
  * ### Who publishes what
  *  UI_INPUT_MISSION_SELECTED     screen_mission_select.c (SET MISSION button)
- *  UI_INPUT_RTD_REQUEST          screen_checklist.c      (RTD button, long press)
- *  UI_INPUT_TORQUE_VECT_ON/_OFF  screen_ev_driving.c     (TQ Vect toggle)
+ *  UI_INPUT_RTD_PRESSED/_RELEASED screen_checklist.c      (RTD button, press / release)
  *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SET BITS button)
  *  UI_INPUT_SETTING_SELECTED     screen_settings.c        (− / + on a setting)
+ *                                screen_ev_driving.c      (PWR Limit, TQ Vect)
  *  UI_INPUT_SCREEN_CHANGED       ui.c                     (every screen load)
  */
 enum ui_input_type {
@@ -206,10 +206,10 @@ enum ui_input_type {
     UI_INPUT_ENCODER_DOWN,         /**< Reserved: spare encoder step.              */
     UI_INPUT_ENCODER_CLICK,        /**< Reserved: encoder button press.            */
     UI_INPUT_MISSION_SELECTED,     /**< Mission confirmed; payload: data.mission.  */
-    UI_INPUT_RTD_REQUEST,          /**< RTD button long-pressed: latch RTD, load EV driving. */
-    UI_INPUT_RTD_RELEASE,          /**< Reserved: no RTD exit path (power cycle only). */
-    UI_INPUT_TORQUE_VECT_ON,       /**< Driver enabled torque vectoring.           */
-    UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled torque vectoring.          */
+    UI_INPUT_RTD_PRESSED,          /**< RTD button went down on the PRE_RTD screen. */
+    UI_INPUT_RTD_RELEASED,         /**< RTD button up, or its screen was torn down. */
+    UI_INPUT_TORQUE_VECT_ON,       /**< Reserved: superseded by UI_INPUT_SETTING_SELECTED. */
+    UI_INPUT_TORQUE_VECT_OFF,      /**< Reserved: superseded by UI_INPUT_SETTING_SELECTED. */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Debug bits set; payload: data.debug_bits.  */
     UI_INPUT_SETTING_SELECTED,     /**< Persistent setting changed; payload: data.setting. */
     UI_INPUT_TIMESTAMP,            /**< Reserved: log an event marker.             */
@@ -279,19 +279,27 @@ struct settings_event {
 /* ---- feedback_chan -------------------------------------------------------------------- */
 
 /**
- * @brief Effect completion signals from Lighting and Audio modules.
+ * @brief Confirmation from an output module that something took effect.
  *
- * @note Reserved in full. Neither module reports completion yet, so nothing is
- *       ever published on feedback_chan.
+ * FEEDBACK_CAN_RTD_TX is the only one in use. The CAN module publishes it when
+ * the RTD_Button value it actually transmitted changes — the first frame that
+ * carries 1, and the first frame that carries 0 again — and only after
+ * can_send() succeeded. It is what turns the RTD button green: the driver sees
+ * that the request is on the bus, not merely that it was asked for.
+ *
+ * The lighting and audio values are reserved; neither module reports
+ * completion yet.
  */
 enum feedback_type {
-    FEEDBACK_LIGHTING_DONE = 0, /**< Transient lighting effect finished. */
-    FEEDBACK_AUDIO_DONE,        /**< Transient audio effect finished.    */
+    FEEDBACK_LIGHTING_DONE = 0, /**< Reserved: transient lighting effect finished. */
+    FEEDBACK_AUDIO_DONE,        /**< Reserved: transient audio effect finished.    */
+    FEEDBACK_CAN_RTD_TX,        /**< Transmitted RTD_Button changed; see @c rtd_button. */
 };
 
 /** @brief Payload for feedback_chan. */
 struct feedback_event {
-    enum feedback_type type; /**< Which effect finished. */
+    enum feedback_type type;       /**< What took effect.                             */
+    bool               rtd_button; /**< FEEDBACK_CAN_RTD_TX: value now on the bus.    */
 };
 
 
@@ -361,12 +369,32 @@ struct vehicle_status {
 
 /* ── Downward Channels: App → Module ────────────────────────────────────────────────────────── */
 
+/* ---- ui_nav_chan ---------------------------------------------------------------------- */
+
+/**
+ * @brief Payload for ui_nav_chan — the screen the UI should load.
+ *
+ * Navigation has a channel of its own, apart from ui_cmd_chan, and that
+ * separation is load-bearing. A zbus subscriber is notified per publish but
+ * reads the channel's *current* message when it gets around to it. ui_cmd_chan
+ * carries a CAN snapshot at bus rate, so a screen command sharing that channel
+ * is overwritten by the next snapshot before the UI thread reads it — which is
+ * exactly what happens while the App thread drains a burst of CAN data, for
+ * instance right after boot.
+ *
+ * Here the worst case is two screen commands collapsing into one, and the
+ * surviving one is the newer, i.e. the screen the vehicle wants to be on.
+ */
+struct ui_nav_cmd {
+    enum screen_id screen; /**< Screen to load; SCREEN_NONE is the initial value. */
+};
+
 /* ---- ui_cmd_chan ---------------------------------------------------------------------- */
 
 /** @brief Command types for the UI module. */
 enum ui_cmd_type {
-    UI_CMD_SET_SCREEN   = 0, /**< Navigate to a named screen.                 */
-    UI_CMD_UPDATE_DATA,      /**< Push a new CAN data snapshot for rendering. */
+    UI_CMD_UPDATE_DATA  = 0, /**< Push a new CAN data snapshot for rendering. */
+    UI_CMD_RTD_TX_STATE,     /**< RTD_Button on the bus; payload: rtd_button. */
 };
 
 /**
@@ -380,8 +408,8 @@ struct ui_cmd {
     enum ui_cmd_type type; /**< Which command; selects the union member. */
     /** Command payload; the active member follows @c type. */
     union {
-        enum screen_id           screen;   /**< UI_CMD_SET_SCREEN  */
-        struct can_data_snapshot snapshot; /**< UI_CMD_UPDATE_DATA */
+        struct can_data_snapshot snapshot;   /**< UI_CMD_UPDATE_DATA  */
+        bool                     rtd_button; /**< UI_CMD_RTD_TX_STATE */
     } data;
 };
 

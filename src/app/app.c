@@ -22,29 +22,44 @@
  *              | can_status_chan | CAN bus connectivity and error state         |
  *              | can_data_chan   | Decoded CAN signal snapshots                 |
  *              | settings_chan   | Settings load / update events — TODO         |
- *              | feedback_chan   | Effect completion feedback — TODO            |
+ *              | feedback_chan   | RTD_Button actually transmitted (CAN)        |
  *
  *              ### Downward channels produced (App → Module)
  *
  *              | Channel        | Carries                                    |
  *              |----------------|--------------------------------------------|
- *              | ui_cmd_chan    | Screen navigation and data push commands   |
+ *              | ui_nav_chan    | Screen switches                            |
+ *              | ui_cmd_chan    | CAN snapshots and the RTD_Button feedback  |
  *              | audio_cmd_chan | Piezo on/off, following the RTD sound signal |
  *
  *              No frame-level CAN commands are published.  The CAN module pulls
- *              mission and operating mode out of app_state on its own TX cycle,
+ *              mission and RTD request out of app_state on its own TX cycle,
  *              so can_tx_cmd_chan stays unused (see modules/can/can.c).
+ *
+ *              ### RTD button → CAN RTD_Button
+ *
+ *              The bit follows the physical button and is never latched:
+ *
+ *              1. The PRE_RTD screen reports press and release
+ *                 (UI_INPUT_RTD_PRESSED / _RELEASED); app.c records them with
+ *                 app_state_set_rtd_button(). Any screen change away from
+ *                 PRE_RTD records a release as well.
+ *              2. On every 100 ms DCU_2_mABX cycle the CAN module sends
+ *                 app_state_is_rtd_request_active(): held, and held for at
+ *                 least APP_RTD_HOLD_MS.
+ *              3. When the transmitted value changes, the CAN module reports it
+ *                 on feedback_chan, and app.c forwards it to the UI as
+ *                 UI_CMD_RTD_TX_STATE — the button turns green.
  *
  *              ### Operating mode transitions
  *
  *              Owned by src/app/state_machine.c (Zephyr SMF), not by this file.
- *              app.c only forwards the trigger: a long press of the RTD button
- *              becomes SM_EVENT_RTD_REQUEST, and the state machine's entry
- *              action raises the mode and switches the UI to the EV driving
- *              screen. There is no path back to `DEBUG` — leaving RTD means a
- *              power cycle. PRE_RTD and POST_RTD are still unused.
- *
- *              The mode is what the CAN module turns into the RTD_Button bit.
+ *              app.c only forwards the trigger: a rising edge of the MABX's
+ *              RTD_State becomes SM_EVENT_VEHICLE_RTD, and the state machine's
+ *              entry action records the mode and switches the UI to the EV
+ *              driving screen. A falling edge is forwarded as
+ *              SM_EVENT_VEHICLE_IDLE, which returns to `DEBUG` and restores the
+ *              screen the driver came from. PRE_RTD and POST_RTD are unused.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
@@ -103,6 +118,9 @@ static struct k_thread s_app_thread;
 /** @brief Last rtd_sound value — detect transitions to avoid redundant publishes. */
 static bool s_last_rtd_sound;
 
+/** @brief Last RTD_State value — the state machine only needs the rising edge. */
+static bool s_last_rtd_state;
+
 /**
  * @brief Last raw AS_state value — feed the DV state machine only on a change.
  *
@@ -135,9 +153,12 @@ ZBUS_CHAN_ADD_OBS(feedback_chan,   app_sub, 0);
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static void pub_ui_cmd(const struct ui_cmd *cmd);
+static void pub_ui_nav(enum screen_id screen);
 static void handle_ui_input(const struct ui_input_event *evt);
 static void handle_can_status(const struct can_status_event *evt);
 static void handle_can_data(const struct can_data_snapshot *snap);
+static void handle_feedback(const struct feedback_event *evt);
+static void set_rtd_button(bool pressed);
 static void app_thread_fn(void *p1, void *p2, void *p3);
 
 
@@ -159,6 +180,45 @@ static void pub_ui_cmd(const struct ui_cmd *cmd)
     }
 }
 
+/**
+ * @brief Ask the UI module to load a screen.
+ *
+ * Screen switches travel on their own channel — see struct ui_nav_cmd in
+ * events.h for why they must not share ui_cmd_chan with the CAN snapshot.
+ *
+ * @param screen  Screen to load.
+ */
+static void pub_ui_nav(enum screen_id screen)
+{
+    const struct ui_nav_cmd cmd = { .screen = screen };
+
+    int ret = zbus_chan_pub(&ui_nav_chan, &cmd, K_NO_WAIT);
+    if (ret != 0) {
+        LOG_ERR("ui_nav_chan publish failed: %d", ret);
+    }
+}
+
+/**
+ * @brief Record the RTD button state and reset the UI's "on the bus" feedback.
+ *
+ * The feedback is cleared on both edges. On release the request stops at once
+ * from the driver's point of view; on press no frame of this press can have
+ * carried 1 yet, because APP_RTD_HOLD_MS is longer than the TX period. The CAN
+ * module's own report of the next transmitted value follows either way.
+ *
+ * @param pressed  True on press, false on release.
+ */
+static void set_rtd_button(bool pressed)
+{
+    app_state_set_rtd_button(pressed);
+
+    struct ui_cmd cmd = {
+        .type            = UI_CMD_RTD_TX_STATE,
+        .data.rtd_button = false,
+    };
+    pub_ui_cmd(&cmd);
+}
+
 /* ──────────────────────────────────────────────────────────────────────────────────────────────
  * UI input handler
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -173,11 +233,10 @@ static void pub_ui_cmd(const struct ui_cmd *cmd)
  *   Records the selected mission in app_state, unlocked and inactive — the
  *   driver may still change it.  The CAN module reads it every cycle.
  *
- * UI_INPUT_RTD_REQUEST
- *   Forwarded to the state machine as SM_EVENT_RTD_REQUEST, which latches
- *   OPERATING_MODE_RTD and loads the EV driving screen.  UI_INPUT_RTD_RELEASE
- *   is no longer produced (the on-screen button latches on long press); the
- *   case is kept only so an old event cannot fall through to the warning.
+ * UI_INPUT_RTD_PRESSED / UI_INPUT_RTD_RELEASED
+ *   Records the physical RTD button state.  The CAN module derives the
+ *   RTD_Button bit from it on every TX cycle; nothing is latched and the state
+ *   machine is not involved.
  *
  * UI_INPUT_BACK
  *   Navigates back to the boot screen.  The left-encoder carousel is handled
@@ -188,9 +247,11 @@ static void pub_ui_cmd(const struct ui_cmd *cmd)
  *   owns it.  app_state_set_debug_bits() is deliberately not used here.
  *
  * UI_INPUT_SETTING_SELECTED
- *   The generic form of the above, published by the settings screen: carries a
- *   setting_id and a value, both forwarded straight to settings_set().  The
- *   settings service clamps against the generated schema and persists.
+ *   The generic form of the above, published by the settings screen and by the
+ *   EV driving screen's two buttons: carries a setting_id and a value, both
+ *   forwarded straight to settings_set().  The settings service clamps against
+ *   the generated schema and persists; the CAN module transmits every persisted
+ *   signal on its next TX cycle.
  *
  * UI_INPUT_TIMESTAMP
  *   Logs the current Zephyr uptime as an event marker.  Useful for
@@ -225,31 +286,21 @@ static void handle_ui_input(const struct ui_input_event *evt)
         break;
     }
 
-    case UI_INPUT_RTD_REQUEST:
-        /*
-         * RTD button long-pressed. The state machine latches
-         * OPERATING_MODE_RTD (→ CAN RTD_Button = 1 on the next TX cycle) and
-         * loads the EV driving screen. No direct app_state write here.
-         */
-        state_machine_post(SM_EVENT_RTD_REQUEST);
-        LOG_INF("RTD requested");
+    case UI_INPUT_RTD_PRESSED:
+        set_rtd_button(true);
+        LOG_INF("RTD button pressed");
         break;
 
-    case UI_INPUT_RTD_RELEASE:
-        /* Reserved: there is no RTD exit path — see app/state_machine.c. */
+    case UI_INPUT_RTD_RELEASED:
+        set_rtd_button(false);
+        LOG_INF("RTD button released");
         break;
 
-    case UI_INPUT_BACK: {
+    case UI_INPUT_BACK:
         /* ESC button: return to boot screen unconditionally */
-        struct ui_cmd cmd = {
-            .type        = UI_CMD_SET_SCREEN,
-            .data.screen = SCREEN_BOOT,
-        };
-        pub_ui_cmd(&cmd);
-
+        pub_ui_nav(SCREEN_BOOT);
         LOG_DBG("Back → SCREEN_BOOT");
         break;
-    }
 
     case UI_INPUT_DEBUG_BITS_SELECTED: {
         uint8_t bits = evt->data.debug_bits;
@@ -277,19 +328,26 @@ static void handle_ui_input(const struct ui_input_event *evt)
 
     case UI_INPUT_SCREEN_CHANGED:
         /*
-         * Purely a record. Nothing acts on it here — it exists so modules
-         * outside the UI can tell what the driver is looking at, which the
-         * lighting module uses to pick between the strip's two modes.
+         * Mainly a record, so modules outside the UI can tell what the driver
+         * is looking at — the lighting module picks the strip's mode from it.
+         *
+         * It is also the backstop for the RTD button: the button only exists
+         * on PRE_RTD, so on any other screen it cannot be held. The screen
+         * reports its own release when it is torn down; should that event be
+         * lost, this clears the state regardless.
          */
         app_state_set_active_screen(evt->data.screen);
+        if (evt->data.screen != SCREEN_PRE_RTD) {
+            app_state_set_rtd_button(false);
+        }
         break;
 
     case UI_INPUT_TIMESTAMP:
         LOG_INF("Timestamp: %lld ms", (long long)k_uptime_get());
         break;
 
-    case UI_INPUT_TORQUE_VECT_ON:
-    case UI_INPUT_TORQUE_VECT_OFF:
+    case UI_INPUT_TORQUE_VECT_ON:   /* Reserved — no producer since the EV   */
+    case UI_INPUT_TORQUE_VECT_OFF:  /* screen switched to SETTING_SELECTED.  */
     case UI_INPUT_CONFIRM:
     case UI_INPUT_ENCODER_UP:
     case UI_INPUT_ENCODER_DOWN:
@@ -360,11 +418,12 @@ static void handle_can_status(const struct can_status_event *evt)
  * @brief Handle a decoded CAN snapshot from the CAN module.
  *
  * Stores the snapshot in app_state, forwards it to the UI, turns the rtd_sound
- * signal into piezo commands and feeds AS_state to the DV state machine.
+ * signal into piezo commands, feeds a rising RTD_State to the manual state
+ * machine and AS_state to the DV state machine.
  *
- * Both the rtd_sound and the AS_state paths are edge-triggered: they act only
- * on a change of the value, so the snapshot rate does not flood the audio
- * channel or churn the state machine.
+ * All three paths are edge-triggered: they act only on a change of the value,
+ * so the snapshot rate does not flood the audio channel or churn the state
+ * machines.
  *
  * @param snap  Snapshot read from can_data_chan.
  */
@@ -404,10 +463,53 @@ static void handle_can_data(const struct can_data_snapshot *snap)
         }
     }
 
+    /*
+     * RTD_State: both edges matter. Rising puts the EV driving screen up,
+     * falling — which per the rules follows the SDC opening — takes it down
+     * again and returns the driver to the screen they came from.
+     */
+    if (snap->rtd_state != s_last_rtd_state) {
+        s_last_rtd_state = snap->rtd_state;
+        state_machine_post(snap->rtd_state ? SM_EVENT_VEHICLE_RTD
+                                           : SM_EVENT_VEHICLE_IDLE);
+    }
+
     /* AS_state: drive the DV state machine only when the raw value changes. */
     if (snap->as_state != s_last_as_state) {
         s_last_as_state = snap->as_state;
         state_machine_notify_as_state(snap->as_state);
+    }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * Feedback handler
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Handle a confirmation from an output module.
+ *
+ * FEEDBACK_CAN_RTD_TX is forwarded to the UI unchanged: the RTD button shows
+ * green exactly while the CAN module reports RTD_Button = 1 on the bus.
+ * The lighting and audio values are reserved and have no producer.
+ *
+ * @param evt  Event read from feedback_chan.
+ */
+static void handle_feedback(const struct feedback_event *evt)
+{
+    switch (evt->type) {
+    case FEEDBACK_CAN_RTD_TX: {
+        struct ui_cmd cmd = {
+            .type            = UI_CMD_RTD_TX_STATE,
+            .data.rtd_button = evt->rtd_button,
+        };
+        pub_ui_cmd(&cmd);
+        LOG_INF("RTD_Button on bus: %d", (int)evt->rtd_button);
+        break;
+    }
+
+    default:
+        LOG_DBG("feedback_chan type %d not handled", (int)evt->type);
+        break;
     }
 }
 
@@ -485,8 +587,10 @@ static void app_thread_fn(void *p1, void *p2, void *p3)
             LOG_DBG("settings_chan event (not yet handled)");
 
         } else if (chan == &feedback_chan) {
-            /* TODO: react to lighting/audio effect completion */
-            LOG_DBG("feedback_chan event (not yet handled)");
+            struct feedback_event evt;
+            if (zbus_chan_read(&feedback_chan, &evt, K_MSEC(10)) == 0) {
+                handle_feedback(&evt);
+            }
 
         } else {
             LOG_WRN("Unexpected channel notification");
@@ -502,7 +606,7 @@ void app_module_init(void)
     /* Reset all state fields to safe defaults */
     app_state_init();
 
-    /* Operating-mode state machine — starts in MANUAL_IDLE (mode DEBUG). */
+    /* Operating-mode state machines — manual starts in MANUAL_IDLE (mode DEBUG). */
     state_machine_init();
 
     k_thread_create(&s_app_thread,

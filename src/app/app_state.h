@@ -24,9 +24,9 @@
  *              Live paths today:
  *
  *                app.c writes  → mode, mission, CAN status, system flags,
- *                                CAN data snapshot
+ *                                CAN data snapshot, RTD button, active screen
  *                can.c reads   → app_state_get_selected_mission(),
- *                                app_state_get_mode()
+ *                                app_state_is_rtd_request_active()
  *
  *              The remaining accessors compile and are correct, but nothing
  *              calls them yet — in particular the safety flags (imd_ok, ams_ok,
@@ -71,20 +71,31 @@
  * @brief Application operating modes.
  *
  * The mode is independent of the selected FS mission (see app_state_mission).
- * Its one behavioural effect today is the CAN RTD_Button bit, which the CAN
- * module derives from `mode == OPERATING_MODE_RTD` on every TX cycle.
+ * It mirrors what the vehicle reports and has no effect on the CAN bus: the
+ * RTD_Button bit follows the physical button alone, see
+ * app_state_is_rtd_request_active().
  *
- * Only DEBUG and RTD are reachable: the RTD button toggles between them
- * (see handle_ui_input() in app.c). PRE_RTD and POST_RTD are placeholders for
- * the planned pre-drive checklist and return-to-idle sequences; nothing sets
- * them yet.
+ * Only DEBUG and RTD are reachable. The state machine enters RTD when the MABX
+ * reports RTD_State = 1 (see app/state_machine.c) and never leaves it. PRE_RTD
+ * and POST_RTD are placeholders for the planned pre-drive checklist and
+ * return-to-idle sequences; nothing sets them yet.
  */
 enum operating_mode {
-    OPERATING_MODE_DEBUG    = 0, /**< Default. Full navigation, RTD_Button = 0.  */
+    OPERATING_MODE_DEBUG    = 0, /**< Default. Full navigation.                  */
     OPERATING_MODE_PRE_RTD,      /**< Reserved: guided pre-drive checklist.      */
-    OPERATING_MODE_RTD,          /**< RTD button held — RTD_Button = 1.          */
+    OPERATING_MODE_RTD,          /**< Vehicle reported R2D; EV driving screen.   */
     OPERATING_MODE_POST_RTD,     /**< Reserved: return-to-idle confirmation.     */
 };
+
+/**
+ * @brief How long the RTD button must be held before RTD_Button = 1 is sent.
+ *
+ * Guards against a brush against the button. It is well above the 30 ms
+ * gpio-keys debounce and well above the 100 ms DCU_2_mABX period, so a press
+ * held past it always produces at least one frame with a 0 first — the
+ * request never carries over from an earlier press.
+ */
+#define APP_RTD_HOLD_MS 500
 
 
 /* ── Application Sub-State Types ─────────────────────────────────────────────────────────────── */
@@ -174,8 +185,7 @@ void app_state_init(void);
 enum operating_mode app_state_get_mode(void);
 
 /** @brief Return the ID of the currently active UI screen.
- *  @note Reserved — the UI module tracks the active screen internally and
- *        never publishes it here, so this returns SCREEN_NONE. */
+ *  @note SCREEN_NONE until the UI has loaded its first screen. */
 enum screen_id      app_state_get_active_screen(void);
 
 /** @brief Return the currently selected FS mission. */
@@ -193,6 +203,18 @@ bool                app_state_is_error_active(void);
 
 /** @brief Return true if the CAN bus is connected and receiving frames. */
 bool                app_state_is_can_connected(void);
+
+/**
+ * @brief Return true if the RTD_Button bit must be set on the bus right now.
+ *
+ * True only while the RTD button is held *and* has been held for at least
+ * @ref APP_RTD_HOLD_MS. Nothing is latched: the value is computed from the
+ * button state and the current uptime on every call, so it drops to false the
+ * moment the release has been recorded, and no timer can raise it afterwards.
+ *
+ * The CAN module calls this once per DCU_2_mABX cycle.
+ */
+bool                app_state_is_rtd_request_active(void);
 
 /** @brief Return the current Debug_SETTING raw value (0–7).
  *  @note Reserved — always 0. The live value is settings_get(SETTING_DEBUG_BITS). */
@@ -247,16 +269,25 @@ void app_state_get_settings(struct app_state_settings *out);
 /**
  * @brief Set the operating mode.
  *
- * The CAN module samples the mode on every TX cycle, so this is what raises
- * and lowers the RTD_Button bit on the bus.
+ * Written by the state machine only. The mode does not reach the CAN bus —
+ * RTD_Button is derived from the button, see app_state_set_rtd_button().
  *
  * @param mode  New operating mode.
  */
 void app_state_set_mode(enum operating_mode mode);
 
-/** @brief Set the active UI screen.
- *  @note Reserved — no caller; see app_state_get_active_screen(). */
+/** @brief Set the active UI screen, as reported by UI_INPUT_SCREEN_CHANGED. */
 void app_state_set_active_screen(enum screen_id screen);
+
+/**
+ * @brief Record the physical state of the RTD button.
+ *
+ * A press stores the current uptime as the start of the hold; a repeated press
+ * while already held keeps the original start. A release clears the state.
+ *
+ * @param pressed  True on press, false on release.
+ */
+void app_state_set_rtd_button(bool pressed);
 
 /**
  * @brief Replace the mission sub-state atomically.

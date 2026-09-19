@@ -244,6 +244,16 @@ extern lv_style_t ui_style_btn_checked;
  */
 extern lv_style_t ui_style_btn_focused;
 
+/**
+ * @brief Button appearance while an action is under way but not yet confirmed.
+ *
+ * Accent (gold) background, 2 px DARK outline, DARK text — the same look as
+ * ui_style_btn_focused, kept as its own style because it means something else.
+ * Used by the RTD button while it is held but RTD_Button = 1 is not yet on the
+ * bus.
+ */
+extern lv_style_t ui_style_btn_pending;
+
 /* --- Progress bar (slider) -------------------------------------------------------- */
 
 /**

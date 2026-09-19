@@ -7,20 +7,39 @@
  * @details     Builds the pre-RTD screen. Its only widget is the RTD button;
  *              the checklist the file is named after is still to come.
  *
- *              The button listens for LV_EVENT_LONG_PRESSED and
- *              LV_EVENT_RELEASED, not for LV_EVENT_CLICKED, and publishes
- *              UI_INPUT_RTD_REQUEST / UI_INPUT_RTD_RELEASE respectively. The
- *              App Layer maps them to operating mode RTD and DEBUG, and the
- *              CAN module transmits that as the RTD_Button bit — so the bit on
- *              the bus follows the driver's thumb, and letting go always clears
- *              the request.
+ *              The button reports the physical press, nothing more: it
+ *              publishes UI_INPUT_RTD_PRESSED on LV_EVENT_PRESSED and
+ *              UI_INPUT_RTD_RELEASED on every way a press can end. The hold
+ *              time and the CAN bit are decided outside the UI (see
+ *              app_state_is_rtd_request_active()), so this file cannot make
+ *              the request outlive the driver's thumb.
  *
- *              Requiring a long press rather than a click is deliberate: a
- *              brush against the button must not put the car into RTD.
+ *              ### Every way a press ends
+ *              | Event              | When                                    |
+ *              |--------------------|-----------------------------------------|
+ *              | LV_EVENT_RELEASED  | The driver lets go                      |
+ *              | LV_EVENT_PRESS_LOST| LVGL abandons the press                 |
+ *              | LV_EVENT_DELETE    | The screen is torn down while held      |
  *
- *              The visual state is driven explicitly through LV_STATE_USER_1
- *              instead of LVGL's LV_STATE_CHECKED, because the button is not
- *              checkable — it has no state of its own to toggle.
+ *              The last one matters: LVGL delivers the release to whatever the
+ *              RTD pad's group holds at that moment, and after a screen change
+ *              that is no longer this button. Without it the App Layer would
+ *              never hear the release. It keeps a second backstop anyway — a
+ *              screen change away from PRE_RTD clears the button state.
+ *
+ *              ### Colour
+ *              Driven through two user states, because the button is not
+ *              checkable and LVGL's own states do not describe "on the bus":
+ *
+ *              | State          | Style                 | Meaning                 |
+ *              |----------------|-----------------------|-------------------------|
+ *              | —              | ui_style_btn_default  | Not pressed (white)     |
+ *              | LV_STATE_USER_1| ui_style_btn_pending  | Held, not yet sent (gold) |
+ *              | LV_STATE_USER_2| ui_style_btn_checked  | Held and sent (green)   |
+ *
+ *              ui_style_btn_focused is deliberately not added: the button is
+ *              its group's only member and permanently focused, so the focus
+ *              colour would hide the white "not pressed" state.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
@@ -92,8 +111,14 @@ LOG_MODULE_REGISTER(screen_checklist, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
-/** @brief RTD button — long-pressed to request Ready-to-Drive. */
+/** @brief RTD button — held to request Ready-to-Drive. NULL once deleted. */
 static lv_obj_t   *s_btn_rtd;
+
+/** @brief True between LV_EVENT_PRESSED and the end of that press. */
+static bool        s_rtd_pressed;
+
+/** @brief Last UI_CMD_RTD_TX_STATE: RTD_Button = 1 is on the bus. */
+static bool        s_rtd_on_bus;
 
 /** @brief Input group for the right encoder. Created empty — no focusable widget. */
 static lv_group_t *s_right_encoder_group;
@@ -121,6 +146,8 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 static void build_buttons(lv_obj_t *scr);
+static void rtd_button_refresh(void);
+static void rtd_publish(enum ui_input_type type);
 static void btn_rtd_event_cb(lv_event_t *e);
 
 
@@ -129,9 +156,8 @@ static void btn_rtd_event_cb(lv_event_t *e);
 /**
  * @brief Build the RTD button.
  *
- * Only LV_EVENT_LONG_PRESSED is handled: a brush against the button must not
- * put the car into RTD, and there is no release to react to — the request
- * latches (see btn_rtd_event_cb()).
+ * One callback for the press and for all three ways a press can end; see the
+ * file description for why LV_EVENT_DELETE is among them.
  *
  * @param scr  Screen object to build into.
  */
@@ -143,8 +169,8 @@ static void build_buttons(lv_obj_t *scr)
     s_btn_rtd = lv_button_create(scr);
     lv_obj_remove_style_all(s_btn_rtd);
     lv_obj_add_style(s_btn_rtd, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_rtd, &ui_style_btn_checked, LV_STATE_USER_1);
-    lv_obj_add_style(s_btn_rtd, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
+    lv_obj_add_style(s_btn_rtd, &ui_style_btn_pending, LV_STATE_USER_1);
+    lv_obj_add_style(s_btn_rtd, &ui_style_btn_checked, LV_STATE_USER_2);
     lv_obj_set_size(s_btn_rtd, BTN_WIDTH, BTN_HEIGHT);
     lv_obj_align(s_btn_rtd, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
 
@@ -153,33 +179,80 @@ static void build_buttons(lv_obj_t *scr)
     lv_label_set_text(lbl_rtd, "RTD");
     lv_obj_align(lbl_rtd, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_DELETE, NULL);
 }
 
 /**
- * @brief RTD button long-press handler.
+ * @brief Set the button colour from the press and the bus state.
  *
- * Publishes UI_INPUT_RTD_REQUEST. The App Layer's state machine latches
- * OPERATING_MODE_RTD (→ CAN rtd_button = 1) and loads the EV driving screen,
- * which replaces this one. There is no release event and no way back to DEBUG
- * short of a power cycle.
- *
- * The visual state is set first so the button flashes armed even if the
- * publish fails; the screen is torn down a moment later regardless.
- *
- * @param e  LV_EVENT_LONG_PRESSED from the RTD button.
+ * Green needs both: a report of RTD_Button = 1 that arrives after the release
+ * must not light the button again.
  */
-static void btn_rtd_event_cb(lv_event_t *e)
+static void rtd_button_refresh(void)
 {
-    lv_obj_set_state(lv_event_get_target_obj(e), LV_STATE_USER_1, true);
+    if (s_btn_rtd == NULL) {
+        return;
+    }
 
-    struct ui_input_event evt = { .type = UI_INPUT_RTD_REQUEST };
+    lv_obj_set_state(s_btn_rtd, LV_STATE_USER_1, s_rtd_pressed && !s_rtd_on_bus);
+    lv_obj_set_state(s_btn_rtd, LV_STATE_USER_2, s_rtd_pressed && s_rtd_on_bus);
+}
+
+/**
+ * @brief Publish an RTD press or release on ui_input_chan.
+ * @param type  UI_INPUT_RTD_PRESSED or UI_INPUT_RTD_RELEASED.
+ */
+static void rtd_publish(enum ui_input_type type)
+{
+    struct ui_input_event evt = { .type = type };
 
     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
     if (ret != 0) {
-        LOG_WRN("RTD request publish failed: %d", ret);
+        LOG_WRN("RTD button event %d publish failed: %d", (int)type, ret);
+    }
+}
+
+/**
+ * @brief RTD button handler for the press and for every end of a press.
+ *
+ * A press clears the bus flag: no frame of this press can have carried
+ * RTD_Button = 1 yet, and a stale report from an earlier press must not show
+ * green straight away.
+ *
+ * The end of a press is published only if a press was recorded, so deleting
+ * the screen without the button held stays silent.
+ *
+ * @param e  LV_EVENT_PRESSED, _RELEASED, _PRESS_LOST or _DELETE.
+ */
+static void btn_rtd_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_PRESSED) {
+        s_rtd_pressed = true;
+        s_rtd_on_bus  = false;
+        rtd_button_refresh();
+        rtd_publish(UI_INPUT_RTD_PRESSED);
+        return;
+    }
+
+    /* RELEASED, PRESS_LOST or DELETE — the press is over either way. */
+    bool was_pressed = s_rtd_pressed;
+
+    s_rtd_pressed = false;
+    s_rtd_on_bus  = false;
+
+    if (code == LV_EVENT_DELETE) {
+        s_btn_rtd = NULL;
     } else {
-        LOG_DBG("RTD requested");
+        rtd_button_refresh();
+    }
+
+    if (was_pressed) {
+        rtd_publish(UI_INPUT_RTD_RELEASED);
     }
 }
 
@@ -198,6 +271,10 @@ lv_obj_t *screen_checklist_create(lv_subject_t *status_subjects)
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
     ui_header_create(scr, "PRE RTD", status_subjects);
+
+    /* A fresh screen starts released, whatever the previous instance saw. */
+    s_rtd_pressed = false;
+    s_rtd_on_bus  = false;
     build_buttons(scr);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
@@ -238,6 +315,12 @@ lv_group_t *screen_checklist_get_right_button_group(void)
 lv_group_t *screen_checklist_get_rtd_button_group(void)
 {
     return s_rtd_button_group;
+}
+
+void screen_checklist_set_rtd_tx(bool on_bus)
+{
+    s_rtd_on_bus = on_bus;
+    rtd_button_refresh();
 }
 
 

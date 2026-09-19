@@ -12,8 +12,8 @@
  *              ### Thread safety
  *              A k_mutex serialises concurrent access, and it is needed: the
  *              app thread (priority 5) writes while the CAN worker thread
- *              (priority 3) reads mission and mode on every TX cycle, and the
- *              CAN thread preempts the app thread. Contention is still low —
+ *              (priority 3) reads mission and RTD button on every TX cycle,
+ *              and the CAN thread preempts the app thread. Contention is low —
  *              every critical section is a plain struct copy with no blocking
  *              call inside — so K_FOREVER cannot deadlock here.
  *
@@ -63,10 +63,12 @@ LOG_MODULE_REGISTER(app_state, CONFIG_LOG_DEFAULT_LEVEL);
 struct app_state {
     struct app_state_system     system;        /**< Operating mode and system flags.   */
     struct app_state_mission    mission;       /**< Selected mission and lifecycle.    */
-    enum   screen_id            active_screen; /**< Reserved; see app_state.h.         */
+    enum   screen_id            active_screen; /**< Screen the UI last loaded.         */
     struct app_state_can_status can_status;    /**< CAN connectivity.                  */
     struct can_data_snapshot    can_data;      /**< Latest decoded CAN signal values.  */
     struct app_state_settings   settings;      /**< Reserved; see app_state.h.         */
+    bool                        rtd_pressed;   /**< RTD button currently held.         */
+    int64_t                     rtd_since_ms;  /**< Uptime of the press; while held.   */
 };
 
 
@@ -106,6 +108,8 @@ static struct app_state s_state = {
     .settings = {
         .display_brightness = 80U,
     },
+    .rtd_pressed       = false,
+    .rtd_since_ms      = 0,
 };
 
 
@@ -181,6 +185,17 @@ bool app_state_is_can_connected(void)
     return connected;
 }
 
+bool app_state_is_rtd_request_active(void)
+{
+    int64_t now = k_uptime_get();
+
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    bool active = s_state.rtd_pressed &&
+                  (now - s_state.rtd_since_ms) >= APP_RTD_HOLD_MS;
+    k_mutex_unlock(&s_mutex);
+    return active;
+}
+
 uint8_t app_state_get_debug_bits(void)
 {
     k_mutex_lock(&s_mutex, K_FOREVER);
@@ -245,6 +260,18 @@ void app_state_set_active_screen(enum screen_id screen)
 {
     k_mutex_lock(&s_mutex, K_FOREVER);
     s_state.active_screen = screen;
+    k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_rtd_button(bool pressed)
+{
+    int64_t now = k_uptime_get();
+
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    if (pressed && !s_state.rtd_pressed) {
+        s_state.rtd_since_ms = now;
+    }
+    s_state.rtd_pressed = pressed;
     k_mutex_unlock(&s_mutex);
 }
 
