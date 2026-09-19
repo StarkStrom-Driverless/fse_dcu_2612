@@ -20,12 +20,24 @@
  *
  *              | Zone | LEDs | Shows |
  *              |------|------|-------|
- *              | Left | ZONE_LEFT_LEN | Whichever of the three temperatures is closest to its own critical limit |
+ *              | Left | ZONE_LEFT_LEN | HV accumulator voltage, emptying as the pack drains |
  *              | Middle | 10 | LED_1…LED_8 as red flags, DCU_RESERVE_LED in amber, DCU_RGB_LED_Themperatur as a red/green/blue code |
- *              | Right | ZONE_RIGHT_LEN | HV accumulator voltage, emptying as the pack drains |
+ *              | Right | ZONE_RIGHT_LEN | Whichever of the three temperatures is closest to its own critical limit |
+ *
+ *              Both bars grow from the outer edge of the strip towards the
+ *              middle, so they read as mirror images rising together. Their
+ *              empty part stays faintly lit in the same color (ZONE_TRACK_DIV),
+ *              which is what makes the length of a bar readable at a glance —
+ *              a bar at zero would otherwise be indistinguishable from a dark
+ *              strip.
  *
  *              Boundaries are derived from the devicetree strip length, so the
  *              layout follows the hardware rather than a hard-coded 28.
+ *
+ *              The strip is mounted with its data input on the right. Nothing
+ *              here has to know: positions are counted from the left and
+ *              strip_px() maps them onto the chain, driven by
+ *              LIGHTING_DATA_FROM_RIGHT.
  *
  *              ### Where the data comes from
  *              Both the values and the active screen are read from app_state,
@@ -108,6 +120,18 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Scheduling priority for the lighting thread. */
 #define LIGHTING_THREAD_PRIORITY    7
 
+/**
+ * @brief Set when the strip's data line enters at its right-hand end.
+ *
+ * The strip is mounted with the data input on the right, so pixel 0 of the
+ * chain sits where the driver sees the right edge. Everything in this file is
+ * written in reading order — index 0 on the left — and strip_px() is the one
+ * place that turns that into a chain index.
+ *
+ * Clear this for a board wired the other way round; nothing else changes.
+ */
+#define LIGHTING_DATA_FROM_RIGHT    1
+
 /* ── Zone rendering (EV driving screen) ──────────────────────────────────── */
 
 /**
@@ -145,11 +169,21 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
  * @{
  */
 #define ZONE_RGB_OFF        { .r =   0, .g =   0, .b =   0 }
-#define ZONE_RGB_GREEN      { .r =   0, .g = 160, .b =  60 }
+#define ZONE_RGB_GREEN      { .r =   0, .g = 255, .b =   0 }
 #define ZONE_RGB_AMBER      { .r = 200, .g = 130, .b =   0 }
-#define ZONE_RGB_RED        { .r = 200, .g =  20, .b =  20 }
+#define ZONE_RGB_RED        { .r = 255, .g =   0, .b =  20 }
 #define ZONE_RGB_BLUE       { .r =   0, .g =  40, .b = 200 }
 /** @} */
+
+/**
+ * @brief How much dimmer the empty part of a bar is than its fill.
+ *
+ * Low enough not to be mistaken for a lit segment, high enough to show the
+ * bar's extent in daylight. The track follows the bar's own color, so a bar
+ * that has gone red is backed by faint red rather than by a second hue the
+ * driver would have to interpret.
+ */
+#define ZONE_TRACK_DIV      10U
 
 /** @brief Severity bands shared by both progress bars. */
 enum zone_level {
@@ -233,6 +267,25 @@ static K_THREAD_STACK_DEFINE(s_lighting_stack, LIGHTING_THREAD_STACK_SIZE);
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
 /**
+ * @brief Address one LED by its position as the driver sees it.
+ *
+ * Index 0 is the left end of the strip, whatever the wiring does. Every write
+ * in this file goes through here, so a mirrored strip is a single constant
+ * rather than an off-by-one hunt across three zones and an animation.
+ *
+ * @param pos  Position from the left, 0 … LIGHTING_NUM_PIXELS-1.
+ * @return     Pointer to that LED in the chain buffer.
+ */
+static inline struct led_rgb *strip_px(uint8_t pos)
+{
+#if LIGHTING_DATA_FROM_RIGHT
+    return &s_pixels[LIGHTING_NUM_PIXELS - 1U - pos];
+#else
+    return &s_pixels[pos];
+#endif
+}
+
+/**
  * @brief Render one gear animation frame and advance the phase.
  *
  * Maps each LED index to a LUT entry via:
@@ -240,11 +293,14 @@ static K_THREAD_STACK_DEFINE(s_lighting_stack, LIGHTING_THREAD_STACK_SIZE);
  *
  * The first term spreads GEAR_NUM_TEETH copies of the tooth profile evenly
  * across the strip; adding the phase shifts them all by the same amount.
- * Incrementing phase by 1 each step therefore rotates the whole gear by
+ * Stepping the phase by one each frame therefore rotates the whole gear by
  * 1/LUT_SIZE of a tooth pitch, giving smooth motion in integer arithmetic.
  *
- * This writes every LED each frame, so no clearing is
- * needed beforehand.
+ * The phase counts *down*: positions run left to right while the strip is
+ * wired right to left, and counting up would turn the gear against the one on
+ * the boot screen.
+ *
+ * This writes every LED each frame, so no clearing is needed beforehand.
  *
  * @param phase  In/out. Current animation phase (0 … GEAR_LUT_SIZE-1);
  *               advanced by one on return.
@@ -258,9 +314,11 @@ static void gear_step(uint8_t *phase)
             % GEAR_LUT_SIZE
         );
         uint8_t v = k_gear_lut[idx];
-        s_pixels[i].r = (uint8_t)((uint32_t)GEAR_R * v / 255U);
-        s_pixels[i].g = (uint8_t)((uint32_t)GEAR_G * v / 255U);
-        s_pixels[i].b = 0U;
+        struct led_rgb *px = strip_px((uint8_t)i);
+
+        px->r = (uint8_t)((uint32_t)GEAR_R * v / 255U);
+        px->g = (uint8_t)((uint32_t)GEAR_G * v / 255U);
+        px->b = 0U;
     }
 
     int ret = led_strip_update_rgb(s_strip, s_pixels, LIGHTING_NUM_PIXELS);
@@ -268,7 +326,7 @@ static void gear_step(uint8_t *phase)
         LOG_ERR("led_strip_update_rgb failed: %d", ret);
     }
 
-    *phase = (*phase + 1U) % GEAR_LUT_SIZE;
+    *phase = (uint8_t)((*phase + GEAR_LUT_SIZE - 1U) % GEAR_LUT_SIZE);
 }
 
 /**
@@ -326,27 +384,44 @@ static struct led_rgb zone_level_color(enum zone_level level)
  * @brief Paint a run of LEDs as a bar filled to @p pct.
  *
  * Rounds to the nearest whole LED, so a bar only lights its last LED once the
- * reading is more than half way into it. Unlit LEDs are cleared rather than
- * left alone — the caller does not have to blank the zone first.
+ * reading is more than half way into it.
  *
- * @param first  Index of the zone's first LED.
- * @param len    Number of LEDs in the zone.
- * @param pct    Fill, 0…100.
- * @param color  Color for the lit part.
+ * Both bars grow from the outer edge of the strip towards the middle, which
+ * makes them mirror images of each other: the left bar fills from its first
+ * LED, the right bar from its last. A driver glancing down reads two bars
+ * rising towards the centre rather than two running the same way.
+ *
+ * The empty part is not switched off but dimmed to ZONE_TRACK_DIV of the same
+ * color. That way the bar's full length is visible at a glance — an unlit
+ * strip and a bar at zero would otherwise look the same.
+ *
+ * @param first     Index of the zone's first LED, counted from the left.
+ * @param len       Number of LEDs in the zone.
+ * @param pct       Fill, 0…100.
+ * @param color     Color for the lit part.
+ * @param from_last True when the zone's outer edge is its last LED (the right
+ *                  bar), false when it is its first (the left bar).
  */
 static void zone_fill_bar(uint8_t first, uint8_t len, uint8_t pct,
-                          struct led_rgb color)
+                          struct led_rgb color, bool from_last)
 {
-    static const struct led_rgb off = ZONE_RGB_OFF;
+    const struct led_rgb track = {
+        .r = (uint8_t)(color.r / ZONE_TRACK_DIV),
+        .g = (uint8_t)(color.g / ZONE_TRACK_DIV),
+        .b = (uint8_t)(color.b / ZONE_TRACK_DIV),
+    };
     const uint8_t lit = (uint8_t)(((uint32_t)pct * len + 50U) / 100U);
 
     for (uint8_t i = 0U; i < len; i++) {
-        s_pixels[first + i] = (i < lit) ? color : off;
+        /* Distance from the outer edge, which is where the fill starts. */
+        const uint8_t from_edge = from_last ? (uint8_t)(len - 1U - i) : i;
+
+        *strip_px((uint8_t)(first + i)) = (from_edge < lit) ? color : track;
     }
 }
 
 /**
- * @brief Left zone — whichever of the three temperatures is closest to its limit.
+ * @brief Right zone — whichever of the three temperatures is closest to its limit.
  *
  * The three have different ranges and different limits, so their raw values
  * cannot be compared. Grading each against its own critical limit puts them on
@@ -383,8 +458,8 @@ static void zone_render_temperatures(const struct can_data_snapshot *snap)
         }
     }
 
-    zone_fill_bar(ZONE_LEFT_FIRST, ZONE_LEFT_LEN, worst.pct,
-                  zone_level_color(worst.level));
+    zone_fill_bar(ZONE_RIGHT_FIRST, ZONE_RIGHT_LEN, worst.pct,
+                  zone_level_color(worst.level), true);
 }
 
 /**
@@ -416,27 +491,29 @@ static void zone_render_status(const struct can_data_snapshot *snap)
     };
 
     for (uint8_t i = 0U; i < ARRAY_SIZE(flags); i++) {
-        s_pixels[ZONE_MID_FIRST + i] = flags[i] ? red : off;
+        *strip_px((uint8_t)(ZONE_MID_FIRST + i)) = flags[i] ? red : off;
     }
 
     /* DCU_RESERVE_LED — a single amber flag. */
-    s_pixels[ZONE_MID_FIRST + 8] = snap->led_reserved_0 ? amber : off;
+    *strip_px(ZONE_MID_FIRST + 8U) = snap->led_reserved_0 ? amber : off;
 
     /*
      * DCU_RGB_LED_Themperatur — a three-state code rather than a flag.
      * Anything outside 1…3 is dark, so an unexpected value reads as "no
      * statement" instead of silently borrowing another state's color.
      */
+    struct led_rgb *rgb_led = strip_px(ZONE_MID_FIRST + 9U);
+
     switch (snap->temperature_generic) {
-    case 1:  s_pixels[ZONE_MID_FIRST + 9] = red;   break;
-    case 2:  s_pixels[ZONE_MID_FIRST + 9] = green; break;
-    case 3:  s_pixels[ZONE_MID_FIRST + 9] = blue;  break;
-    default: s_pixels[ZONE_MID_FIRST + 9] = off;   break;
+    case 1:  *rgb_led = red;   break;
+    case 2:  *rgb_led = green; break;
+    case 3:  *rgb_led = blue;  break;
+    default: *rgb_led = off;   break;
     }
 }
 
 /**
- * @brief Right zone — HV accumulator voltage.
+ * @brief Left zone — HV accumulator voltage.
  *
  * Voltage is graded the other way round from a temperature: the limits are
  * lower bounds, so the bar empties as the pack drains and the color worsens
@@ -467,8 +544,8 @@ static void zone_render_voltage(const struct can_data_snapshot *snap)
                                 : (v <= warn) ? ZONE_LEVEL_WARN
                                               : ZONE_LEVEL_OK;
 
-    zone_fill_bar(ZONE_RIGHT_FIRST, ZONE_RIGHT_LEN, pct,
-                  zone_level_color(level));
+    zone_fill_bar(ZONE_LEFT_FIRST, ZONE_LEFT_LEN, pct,
+                  zone_level_color(level), false);
 }
 
 /**

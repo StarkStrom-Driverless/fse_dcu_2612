@@ -30,9 +30,15 @@ for use while driving — see @ref manual-user-ev.
 
 | Zone | Indication |
 |------|------------|
-| Left | HV battery temperature as a bar |
+| Left | HV battery voltage as a bar |
 | Centre | Status indicators |
-| Right | HV battery state of charge (SoC) as a bar |
+| Right | Whichever of accumulator, inverter or motor temperature is closest to its own limit |
+
+Both bars grow from the outside towards the middle, and their empty part stays
+faintly lit so the length of a bar can be read at a glance. Green, gold and red
+carry the same meaning as on the display.
+
+Outside the EV DRIVING screen the strip shows a rotating gear instead.
 
 <!-- On a safety-critical fault, a red flashing pattern overrides all zones.
 This pattern cannot be displaced by any other indication and only clears once

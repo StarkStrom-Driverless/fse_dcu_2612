@@ -421,15 +421,16 @@ struct ui_cmd {
  * The digital strip is divided into three semantic zones. LIGHTING_ZONE_ALL
  * broadcasts a command to all zones simultaneously.
  *
- *  LEDs  0 ..  9  →  ZONE_LEFT   (HV Temperature progress bar)
- *  LEDs 10 .. 12  →  ZONE_CENTER (TS Off / AMS / IMD status indicators)
- *  LEDs 13 .. 22  →  ZONE_RIGHT  (HV SoC progress bar)
+ *  ZONE_LEFT    HV accumulator voltage, as a bar
+ *  ZONE_CENTER  the ten status signals
+ *  ZONE_RIGHT   the temperature closest to its own critical limit, as a bar
  *
  * @note Reserved, together with the rest of the lighting command protocol
  *       below. The lighting module does not subscribe to lighting_cmd_chan
- *       yet; it renders one fixed animation across the whole strip and knows
- *       nothing about zones, layers, states or effects. Nothing in this
- *       section describes current behaviour.
+ *       yet: it renders the zones itself from app_state and knows nothing
+ *       about layers, states or effects. The zone contents above match what
+ *       modules/lighting/lighting.c draws; their LED boundaries follow the
+ *       strip length from the devicetree and are not fixed here.
  */
 enum lighting_zone_id {
     LIGHTING_ZONE_LEFT   = 0,
