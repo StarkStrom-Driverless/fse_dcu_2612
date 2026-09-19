@@ -41,10 +41,16 @@
  *              ### State across visits
  *              The screen is destroyed on leaving, so the roller position is
  *              kept in the file-scope subject s_roller_sel and restored on the
- *              next visit.  The confirmed value needs no such handling — it
- *              lives in the generated TX subject. The read labels need none
- *              either: they rebind on creation and the next CAN snapshot fills
- *              them.
+ *              next visit.  On the very first visit after boot it starts on the
+ *              stored value rather than on 0 — settings_get() is the only place
+ *              the persisted debug bits can be read back from.
+ *
+ *              The confirmed value lives in the generated TX subject, which
+ *              nothing outside this file writes, so it is re-seeded from
+ *              settings_get() on every build: the settings service owns the
+ *              value and the label has to agree with it. The read labels need
+ *              no handling at all — they rebind on creation and the next CAN
+ *              snapshot fills them.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-09
@@ -80,6 +86,7 @@
 #include "modules/ui/widgets/ui_hintbar.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "services/settings/settings.h"
 #include "generated/ui_subjects_gen.h"
 #include "generated/ui_tx_subjects_gen.h"
 
@@ -412,10 +419,24 @@ lv_obj_t *screen_debug_custom_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
+    uint8_t stored = settings_get(SETTING_DEBUG_BITS);
+
+    /*
+     * First visit after boot: start the highlight on the value that is actually
+     * being sent, not on 0. Later visits keep whatever the engineer scrolled to.
+     */
     if (!s_subjects_init) {
-        lv_subject_init_int(&s_roller_sel, 0);
+        lv_subject_init_int(&s_roller_sel, (int32_t)stored);
         s_subjects_init = true;
     }
+
+    /*
+     * The confirmed-value label is driven by the generated TX subject, which
+     * nothing else writes. Re-seed it on every build so it agrees with the
+     * settings service — which owns the value and may have been changed from
+     * DV SETTINGS or restored from flash in the meantime.
+     */
+    lv_subject_set_int(&ui_tx_subj_debug_bits, (int32_t)stored);
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_remove_style_all(scr);

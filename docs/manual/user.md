@@ -139,7 +139,8 @@ the mABX.
 confirm with the right button. The value currently being transmitted is shown
 below the selection roller.
 
-The value is retained across a restart.
+The value is retained across a restart, and the roller starts on the stored
+value. This is the only screen the debug bits can be set from.
 
 ### DBG TS
 
@@ -296,14 +297,24 @@ the exact firmware build.
 
 ### Settings
 
-**DV SETTINGS** is the central editor for every persistent setting: debug bits,
-ASR, recuperation, torque vectoring, power limit and display brightness. Each
-setting is one row; the **right encoder** moves the highlight between rows, the
-**left button** lowers the highlighted value and the **right button** raises it.
+**DV SETTINGS** is the central editor for the persistent settings: ASR,
+recuperation, torque vectoring, power limit and display brightness. Each setting
+is one row with a bar showing where the value sits between its limits. The
+**right encoder** moves the highlight between rows — the highlighted bar turns
+gold — the **left button** lowers the highlighted value and the **right button**
+raises it.
 
 Changes take effect immediately — there is no separate confirm step. The same
-values can still be reached from the functional screens (DBG CUSTOM,
-EV DRIVING); all paths write to the same store, so the screens always agree.
+values can still be reached from EV DRIVING; both paths write to the same store,
+so the screens always agree.
+
+The debug bits are **not** on this screen. They are set on DBG TX, which also
+documents what each bit means.
+
+Writing to the flash is deferred by two seconds so that turning a value up and
+down again does not wear the memory out. Once the write has gone through,
+**Settings saved** appears briefly at the bottom of the screen — only then does
+the value survive a power cycle.
 
 ## Diagnostics
 

@@ -232,9 +232,11 @@ static void flush_work_fn(struct k_work *work)
     int rc = settings_save_one(SETTINGS_BLOB_KEY, &blob, sizeof(blob));
     if (rc != 0) {
         LOG_ERR("Persisting settings failed: %d", rc);
-    } else {
-        LOG_DBG("Settings persisted (%zu bytes)", sizeof(blob));
+        return;
     }
+
+    LOG_DBG("Settings persisted (%zu bytes)", sizeof(blob));
+    publish(SETTINGS_EVT_SAVED);
 }
 
 /**

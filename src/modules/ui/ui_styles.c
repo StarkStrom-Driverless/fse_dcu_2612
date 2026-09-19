@@ -72,6 +72,7 @@ lv_style_t ui_style_btn_pending;
 
 lv_style_t ui_style_slider_main;
 lv_style_t ui_style_slider_indicator;
+lv_style_t ui_style_slider_focused;
 
 lv_style_t ui_style_status_ok;
 lv_style_t ui_style_status_warn;
@@ -273,6 +274,12 @@ static void init_slider_styles(void)
     lv_style_set_bg_opa(&ui_style_slider_indicator,   LV_OPA_COVER);
     lv_style_set_bg_color(&ui_style_slider_indicator, UI_C_GREEN);
     lv_style_set_radius(&ui_style_slider_indicator,   0);
+
+    /* Fill while focused — accent (gold), so the focused slider stands out */
+    lv_style_init(&ui_style_slider_focused);
+    lv_style_set_bg_opa(&ui_style_slider_focused,     LV_OPA_COVER);
+    lv_style_set_bg_color(&ui_style_slider_focused,   UI_C_ACCENT);
+    lv_style_set_radius(&ui_style_slider_focused,     0);
 }
 
 /** @brief Circular status dots. Currently unused; see ui_styles.h. */

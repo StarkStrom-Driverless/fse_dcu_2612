@@ -691,6 +691,10 @@ static void handle_ui_nav(const struct ui_nav_cmd *cmd)
  *                      dropped, because that screen builds its button in the
  *                      released state anyway.
  *
+ * UI_CMD_SETTINGS_SAVED — the settings blob reached the flash. Shown on the
+ *                      settings screen only; nowhere else is the write delay
+ *                      visible to the driver.
+ *
  * @param cmd  Command read from ui_cmd_chan.
  */
 static void handle_ui_cmd(const struct ui_cmd *cmd)
@@ -704,6 +708,12 @@ static void handle_ui_cmd(const struct ui_cmd *cmd)
     case UI_CMD_RTD_TX_STATE:
         if (s_active_screen == SCREEN_PRE_RTD) {
             screen_checklist_set_rtd_tx(cmd->data.rtd_button);
+        }
+        break;
+
+    case UI_CMD_SETTINGS_SAVED:
+        if (s_active_screen == SCREEN_SETTINGS) {
+            screen_settings_notify_saved();
         }
         break;
 

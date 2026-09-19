@@ -271,6 +271,15 @@ extern lv_style_t ui_style_slider_main;
  */
 extern lv_style_t ui_style_slider_indicator;
 
+/**
+ * @brief Progress-bar fill while its widget holds the keyboard focus.
+ *
+ * Accent (gold) fill, the same signal the buttons give through
+ * ui_style_btn_focused. Add on LV_PART_INDICATOR | LV_STATE_FOCUS_KEY, after
+ * ui_style_slider_indicator so it wins.
+ */
+extern lv_style_t ui_style_slider_focused;
+
 /* --- Status indicators ------------------------------------------------------------ */
 
 /*

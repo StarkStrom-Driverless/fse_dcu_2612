@@ -257,13 +257,18 @@ struct ui_input_event {
 /**
  * @brief Settings lifecycle event types.
  *
- * All three are published by the settings service. The App Layer subscribes but
- * does not act on them yet (see the settings_chan branch in app.c).
+ * All four are published by the settings service.
+ *
+ * SETTINGS_EVT_UPDATED means the value changed in RAM; SETTINGS_EVT_SAVED
+ * means it reached the flash, which happens once the write-behind delay has
+ * elapsed. The settings screen shows the difference, because that delay is
+ * long enough for a driver to switch the car off in between.
  */
 enum settings_event_type {
     SETTINGS_EVT_LOADED        = 0, /**< Boot-time load finished — values are usable. */
-    SETTINGS_EVT_UPDATED,           /**< A setting changed value.                     */
-    SETTINGS_EVT_FACTORY_RESET,     /**< All settings reset to schema defaults.       */
+    SETTINGS_EVT_UPDATED,           /**< A setting changed value in RAM.              */
+    SETTINGS_EVT_SAVED,             /**< The blob reached non-volatile storage.       */
+    SETTINGS_EVT_FACTORY_RESET,     /**< Reserved: all settings reset to defaults.    */
 };
 
 /**
@@ -395,6 +400,7 @@ struct ui_nav_cmd {
 enum ui_cmd_type {
     UI_CMD_UPDATE_DATA  = 0, /**< Push a new CAN data snapshot for rendering. */
     UI_CMD_RTD_TX_STATE,     /**< RTD_Button on the bus; payload: rtd_button. */
+    UI_CMD_SETTINGS_SAVED,   /**< Settings blob written to flash; no payload. */
 };
 
 /**

@@ -21,7 +21,7 @@
  *              | ui_input_chan   | Driver interactions (mission, RTD, settings) |
  *              | can_status_chan | CAN bus connectivity and error state         |
  *              | can_data_chan   | Decoded CAN signal snapshots                 |
- *              | settings_chan   | Settings load / update events — TODO         |
+ *              | settings_chan   | Settings loaded, changed and persisted       |
  *              | feedback_chan   | RTD_Button actually transmitted (CAN)        |
  *
  *              ### Downward channels produced (App → Module)
@@ -158,6 +158,7 @@ static void handle_ui_input(const struct ui_input_event *evt);
 static void handle_can_status(const struct can_status_event *evt);
 static void handle_can_data(const struct can_data_snapshot *snap);
 static void handle_feedback(const struct feedback_event *evt);
+static void handle_settings(const struct settings_event *evt);
 static void set_rtd_button(bool pressed);
 static void app_thread_fn(void *p1, void *p2, void *p3);
 
@@ -264,7 +265,7 @@ static void set_rtd_button(bool pressed)
  */
 static void handle_ui_input(const struct ui_input_event *evt)
 {
-    LOG_INF("Handle UI Input Event");
+    // LOG_INF("Handle UI Input Event");
 
     switch (evt->type) {
 
@@ -514,6 +515,32 @@ static void handle_feedback(const struct feedback_event *evt)
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * Settings handler
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Handle a settings lifecycle event.
+ *
+ * Only SETTINGS_EVT_SAVED is forwarded: it says the blob survived the write
+ * delay and is on flash, which the settings screen reports to the driver.
+ * SETTINGS_EVT_UPDATED needs no forwarding — the screen wrote that value
+ * itself and already shows it.
+ *
+ * @param evt  Event read from settings_chan.
+ */
+static void handle_settings(const struct settings_event *evt)
+{
+    if (evt->type != SETTINGS_EVT_SAVED) {
+        return;
+    }
+
+    struct ui_cmd cmd = { .type = UI_CMD_SETTINGS_SAVED };
+
+    pub_ui_cmd(&cmd);
+    LOG_DBG("Settings persisted");
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
  * App thread
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
 
@@ -583,8 +610,10 @@ static void app_thread_fn(void *p1, void *p2, void *p3)
             }
 
         } else if (chan == &settings_chan) {
-            /* TODO: reload display brightness and other run-time settings */
-            LOG_DBG("settings_chan event (not yet handled)");
+            struct settings_event evt;
+            if (zbus_chan_read(&settings_chan, &evt, K_MSEC(10)) == 0) {
+                handle_settings(&evt);
+            }
 
         } else if (chan == &feedback_chan) {
             struct feedback_event evt;
