@@ -24,16 +24,28 @@
  *                – TQ Vect       : checkable button mirroring
  *                                  ui_tx_subj_torquevect_setting.
  *
- *              Both buttons publish UI_INPUT_SETTING_SELECTED, the same event
+ *              The two buttons are built by one function and share one observer
+ *              callback — they differ only in caption and in which setting they
+ *              stand for. Both publish UI_INPUT_SETTING_SELECTED, the same event
  *              the settings screen sends. The settings service owns the value,
  *              persists it and the CAN module transmits it — the two screens
  *              are two ways to the same store, so they cannot disagree.
+ *
+ *              ### On/off out of a graded setting
+ *              Neither setting is a boolean in the schema: power limit runs 0…7
+ *              and torque vectoring 0…3. This screen is the one the driver uses
+ *              at speed, so it offers only the two states that matter there —
+ *              any non-zero value reads as ON, switching on writes 1 and
+ *              switching off writes 0. A level set on DV SETTINGS therefore
+ *              survives until the button is used, and is then flattened. Pick
+ *              the level on DV SETTINGS, use the button while driving.
  *
  *              ### Buttons follow the value, not the press
  *              Each button observes its TX subject, and the click handler only
  *              writes to that subject. The visual state therefore reflects the
  *              stored value rather than the last press — the same pattern the
- *              other screens use for their confirmed-value labels.
+ *              other screens use for their confirmed-value labels. A press that
+ *              cannot be published snaps the button back, see publish_setting().
  *
  *              ### What is not wired up
  *              The torque-gain sliders keep their positions across visits, in
@@ -146,9 +158,6 @@ static lv_obj_t   *s_bar_middle;
 /** @brief TQ Vect button — toggles torque vectoring. */
 static lv_obj_t   *s_btn_right;
 
-/** @brief "ON"/"OFF" text inside the TQ Vect button. */
-static lv_obj_t   *s_lbl_btn_right_value;
-
 /** @brief PWR Limit button — toggles the power limit. */
 static lv_obj_t   *s_btn_left;
 
@@ -181,11 +190,12 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 static void build_sliders(lv_obj_t *scr);
 static void build_buttons(lv_obj_t *scr);
+static lv_obj_t *build_toggle_button(lv_obj_t *scr, const char *title, int32_t dx,
+                                     lv_event_cb_t cb, lv_subject_t *subject);
 static void publish_setting(enum setting_id id, lv_subject_t *subject, bool on);
 static void btn_left_event_cb(lv_event_t *e);
 static void btn_right_event_cb(lv_event_t *e);
-static void tq_vect_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
-static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
+static void toggle_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
@@ -211,46 +221,28 @@ static void sldr_right_value_changed_cb(lv_event_t *e)
 }
 
 /**
- * @brief Apply the stored torque-vectoring setting to the TQ Vect button.
+ * @brief Apply a stored on/off setting to its toggle button.
  *
- * Sets the button's checked state and its ON/OFF caption, recoloring the
- * caption because the checked style paints the button green and dark text
- * would disappear on it.
+ * Shared by both buttons: sets the checked state and the ON/OFF caption, and
+ * recolors the caption because the checked style paints the button green and
+ * dark text would disappear on it.
  *
- * @param observer  Observer whose target object is the button.
- * @param subject   ui_tx_subj_torquevect_setting.
- */
-static void tq_vect_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
-{
-    lv_obj_t *btn = lv_observer_get_target_obj(observer);
-    bool on = lv_subject_get_int(subject) != 0;
-
-    if (on) {
-        lv_obj_add_state(btn, LV_STATE_CHECKED);
-    } else {
-        lv_obj_clear_state(btn, LV_STATE_CHECKED);
-    }
-    lv_label_set_text(s_lbl_btn_right_value, on ? "ON" : "OFF");
-    lv_obj_set_style_text_color(s_lbl_btn_right_value,
-                                on ? UI_C_WHITE : UI_C_DARK, 0);
-}
-
-/**
- * @brief Apply the stored power-limit setting to the PWR Limit button.
- *
- * State only — the button has no value caption.
+ * The caption is found through the button's user data — the observer is handed
+ * the button and nothing else, and storing the label there keeps one callback
+ * for both buttons. See build_toggle_button().
  *
  * @param observer  Observer whose target object is the button.
- * @param subject   ui_tx_subj_pwrlimit_setting.
+ * @param subject   The button's TX subject.
  */
-static void pwr_limit_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
+static void toggle_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *btn = lv_observer_get_target_obj(observer);
-    if (lv_subject_get_int(subject)) {
-        lv_obj_add_state(btn, LV_STATE_CHECKED);
-    } else {
-        lv_obj_clear_state(btn, LV_STATE_CHECKED);
-    }
+    lv_obj_t *lbl = lv_obj_get_user_data(btn);
+    bool      on  = lv_subject_get_int(subject) != 0;
+
+    lv_obj_set_state(btn, LV_STATE_CHECKED, on);
+    lv_label_set_text(lbl, on ? "ON" : "OFF");
+    lv_obj_set_style_text_color(lbl, on ? UI_C_WHITE : UI_C_DARK, 0);
 }
 
 /**
@@ -325,8 +317,8 @@ static void build_sliders(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "V");
     lv_obj_add_style(lbl_bar_middle_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_middle_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, UI_QUANTITY_LEVEL_BELOW,
+                           UI_VOLTAGE_ACCU_HV_WARN_LOW, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
     lv_obj_set_size(lbl_bar_middle_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, "%d");
     lv_obj_align_to(lbl_bar_middle_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
@@ -428,56 +420,71 @@ static void build_labels(lv_obj_t *scr)
 }
 
 /**
+ * @brief Build one on/off button and subscribe it to its setting.
+ *
+ * Both buttons on this screen are the same thing with a different caption and
+ * a different setting behind them: a checkable button showing its title in the
+ * top left and ON/OFF underneath, green while on.
+ *
+ * No focus style is added. Each button is alone in its own group and that group
+ * is in edit mode, so it carries LV_STATE_FOCUS_KEY permanently — a focus style
+ * would outrank the checked style and the button would sit there gold whatever
+ * the setting says. The focus is not information here; which pad was pressed
+ * is never in doubt.
+ *
+ * @param scr      Screen object to build into.
+ * @param title    Caption in the top left of the button.
+ * @param dx       Horizontal offset from the screen centre.
+ * @param cb       LV_EVENT_VALUE_CHANGED handler.
+ * @param subject  TX subject the button mirrors.
+ * @return         The button object.
+ */
+static lv_obj_t *build_toggle_button(lv_obj_t *scr, const char *title, int32_t dx,
+                                     lv_event_cb_t cb, lv_subject_t *subject)
+{
+    lv_obj_t *btn = lv_button_create(scr);
+    lv_obj_remove_style_all(btn);
+    lv_obj_add_style(btn, &ui_style_btn_default, 0);
+    lv_obj_add_style(btn, &ui_style_btn_checked, LV_STATE_CHECKED);
+    lv_obj_set_size(btn, BTN_WIDTH, BTN_HEIGHT);
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, dx, -BTN_BOTTOM_MARGIN);
+
+    lv_obj_t *lbl_title = lv_label_create(btn);
+    lv_obj_add_style(lbl_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_title, title);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *lbl_value = lv_label_create(btn);
+    lv_obj_add_style(lbl_value, &ui_style_label_title, 0);
+    lv_label_set_text(lbl_value, "OFF");
+    lv_obj_align(lbl_value, LV_ALIGN_BOTTOM_LEFT, 0, 8);
+
+    /* The shared observer is handed the button only; this is how it finds the caption. */
+    lv_obj_set_user_data(btn, lbl_value);
+
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* Fires once on subscription, so the caption starts out correct. */
+    lv_subject_add_observer_obj(subject, toggle_observer_cb, btn, NULL);
+
+    return btn;
+}
+
+/**
  * @brief Build the PWR Limit and TQ Vect buttons and subscribe them to their subjects.
  *
  * @param scr  Screen object to build into.
  */
 static void build_buttons(lv_obj_t *scr)
 {
-    /* ── Power Limit button ─────────────────────────────────────────────── */
+    s_btn_left  = build_toggle_button(scr, "PWR Limit", -BTN_HALF_SPACING,
+                                      btn_left_event_cb,
+                                      &ui_tx_subj_pwrlimit_setting);
 
-    s_btn_left = lv_button_create(scr);
-    lv_obj_remove_style_all(s_btn_left);
-    lv_obj_add_style(s_btn_left, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_left, &ui_style_btn_checked, LV_STATE_PRESSED);
-    lv_obj_add_style(s_btn_left, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    lv_obj_set_size(s_btn_left, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_align(s_btn_left, LV_ALIGN_BOTTOM_MID, -BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
-
-    lv_obj_t *lbl_esc = lv_label_create(s_btn_left);
-    lv_obj_add_style(lbl_esc, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_esc, "PWR Limit");
-    lv_obj_align(lbl_esc, LV_ALIGN_CENTER, 0, 0);
-
-    lv_obj_add_flag(s_btn_left, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_add_event_cb(s_btn_left, btn_left_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_subject_add_observer_obj(&ui_tx_subj_pwrlimit_setting, pwr_limit_observer_cb, s_btn_left, NULL);
-    
-
-    /* ── Torque Vectoring button ────────────────────────────────────────── */
-
-    s_btn_right = lv_button_create(scr);
-    lv_obj_remove_style_all(s_btn_right);
-    lv_obj_add_style(s_btn_right, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_right, &ui_style_btn_checked, LV_STATE_CHECKED);
-    lv_obj_set_size(s_btn_right, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_add_flag(s_btn_right, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align(s_btn_right, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
-
-    lv_obj_t *lbl_btn_right_title = lv_label_create(s_btn_right);
-    lv_obj_add_style(lbl_btn_right_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_btn_right_title, "TQ Vect");
-    lv_obj_align(lbl_btn_right_title, LV_ALIGN_TOP_LEFT, 0, 0);
-
-    s_lbl_btn_right_value = lv_label_create(s_btn_right);
-    lv_obj_add_style(s_lbl_btn_right_value, &ui_style_label_title, 0);
-    lv_label_set_text(s_lbl_btn_right_value, "OFF");
-    lv_obj_align(s_lbl_btn_right_value, LV_ALIGN_BOTTOM_LEFT, 0, 8);
-
-    lv_obj_add_event_cb(s_btn_right, btn_right_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_subject_add_observer_obj(&ui_tx_subj_torquevect_setting, tq_vect_observer_cb, s_btn_right, NULL);
-
-    
+    s_btn_right = build_toggle_button(scr, "TQ Vect", BTN_HALF_SPACING,
+                                      btn_right_event_cb,
+                                      &ui_tx_subj_torquevect_setting);
 
     // lv_obj_t * btn1 = lv_button_create(lv_screen_active());
     // lv_obj_remove_style_all(btn1);
@@ -505,6 +512,11 @@ static void build_buttons(lv_obj_t *scr)
  * The subject is written only once the publish succeeded, so a dropped event
  * cannot leave a button claiming a state the settings service never received.
  *
+ * LVGL has already flipped the button's checked state by the time this runs —
+ * that is what produced the event. On a failed publish the subject therefore
+ * still holds the old value while the button shows the new one, so the subject
+ * is re-notified and the observer snaps the button back.
+ *
  * @param id       Setting to change.
  * @param subject  TX subject the button observes.
  * @param on       New state.
@@ -520,6 +532,7 @@ static void publish_setting(enum setting_id id, lv_subject_t *subject, bool on)
     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
     if (ret != 0) {
         LOG_WRN("UI_INPUT_SETTING_SELECTED (%d) publish failed: %d", (int)id, ret);
+        lv_subject_notify(subject);
         return;
     }
 
@@ -528,8 +541,8 @@ static void publish_setting(enum setting_id id, lv_subject_t *subject, bool on)
 }
 
 /**
- * @brief PWR Limit click handler — store the new power-limit state.
- * @param e  LV_EVENT_CLICKED from the button.
+ * @brief PWR Limit toggle handler — store the new power-limit state.
+ * @param e  LV_EVENT_VALUE_CHANGED from the checkable button.
  */
 static void btn_left_event_cb(lv_event_t *e)
 {
@@ -539,7 +552,7 @@ static void btn_left_event_cb(lv_event_t *e)
 }
 
 /**
- * @brief TQ Vect click handler — store the new torque-vectoring state.
+ * @brief TQ Vect toggle handler — store the new torque-vectoring state.
  * @param e  LV_EVENT_VALUE_CHANGED from the checkable button.
  */
 static void btn_right_event_cb(lv_event_t *e)

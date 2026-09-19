@@ -261,8 +261,13 @@ The controls have a fixed assignment here:
 |---------|----------|
 | Left rotary encoder | Torque vectoring front |
 | Right rotary encoder | Torque vectoring rear |
-| Left button | Power limit |
+| Left button | Power limit on/off |
 | Right button | Torque vectoring on/off |
+
+Both buttons work the same way: they show their name and ON or OFF underneath
+and turn green while on. Both only switch between on and off — if a level was
+chosen for one of them on DV SETTINGS, pressing the button here replaces it
+with plain on or off.
 
 In addition to the two torque vectoring values (TQG F, TQG R), the screen shows
 the HV battery state of charge and the temperatures of the HV battery, inverter

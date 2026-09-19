@@ -20,7 +20,8 @@
  *              │ ▓  HV SoC                  488 V   ▓ │
  *              │ ▓  ▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░   ▓ │
  *              │  ┌───────────┐      ┌───────────┐    │
- *              │  │ PWR Limit │      │  TQ Vect  │    │
+ *              │  │ PWR Limit │      │ TQ Vect   │    │
+ *              │  │ OFF       │      │ ON        │    │ ← green while ON
  *              │  └───────────┘      └───────────┘    │
  *              └──────────────────────────────────────┘
  *              ```
@@ -31,17 +32,24 @@
  *              |---------------|---------------------------------------------|
  *              | Left encoder  | The left torque-gain slider (TQG F)         |
  *              | Right encoder | The right torque-gain slider (TQG R)        |
- *              | Left buttons  | The PWR Limit button                        |
- *              | Right buttons | The TQ Vect button                          |
+ *              | Left buttons  | PWR Limit on/off                            |
+ *              | Right buttons | TQ Vect on/off                              |
  *
  *              This screen is not in the carousel. It is loaded only when the
  *              MABX reports RTD_State = 1, and the left encoder is claimed for
  *              TQG F, so there is no input left to navigate away with — the
  *              driver stays here until the car is powered down.
  *
- *              Both buttons are checkable and mirror a generated TX subject
- *              through an observer, so their visual state follows the value
- *              rather than the press.
+ *              Both buttons are the same widget with a different caption: a
+ *              checkable button showing its title and ON/OFF, green while on,
+ *              mirroring a generated TX subject through an observer — so the
+ *              visual state follows the stored value rather than the press.
+ *
+ *              Neither setting is a boolean in the schema (power limit 0…7,
+ *              torque vectoring 0…3). Here they are reduced to on/off: any
+ *              non-zero value shows ON, switching on stores 1, switching off
+ *              stores 0. A level chosen on DV SETTINGS is flattened the first
+ *              time the button is pressed.
  *
  *              @note The torque-gain sliders are display-only so far: their
  *              positions are remembered across visits but are not written to
