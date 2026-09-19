@@ -361,7 +361,6 @@ INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_ALIAS(qdec_input_left)), left_encoder_cb,
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static lv_indev_t *get_encoder_indev(uint8_t index);
 static void        set_encoder_group(enum screen_id id);
 static void        ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim);
 static void        carousel_navigate(int32_t delta);
@@ -373,37 +372,6 @@ static void        ui_thread_fn(void *p1, void *p2, void *p3);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
-
-/**
- * @brief Return the Nth LVGL encoder indev (0-indexed).
- *
- * Walks the registered input devices and counts the encoder-type ones, so the
- * index refers to registration order rather than to a devicetree node.
- *
- * @note Superseded and unused. ui_module_init() resolves the input devices
- *       with lvgl_input_get_indev() from their devicetree aliases instead,
- *       which does not depend on Zephyr's init order. Kept as a fallback for
- *       a board whose aliases are missing.
- *
- * @param index  0-based index among encoder-type indevs.
- * @return Pointer to the indev, or NULL if not found.
- */
-static lv_indev_t *get_encoder_indev(uint8_t index)
-{
-    lv_indev_t *indev = lv_indev_get_next(NULL);
-    uint8_t     n     = 0U;
-
-    while (indev != NULL) {
-        if (lv_indev_get_type(indev) == LV_INDEV_TYPE_ENCODER) {
-            if (n == index) {
-                return indev;
-            }
-            n++;
-        }
-        indev = lv_indev_get_next(indev);
-    }
-    return NULL;
-}
 
 /**
  * @brief Point every routable input device at the target screen's groups.
@@ -614,17 +582,18 @@ static void carousel_navigate(int32_t delta)
         return;  /* Already at boundary — nothing to do */
     }
 
-    bool going_right = (new_pos > (int)s_carousel_pos);
-    s_carousel_pos   = (uint8_t)new_pos;
-
     /*
-     * Phone-launcher animation convention:
+     * Phone-launcher animation convention, should the slide ever be enabled:
      *   Going right → current screen exits left  → LV_SCR_LOAD_ANIM_MOVE_LEFT
      *   Going left  → current screen exits right → LV_SCR_LOAD_ANIM_MOVE_RIGHT
+     *
+     * The direction has to be taken before s_carousel_pos moves:
+     *   bool going_right = (new_pos > (int)s_carousel_pos);
+     *   anim = going_right ? LV_SCR_LOAD_ANIM_MOVE_LEFT
+     *                      : LV_SCR_LOAD_ANIM_MOVE_RIGHT;
      */
-    // lv_scr_load_anim_t anim = going_right
-    //     ? LV_SCR_LOAD_ANIM_MOVE_LEFT
-    //     : LV_SCR_LOAD_ANIM_MOVE_RIGHT;
+    s_carousel_pos = (uint8_t)new_pos;
+
     lv_scr_load_anim_t anim = LV_SCREEN_LOAD_ANIM_NONE;
 
     ui_load_screen(k_carousel[s_carousel_pos], anim);

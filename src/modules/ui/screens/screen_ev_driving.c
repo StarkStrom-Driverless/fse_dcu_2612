@@ -152,9 +152,6 @@ static lv_obj_t   *s_lbl_btn_right_value;
 /** @brief PWR Limit button — toggles the power limit. */
 static lv_obj_t   *s_btn_left;
 
-/** @brief Reserved: value text for the PWR Limit button. Never created. */
-static lv_obj_t   *s_lbl_btn_left_value;
-
 /** @brief Input group for the right encoder — holds the TQG R slider. */
 static lv_group_t *s_right_encoder_group;
 

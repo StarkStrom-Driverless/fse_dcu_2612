@@ -16,10 +16,6 @@
  *              matching the turning gear on the boot screen, rendered from a
  *              sin^4 lookup table that needs no floating-point maths.
  *
- *              chase_step() implements a third effect — a red cursor chasing
- *              back and forth with a fading tail. Nothing calls it; swapping
- *              the call in lighting_thread_fn() puts it on the strip.
- *
  *              ### The three zones
  *
  *              | Zone | LEDs | Shows |
@@ -81,7 +77,6 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 
-#include <string.h>
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -112,20 +107,6 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 
 /** @brief Scheduling priority for the lighting thread. */
 #define LIGHTING_THREAD_PRIORITY    7
-
-/* ── Chasing red ─────────────────────────────────────────────────────────── */
-
-/** @brief Time per chase step in ms. One LED of travel per step. */
-#define CHASE_STEP_MS               50U
-
-/**
- * @brief Chase tail brightness table.
- *
- * Index 0 = cursor (brightest), index 1..N = trailing LEDs in the direction
- * the cursor came from, each dimmer than the previous.  The array length
- * defines the tail length; no separate constant to keep in sync.
- */
-static const uint8_t k_chase_trail[] = {255, 100, 35, 10};
 
 /* ── Zone rendering (EV driving screen) ──────────────────────────────────── */
 
@@ -252,48 +233,6 @@ static K_THREAD_STACK_DEFINE(s_lighting_stack, LIGHTING_THREAD_STACK_SIZE);
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
 /**
- * @brief Render one chasing-red frame and advance the cursor.
- *
- * Paints the cursor LED at full brightness and the trailing LEDs with
- * decreasing brightness in the direction the cursor came from, then
- * advances the cursor and flips direction at strip boundaries.
- *
- * Both parameters are in/out: the caller owns the animation state and this
- * function moves it one step on.
- *
- * @note Not called at present — lighting_thread_fn() runs gear_step(). Kept
- *       as an alternative effect; see the file header.
- *
- * @param cursor  Current cursor position (0 … LIGHTING_NUM_PIXELS-1).
- * @param dir     Current scan direction (+1 = right, -1 = left).
- */
-static void chase_step(int32_t *cursor, int32_t *dir)
-{
-    memset(s_pixels, 0, sizeof(s_pixels));
-
-    for (int32_t k = 0; k < (int32_t)ARRAY_SIZE(k_chase_trail); k++) {
-        int32_t pos = *cursor - (*dir * k);
-        if (pos >= 0 && pos < (int32_t)LIGHTING_NUM_PIXELS) {
-            s_pixels[pos].r = k_chase_trail[k];
-        }
-    }
-
-    int ret = led_strip_update_rgb(s_strip, s_pixels, LIGHTING_NUM_PIXELS);
-    if (ret != 0) {
-        LOG_ERR("led_strip_update_rgb failed: %d", ret);
-    }
-
-    *cursor += *dir;
-    if (*cursor <= 0) {
-        *cursor = 0;
-        *dir    = +1;
-    } else if (*cursor >= (int32_t)LIGHTING_NUM_PIXELS - 1) {
-        *cursor = (int32_t)LIGHTING_NUM_PIXELS - 1;
-        *dir    = -1;
-    }
-}
-
-/**
  * @brief Render one gear animation frame and advance the phase.
  *
  * Maps each LED index to a LUT entry via:
@@ -304,7 +243,7 @@ static void chase_step(int32_t *cursor, int32_t *dir)
  * Incrementing phase by 1 each step therefore rotates the whole gear by
  * 1/LUT_SIZE of a tooth pitch, giving smooth motion in integer arithmetic.
  *
- * Unlike chase_step() this writes every LED each frame, so no clearing is
+ * This writes every LED each frame, so no clearing is
  * needed beforehand.
  *
  * @param phase  In/out. Current animation phase (0 … GEAR_LUT_SIZE-1);
