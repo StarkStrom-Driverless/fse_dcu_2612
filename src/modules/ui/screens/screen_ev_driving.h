@@ -35,7 +35,7 @@
  *              | Right buttons | The TQ Vect button                          |
  *
  *              This screen is not in the carousel. It is loaded only when the
- *              state machine latches RTD, and the left encoder is claimed for
+ *              MABX reports RTD_State = 1, and the left encoder is claimed for
  *              TQG F, so there is no input left to navigate away with — the
  *              driver stays here until the car is powered down.
  *

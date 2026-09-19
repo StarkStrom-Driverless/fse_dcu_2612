@@ -100,6 +100,15 @@ void ui_module_init(void);
 
 /* ── Carousel Introspection ──────────────────────────────────────────────────────────────────── */
 
+/**
+ * @brief Position value for "the active screen is not a carousel stop".
+ *
+ * Returned by ui_carousel_get_position() on EV_DRIVING and DV_DRIVING, which
+ * are reached through ui_nav_chan rather than by paging. The page indicator
+ * then highlights no segment instead of leaving the previous one lit.
+ */
+#define UI_CAROUSEL_POS_NONE  0xFFU
+
 /*
  * The carousel is private to ui.c — these two only report on it, so a screen or
  * widget can show the driver where they are without being able to move them.
@@ -120,12 +129,14 @@ uint8_t ui_carousel_get_length(void);
 /**
  * @brief Index of the current screen within the carousel.
  *
- * @note Meaningful only while a carousel screen is loaded. Navigating to a
- *       screen outside the carousel leaves the value on the last carousel
- *       screen visited — every screen with a factory is currently in the
- *       carousel, so that case does not arise today.
+ * The carousel position itself is remembered while the driver is on a screen
+ * outside the carousel — that is where paging resumes once they return — but
+ * it is not reported as the current position, because it is not where they
+ * are.
  *
- * @return Zero-based index, always less than ui_carousel_get_length().
+ * @return Zero-based index below ui_carousel_get_length(), or
+ *         @ref UI_CAROUSEL_POS_NONE if the active screen is not in the
+ *         carousel.
  */
 uint8_t ui_carousel_get_position(void);
 

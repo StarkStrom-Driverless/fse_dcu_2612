@@ -22,8 +22,12 @@
  *                                  ui_tx_subj_pwrlimit_setting.
  *
  *                – TQ Vect       : checkable button mirroring
- *                                  ui_tx_subj_torquevect_setting; also
- *                                  publishes UI_INPUT_TORQUE_VECT_ON/_OFF.
+ *                                  ui_tx_subj_torquevect_setting.
+ *
+ *              Both buttons publish UI_INPUT_SETTING_SELECTED, the same event
+ *              the settings screen sends. The settings service owns the value,
+ *              persists it and the CAN module transmits it — the two screens
+ *              are two ways to the same store, so they cannot disagree.
  *
  *              ### Buttons follow the value, not the press
  *              Each button observes its TX subject, and the click handler only
@@ -74,6 +78,7 @@
 #include "modules/ui/widgets/ui_quantity.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "services/settings/settings.h"
 #include "generated/ui_subjects_gen.h"
 #include "generated/ui_tx_subjects_gen.h"
 
@@ -179,6 +184,7 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 static void build_sliders(lv_obj_t *scr);
 static void build_buttons(lv_obj_t *scr);
+static void publish_setting(enum setting_id id, lv_subject_t *subject, bool on);
 static void btn_left_event_cb(lv_event_t *e);
 static void btn_right_event_cb(lv_event_t *e);
 static void tq_vect_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
@@ -497,54 +503,53 @@ static void build_buttons(lv_obj_t *scr)
 }
 
 /**
+ * @brief Hand a setting change to the App Layer and mirror it locally.
+ *
+ * The subject is written only once the publish succeeded, so a dropped event
+ * cannot leave a button claiming a state the settings service never received.
+ *
+ * @param id       Setting to change.
+ * @param subject  TX subject the button observes.
+ * @param on       New state.
+ */
+static void publish_setting(enum setting_id id, lv_subject_t *subject, bool on)
+{
+    struct ui_input_event evt = {
+        .type             = UI_INPUT_SETTING_SELECTED,
+        .data.setting.id  = id,
+        .data.setting.val = on ? 1U : 0U,
+    };
+
+    int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
+    if (ret != 0) {
+        LOG_WRN("UI_INPUT_SETTING_SELECTED (%d) publish failed: %d", (int)id, ret);
+        return;
+    }
+
+    lv_subject_set_int(subject, on ? 1 : 0);
+    LOG_DBG("Setting %d → %s", (int)id, on ? "ON" : "OFF");
+}
+
+/**
  * @brief PWR Limit click handler — store the new power-limit state.
- *
- * Writes the button's checked state to ui_tx_subj_pwrlimit_setting; the
- * observer then applies it back to the button.
- *
- * @note Local only. Unlike the TQ Vect button this publishes no ui_input
- *       event, so the App Layer never learns about it and the value reaches
- *       neither the settings service nor the CAN bus.
- *
  * @param e  LV_EVENT_CLICKED from the button.
  */
 static void btn_left_event_cb(lv_event_t *e)
 {
     bool on = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED);
-    lv_subject_set_int(&ui_tx_subj_pwrlimit_setting, on ? 1 : 0);
 
+    publish_setting(SETTING_PWRLIMIT_SETTING, &ui_tx_subj_pwrlimit_setting, on);
 }
 
 /**
- * @brief TQ Vect click handler — publish and store the new torque-vectoring state.
- *
- * Publishes UI_INPUT_TORQUE_VECT_ON or _OFF, then writes the value to
- * ui_tx_subj_torquevect_setting so the button's appearance follows.
- *
- * The subject is only updated once the publish succeeded, so a dropped event
- * cannot leave the button claiming a state the rest of the system does not
- * share.
- *
- * @note The App Layer currently ignores both events, so the setting stays
- *       inside the UI.
- *
+ * @brief TQ Vect click handler — store the new torque-vectoring state.
  * @param e  LV_EVENT_VALUE_CHANGED from the checkable button.
  */
 static void btn_right_event_cb(lv_event_t *e)
 {
     bool on = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED);
 
-    struct ui_input_event evt = {
-        .type = on ? UI_INPUT_TORQUE_VECT_ON : UI_INPUT_TORQUE_VECT_OFF,
-    };
-
-    int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-    if (ret != 0) {
-        LOG_WRN("UI_INPUT_TORQUE_VECT publish failed: %d", ret);
-    } else {
-        lv_subject_set_int(&ui_tx_subj_torquevect_setting, on ? 1 : 0);
-        LOG_DBG("Torque Vectoring toggled: %s", on ? "ON" : "OFF");
-    }
+    publish_setting(SETTING_TORQUEVECT_SETTING, &ui_tx_subj_torquevect_setting, on);
 }
 
 
@@ -561,6 +566,17 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
         lv_subject_init_int(&s_sldr_right_val, 0);
         s_subjects_init = true;
     }
+
+    /*
+     * Seed the two button subjects from the settings service, which owns the
+     * values: the generated TX subjects start at 0 and know nothing about what
+     * is stored, and the same settings can have been changed meanwhile on the
+     * settings screen.
+     */
+    lv_subject_set_int(&ui_tx_subj_pwrlimit_setting,
+                       (int32_t)settings_get(SETTING_PWRLIMIT_SETTING));
+    lv_subject_set_int(&ui_tx_subj_torquevect_setting,
+                       (int32_t)settings_get(SETTING_TORQUEVECT_SETTING));
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_remove_style_all(scr);

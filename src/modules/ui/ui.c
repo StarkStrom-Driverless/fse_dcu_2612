@@ -146,10 +146,10 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * — the ends are hard stops, so the driver can reach an edge screen blindly.
  *
  * The list is a subset of enum screen_id: a screen may exist and be reachable
- * only through UI_CMD_SET_SCREEN. Every entry must have a factory below.
+ * only through ui_nav_chan. Every entry must have a factory below.
  *
  * SCREEN_EV_DRIVING is deliberately absent: it is entered only when the state
- * machine latches RTD, and while it is active the left encoder drives the TQG
+ * machine sees the vehicle report RTD_State = 1, and while it is active the left encoder drives the TQG
  * Front slider instead of this carousel (see set_encoder_group() and the
  * s_left_encoder_claimed check in ui_thread_fn()). That is the carousel lock.
  */
@@ -302,6 +302,10 @@ static lv_subject_t s_device_status[UI_DEVICE_SLOT_COUNT];
 
 /* ── Zbus Subscriber ─────────────────────────────────────────────────────────────────────────── */
 
+/** @brief Subscriber for ui_nav_chan (App Layer → UI module): screen switches. */
+ZBUS_SUBSCRIBER_DEFINE(ui_nav_sub, 4);
+ZBUS_CHAN_ADD_OBS(ui_nav_chan, ui_nav_sub, 0);
+
 /** @brief Subscriber for ui_cmd_chan (App Layer → UI module). */
 ZBUS_SUBSCRIBER_DEFINE(ui_cmd_sub, 4);
 ZBUS_CHAN_ADD_OBS(ui_cmd_chan, ui_cmd_sub, 0);
@@ -361,6 +365,7 @@ static lv_indev_t *get_encoder_indev(uint8_t index);
 static void        set_encoder_group(enum screen_id id);
 static void        ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim);
 static void        carousel_navigate(int32_t delta);
+static void        handle_ui_nav(const struct ui_nav_cmd *cmd);
 static void        handle_ui_cmd(const struct ui_cmd *cmd);
 static void        handle_vehicle_status(const struct vehicle_status *status);
 static void        handle_can_status(const struct can_status_event *evt);
@@ -498,8 +503,8 @@ static void set_encoder_group(enum screen_id id)
  * @brief Build if necessary, then load a screen, and release the previous one.
  *
  * The single entry point for every screen change — both carousel navigation
- * and UI_CMD_SET_SCREEN go through here, so the create/load/delete sequence
- * exists in exactly one place.
+ * and ui_nav_chan go through here, so the create/load/delete sequence exists
+ * in exactly one place.
  *
  * Order matters: the previous screen is deleted only *after* the new one has
  * been loaded, and via lv_obj_delete_async() so the deletion happens once LVGL
@@ -528,8 +533,15 @@ static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
     enum screen_id prev = s_active_screen;
 
     set_encoder_group(id);
-    lv_screen_load_anim(s_screens[id], anim, UI_ANIM_DURATION_MS, 0, false);
+
+    /*
+     * Published before the load, not after: with UI_ANIM_DURATION_MS at 0,
+     * lv_screen_load_anim() sends LV_EVENT_SCREEN_LOADED from inside this
+     * call, and the header's page indicator asks ui_carousel_get_position()
+     * while handling it.
+     */
     s_active_screen = id;
+    lv_screen_load_anim(s_screens[id], anim, UI_ANIM_DURATION_MS, 0, false);
 
     if (prev != SCREEN_NONE && prev != id && s_screens[prev] != NULL) {
         lv_obj_delete_async(s_screens[prev]);
@@ -567,7 +579,7 @@ static void ui_load_screen(enum screen_id id, lv_scr_load_anim_t anim)
  * phone-launcher convention and can be re-enabled there.
  *
  * Does nothing when the active screen is not itself a carousel stop — a
- * screen reached only through UI_CMD_SET_SCREEN (EV_DRIVING, DV_DRIVING) is a
+ * screen reached only through ui_nav_chan (EV_DRIVING, DV_DRIVING) is a
  * dead end, so a stray left-encoder turn there must not move the carousel that
  * sits behind it.
  *
@@ -674,41 +686,56 @@ static void update_device_status(const struct can_data_snapshot *snap)
 }
 
 /**
- * @brief Process a single ui_cmd received from the App Layer.
+ * @brief Switch to the screen the App Layer asked for.
  *
- * UI_CMD_SET_SCREEN  — switches to the requested screen. If the target is in
- *                      the carousel, the carousel position is moved with it,
- *                      so the next encoder step continues from where the
- *                      driver now is rather than from where they last turned.
+ * If the target is in the carousel, the carousel position moves with it, so
+ * the next encoder step continues from where the driver now is rather than
+ * from where they last turned. A target outside the carousel leaves the
+ * position alone — the driver returns to the screen they came from.
+ *
+ * @param cmd  Command read from ui_nav_chan.
+ */
+static void handle_ui_nav(const struct ui_nav_cmd *cmd)
+{
+    enum screen_id target = cmd->screen;
+
+    for (uint8_t i = 0U; i < (uint8_t)CAROUSEL_LEN; i++) {
+        if (k_carousel[i] == target) {
+            s_carousel_pos = i;
+            break;
+        }
+    }
+
+    ui_load_screen(target, LV_SCR_LOAD_ANIM_NONE);
+}
+
+/**
+ * @brief Process a single ui_cmd received from the App Layer.
  *
  * UI_CMD_UPDATE_DATA — pushes a CAN snapshot into the generated LVGL subjects
  *                      and re-derives the header status icons. Bound widgets
  *                      update themselves; nothing here knows which screen is
  *                      on the display.
  *
+ * UI_CMD_RTD_TX_STATE — whether RTD_Button = 1 is on the bus. Only the PRE_RTD
+ *                      screen shows it; on any other screen the command is
+ *                      dropped, because that screen builds its button in the
+ *                      released state anyway.
+ *
  * @param cmd  Command read from ui_cmd_chan.
  */
 static void handle_ui_cmd(const struct ui_cmd *cmd)
 {
     switch (cmd->type) {
-    case UI_CMD_SET_SCREEN: {
-        enum screen_id target = cmd->data.screen;
-        lv_scr_load_anim_t anim = LV_SCR_LOAD_ANIM_NONE;
-
-        for (uint8_t i = 0U; i < (uint8_t)CAROUSEL_LEN; i++) {
-            if (k_carousel[i] == target) {
-                s_carousel_pos = i;
-                break;
-            }
-        }
-
-        ui_load_screen(target, anim);
-        break;
-    }
-
     case UI_CMD_UPDATE_DATA:
         ui_subjects_gen_update(&cmd->data.snapshot);
         update_device_status(&cmd->data.snapshot);
+        break;
+
+    case UI_CMD_RTD_TX_STATE:
+        if (s_active_screen == SCREEN_PRE_RTD) {
+            screen_checklist_set_rtd_tx(cmd->data.rtd_button);
+        }
         break;
 
     default:
@@ -827,8 +854,16 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
          * LVGL moves the TQG Front slider through s_left_enc_indev's group.
          */
 
-        /* ── Zbus commands from App Layer (non-blocking) ────────────────── */
+        /* ── Screen switches from the App Layer (non-blocking) ──────────── */
         const struct zbus_channel *chan;
+        while (zbus_sub_wait(&ui_nav_sub, &chan, K_NO_WAIT) == 0) {
+            struct ui_nav_cmd nav;
+            if (zbus_chan_read(chan, &nav, K_NO_WAIT) == 0) {
+                handle_ui_nav(&nav);
+            }
+        }
+
+        /* ── Zbus commands from App Layer (non-blocking) ────────────────── */
         while (zbus_sub_wait(&ui_cmd_sub, &chan, K_NO_WAIT) == 0) {
             struct ui_cmd cmd;
             if (zbus_chan_read(chan, &cmd, K_NO_WAIT) == 0) {
@@ -866,7 +901,13 @@ uint8_t ui_carousel_get_length(void)
 
 uint8_t ui_carousel_get_position(void)
 {
-    return s_carousel_pos;
+    for (uint8_t i = 0U; i < (uint8_t)CAROUSEL_LEN; i++) {
+        if (k_carousel[i] == s_active_screen) {
+            return s_carousel_pos;
+        }
+    }
+
+    return UI_CAROUSEL_POS_NONE;
 }
 
 void ui_module_init(void)

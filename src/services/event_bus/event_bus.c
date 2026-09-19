@@ -103,12 +103,20 @@ ZBUS_CHAN_DEFINE(vehicle_status_chan,
 
 /* ── Downward Channel Definitions: App → Module ──────────────────────────────────────────────── */
 
+ZBUS_CHAN_DEFINE(ui_nav_chan,
+    struct ui_nav_cmd,
+    NULL,
+    NULL,
+    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_MSG_INIT(.screen = SCREEN_NONE)
+);
+
 ZBUS_CHAN_DEFINE(ui_cmd_chan,
     struct ui_cmd,
     NULL,
     NULL,
     ZBUS_OBSERVERS_EMPTY,
-    ZBUS_MSG_INIT(.type = UI_CMD_SET_SCREEN, .data.screen = SCREEN_NONE)
+    ZBUS_MSG_INIT(.type = UI_CMD_UPDATE_DATA)
 );
 
 ZBUS_CHAN_DEFINE(lighting_cmd_chan,

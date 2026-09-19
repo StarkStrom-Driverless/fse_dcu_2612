@@ -13,7 +13,7 @@ encoders are available for input.
 |---------|------|----------------|
 | Button | Left | Context-dependent, varies by screen |
 | Button | Right | Confirm selection |
-| Button | Ready to Drive (RTD) | Request RTD |
+| Button | Ready to Drive (RTD) | Request RTD — hold, PRE RTD screen only |
 | Button | Timestamp (TS) | Place a time marker in the log |
 | Rotary encoder | Left | Page through screens |
 | Rotary encoder | Right | Select values within a screen |
@@ -23,7 +23,7 @@ for use while driving — see @ref manual-user-ev.
 
 ### Output elements
 
-- **3.5\" colour display** — main indicator
+- **3.5\" color display** — main indicator
 - **Piezo buzzer** — audible feedback
 - **LED strip** — in the field of view above the display, divided into three
   zones:
@@ -42,7 +42,7 @@ the cause has been resolved. -->
 
 At the top of the screen, every page shows the screen title on the left and a
 row of symbols on the right. Each symbol represents a vehicle component and is
-coloured independently.
+colored independently.
 
 | Symbol | Component | Meaning |
 |--------|-----------|---------|
@@ -54,9 +54,9 @@ coloured independently.
 | Power | SDC | Shutdown circuit closed |
 | Network | CAN | Bus state |
 
-### Colour coding
+### Color coding
 
-| Colour | State | Meaning |
+| Color | State | Meaning |
 |--------|-------|---------|
 | Green | OK | Component operating normally |
 | Gold | WARN | Degraded but functional |
@@ -95,9 +95,11 @@ debug screens, to the right the screens for EV and DV operation:
 The carousel does not wrap around: at either end the display simply stops.
 
 **EV DRIVING** and **DV DRIVING** are not on the carousel. EV DRIVING appears
-when RTD is activated from the PRE RTD screen; DV DRIVING appears when the
-autonomous system enters the *AS driving* state. Neither can be left again
-except by powering the DCU off.
+when the mABX reports that the vehicle is ready to drive, after RTD was
+requested on the PRE RTD screen (see @ref manual-user-pre-rtd); DV DRIVING
+appears when the autonomous system enters the *AS driving* state. Neither can
+be paged away from: EV DRIVING closes by itself once the vehicle leaves the
+ready-to-drive state, DV DRIVING stays until the DCU is powered off.
 
 
 <!-- ## Operating modes
@@ -111,9 +113,8 @@ The DCU has four operating modes that determine which navigation is permitted:
 | RTD | Mission active, navigation locked |
 | POST RTD | Return to the idle state |
 
-The transition to RTD is triggered by the RTD button. It locks the selected
-mission, sends the RTD signal over CAN and switches automatically to the
-**EV DRIVING** screen.
+The transition to RTD follows the vehicle: the DCU switches to the
+**EV DRIVING** screen once the mABX reports the ready-to-drive state.
 
 > **Note:** The DCU only requests RTD. Whether the vehicle actually enters the
 > ready-to-drive state is decided by the mABX. -->
@@ -193,7 +194,7 @@ components at their physical positions, and a table next to it on the right.
 
 In the table:
 
-| Text colour | Meaning |
+| Text color | Meaning |
 |-------------|---------|
 | Dark | Component closed, in order |
 | Red | Component open — interrupts the shutdown circuit |
@@ -205,19 +206,47 @@ BSPD, ASCU, HVD, MH, RES, BOTS and inertia.
 cause is usually the first one in sequence — the shutdown circuit is a series
 circuit.
 
-<!-- ### PRE RTD
+### PRE RTD {#manual-user-pre-rtd}
 
-Guided checklist before driving off. The screen lists the preconditions that
-must be met before RTD can be requested. -->
+The only screen from which ready-to-drive (RTD) can be requested. The RTD
+button does nothing on any other screen — page to PRE RTD first.
+
+**Operation:** Press the brake pedal, then press and **hold** the RTD button
+until the button on the display turns green.
+
+| Button color | Meaning |
+|--------------|---------|
+| White | Not pressed |
+| Gold | Held, request not yet sent |
+| Green | Request is being sent to the mABX |
+
+The request is sent only while the button is held, and only after it has been
+held for 0.5 s — a short tap sends nothing. Letting go ends the request with
+the next CAN message, a fraction of a second later. The DCU never keeps it on
+by itself.
+
+The DCU only *requests* RTD. Whether the vehicle enters the ready-to-drive
+state is decided by the mABX; the brake must be applied at the same time. Once
+the vehicle reports ready-to-drive, the RTD sound plays and the display
+switches to **EV DRIVING** on its own — the button can then be released. When
+the vehicle leaves the ready-to-drive state, the display comes back here.
+
+<!-- Guided checklist before driving off. The screen lists the preconditions
+that must be met before RTD can be requested. -->
 
 ### EV DRIVING {#manual-user-ev}
 
-Shown automatically as soon as RTD has been activated — hold the **middle
-button** (RTD) on the PRE RTD screen.
+Shown automatically as soon as the mABX reports that the vehicle is ready to
+drive — request it by holding the RTD button on the PRE RTD screen, see
+@ref manual-user-pre-rtd.
 
 **Paging to other screens is locked on this screen.** This is intentional and
-prevents accidental input while driving. The only way back is to power-cycle
-the DCU.
+prevents accidental input while driving.
+
+The screen closes on its own as soon as the vehicle leaves the ready-to-drive
+state — when the shutdown circuit opens, for instance. The display returns to
+the screen shown before, usually PRE RTD, from where RTD can be requested
+again.
 
 The controls have a fixed assignment here:
 
@@ -280,7 +309,9 @@ Common observations and their likely cause:
 | CAN symbol gold | Elevated error counters — check wiring and termination |
 | SDC symbol red, vehicle does not move off | Open the SDC screen, identify the open component |
 | Kistler symbol red | Measurement system not responding, check wiring |
-| RTD button has no effect | Preconditions per PRE RTD not met; the mABX grants the release |
+| RTD button has no effect, display button stays white | Not on the PRE RTD screen — the button only works there |
+| Display button stays gold while held | Held for less than 0.5 s, or the request cannot be sent — check the CAN symbol |
+| Display button green, but no RTD | The mABX refuses: brake not pressed, tractive system not active or a precondition not met |
 | Display stays dark | Check power supply; booting only takes a few seconds |
 
 Values that still look plausible despite a red status bar are the last ones

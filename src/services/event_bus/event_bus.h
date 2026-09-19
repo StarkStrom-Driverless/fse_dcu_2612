@@ -13,7 +13,8 @@
  *                                              ui_input_chan, settings_chan,
  *                                              feedback_chan
  *                Cross-module (App → All)    : vehicle_status_chan
- *                Downward    (App → Module)  : ui_cmd_chan, lighting_cmd_chan,
+ *                Downward    (App → Module)  : ui_nav_chan, ui_cmd_chan,
+ *                                              lighting_cmd_chan,
  *                                              audio_cmd_chan, can_tx_cmd_chan
  *
  *              Subscribers register themselves using ZBUS_CHAN_ADD_OBS in
@@ -28,14 +29,15 @@
  *              | can_data_chan       | CAN            | App             |
  *              | ui_input_chan       | UI screens     | App             |
  *              | settings_chan       | Settings       | App (ignored)   |
+ *              | ui_nav_chan         | App            | UI              |
  *              | ui_cmd_chan         | App            | UI              |
  *              | audio_cmd_chan      | App            | Audio           |
- *              | feedback_chan       | —              | App (ignored)   |
+ *              | feedback_chan       | CAN            | App             |
  *              | vehicle_status_chan | —              | UI              |
  *              | lighting_cmd_chan   | —              | —               |
  *              | can_tx_cmd_chan     | —              | —               |
  *
- *              The four channels without a publisher are declared protocol,
+ *              The three channels without a publisher are declared protocol,
  *              not dead code: they define the interface the corresponding
  *              features will use. See the @c Reserved notes in events.h.
  *
@@ -104,7 +106,11 @@ ZBUS_CHAN_DECLARE(vehicle_status_chan);
 
 /* ── Downward Channel Declarations: App → Module ─────────────────────────────────────────────── */
 
-/** Screen navigation and data update commands (published by App, consumed by UI). */
+/** Screen navigation (published by App, consumed by UI). Kept apart from
+ *  ui_cmd_chan on purpose — see struct ui_nav_cmd in events.h. */
+ZBUS_CHAN_DECLARE(ui_nav_chan);
+
+/** Data update commands (published by App, consumed by UI). */
 ZBUS_CHAN_DECLARE(ui_cmd_chan);
 
 /** LED zone state and effect commands. Reserved — Lighting does not subscribe yet. */
