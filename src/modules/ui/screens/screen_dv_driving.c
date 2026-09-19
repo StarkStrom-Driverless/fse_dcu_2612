@@ -111,12 +111,12 @@ lv_obj_t *screen_dv_driving_create(lv_subject_t *status_subjects)
     ui_header_create(scr, "DV DRIVING", status_subjects);
 
     lv_obj_t *lbl_caption = lv_label_create(scr);
-    lv_obj_add_style(lbl_caption, &ui_style_label_subtitle, 0);
+    lv_obj_add_style(lbl_caption, &ui_style_label_title, 0);
     lv_label_set_text(lbl_caption, "MISSION");
     lv_obj_align(lbl_caption, LV_ALIGN_CENTER, 0, -24);
 
     lv_obj_t *lbl_mission = lv_label_create(scr);
-    lv_obj_add_style(lbl_mission, &ui_style_label_caption, 0);
+    lv_obj_add_style(lbl_mission, &ui_style_label_value_md, 0);
     lv_obj_align(lbl_mission, LV_ALIGN_CENTER, 0, 20);
     lv_subject_add_observer_obj(&ui_tx_subj_drive_mode, mission_observer_cb,
                                 lbl_mission, NULL);
