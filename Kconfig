@@ -35,7 +35,7 @@ config DCU_BENCHMARK_BOOT_PATCH
 	bool "Optical latency patch on the boot screen"
 	default n
 	help
-	  Add a solid rectangle to the boot screen whose colour follows the
+	  Add a solid rectangle to the boot screen whose color follows the
 	  AS_state CAN signal, for measuring end-to-end latency with a
 	  photodiode on the panel.
 

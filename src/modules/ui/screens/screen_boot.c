@@ -18,7 +18,7 @@
  *              ### Optical latency patch (CONFIG_DCU_BENCHMARK_BOOT_PATCH)
  *
  *              With that option on, a solid rectangle is added in the
- *              bottom-left corner whose colour follows the AS_state CAN signal:
+ *              bottom-left corner whose color follows the AS_state CAN signal:
  *              black, yellow, white. Held against a photodiode it turns "a CAN
  *              frame arrived" into an edge on a scope trace, which extends the
  *              existing power-on-to-first-frame measurement into the running
@@ -114,7 +114,7 @@
 /**
  * @brief Repaint the measurement patch for a new AS_state value.
  *
- * LVGL fires this once on subscription, so the patch has a defined colour from
+ * LVGL fires this once on subscription, so the patch has a defined color from
  * the moment the screen is built — black, since the subject starts at 0. That
  * is the optical baseline the first transition is measured against.
  *
@@ -127,29 +127,29 @@
 static void bench_patch_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t  *patch = lv_observer_get_target_obj(observer);
-    lv_color_t colour;
+    lv_color_t color;
 
     switch (lv_subject_get_int(subject)) {
     case BENCH_LEVEL_MID:
-        colour = lv_color_hex(0x7F7F7F);
+        color = lv_color_hex(0x7F7F7F);
         break;
     case BENCH_LEVEL_BRIGHT:
-        colour = lv_color_hex(0xFFFFFF);
+        color = lv_color_hex(0xFFFFFF);
         break;
     case BENCH_LEVEL_DARK:
     default:
-        colour = lv_color_hex(0x000000);
+        color = lv_color_hex(0x000000);
         break;
     }
 
-    lv_obj_set_style_bg_color(patch, colour, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(patch, color, LV_PART_MAIN);
 }
 
 /**
  * @brief Build the measurement patch and bind it to the borrowed CAN signal.
  *
  * Every default style is stripped: no border, no radius, no padding, so the
- * patch is a hard-edged block of one colour and the photodiode sees a clean
+ * patch is a hard-edged block of one color and the photodiode sees a clean
  * step rather than an anti-aliased ramp.
  *
  * Placed in the bottom-left corner, clear of the gear, the product name and

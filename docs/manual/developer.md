@@ -87,17 +87,6 @@ receive commands.
 | `src/services/settings/` | Persistent settings (NVS) |
 | `src/generated/` | Generated code — **do not edit by hand** |
 
-<!-- Further reading:
-
-| Document | Content |
-|---|---|
-| `docs/architecture.md` | Overall architecture, design decisions |
-| `docs/modules.md` | Module specifications |
-| `docs/event_system.md` | Zbus channels and subscriber model |
-| `docs/thread_model.md` | Threads, priorities, stack sizes |
-| `docs/ui_data_flow.md` | Data flow CAN → UI |
-| `docs/settings_module.md` | Persistence, flash layout, schema generation | -->
-
 ### Threads
 
 | Thread | Priority | Task |
@@ -397,7 +386,8 @@ the entry in `settings_schema_gen.h` and adds the signal to the apply-settings
 helper in `can_tx_gen.h`, which the CAN module calls for every frame. Loading,
 saving, range checking and transmitting therefore need no further action.
 
-Details in `docs/settings_module.md`.
+The service, its ownership model and the write-behind are documented in
+`src/services/settings/settings.h`.
 
 ## Adding a new feature
 
@@ -420,7 +410,8 @@ that does not belong in the screen, but in a module-wide subject, in
 2. Add the Zbus channel and payload to `events.h` and `event_bus.{c,h}`
 3. Provide `<name>_module_init()` and call it from `main.c` at the right point
    in the initialisation order
-4. Describe the module in `docs/modules.md`
+4. Document the module in its `<name>.h` file header — that header is what
+   Doxygen publishes
 
 `CMakeLists.txt` does not need touching — `FILE(GLOB_RECURSE app_sources
 src/*.c)` picks up new files automatically.

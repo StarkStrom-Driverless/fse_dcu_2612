@@ -40,7 +40,7 @@
  *              the button is held and has been held for APP_RTD_HOLD_MS
  *              (500 ms). The button shows where that stands:
  *
- *              | Colour | Meaning                                          |
+ *              | Color | Meaning                                          |
  *              |--------|--------------------------------------------------|
  *              | White  | Not pressed                                      |
  *              | Gold   | Held, but RTD_Button = 1 is not on the bus yet   |

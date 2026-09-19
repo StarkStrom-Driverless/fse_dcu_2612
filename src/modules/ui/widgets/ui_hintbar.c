@@ -10,7 +10,7 @@
  *              ```
  *              bar (flex row, bottom edge, full width)
  *                └─ one slot per *used* control (flex row, sized to content)
- *                     ├─ icon, recoloured to UI_C_DARK
+ *                     ├─ icon, recolored to UI_C_DARK
  *                     └─ caption label
  *              ```
  *
@@ -27,14 +27,14 @@
  *
  *              ### Why objects here and drawing in the header widget
  *              The page indicator in ui_header.c paints itself in a draw
- *              callback because it is a dozen identical coloured shapes. This
+ *              callback because it is a dozen identical colored shapes. This
  *              bar is images and text, which LVGL has no comparable shortcut
  *              for — an object per element is what it costs, and twelve of
  *              them once per screen build is not worth optimising.
  *
  *              ### Icons
- *              The images are I4 (16-colour indexed) and are drawn scaled down
- *              from their native 32 px to HINT_ICON_SIZE. Recolouring at full
+ *              The images are I4 (16-color indexed) and are drawn scaled down
+ *              from their native 32 px to HINT_ICON_SIZE. Recoloring at full
  *              opacity flattens them to a UI_C_DARK silhouette, so they follow
  *              the theme rather than whatever palette they were exported with.
  *

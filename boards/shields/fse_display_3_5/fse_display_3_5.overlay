@@ -137,7 +137,7 @@
 			 * SETCOM (0xB6): VCOM voltage.
 			 * 0x40 = manufacturer default from the init example.
 			 * 0x25 = Adafruit default (approx. -1.52 V, lower voltage).
-			 * Raise it against ghosting, lower it against washed-out colours.
+			 * Raise it against ghosting, lower it against washed-out colors.
 			 */
 			setcom = [40];
 

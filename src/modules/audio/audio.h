@@ -11,7 +11,7 @@
  *                audio_cmd_chan  — play / stop commands
  *
  *              The module produces nothing: it does not report effect
- *              completion, so feedback_chan stays unused.
+ *              completion, so it never publishes on feedback_chan.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-07-08

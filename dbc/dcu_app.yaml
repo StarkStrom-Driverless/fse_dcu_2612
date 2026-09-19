@@ -21,7 +21,7 @@
 #     Erzeugt einen Eintrag in settings_schema_gen.h. Pflichtfeld: default.
 #     min/max sind optional — ohne Angabe gilt der Bereich aus der DBC-Bitbreite
 #     (N Bit unsigned → [0, 2^N-1]) bzw. das explizite DBC-Minimum/Maximum.
-#     Siehe docs/settings_module.md.
+#     Siehe src/services/settings/settings.h.
 #
 # Regenerieren: python3 tools/codegen/gen_can.py   (west-venv aktiv)
 # ─────────────────────────────────────────────────────────────────────────────

@@ -156,7 +156,7 @@ static const uint8_t k_chase_trail[] = {255, 100, 35, 10};
 #endif
 
 /**
- * @name Zone colours
+ * @name Zone colors
  *
  * Chosen to match the display palette in ui_styles.h so that strip and screen
  * agree on what green, amber and red mean. Kept below full brightness: the
@@ -180,7 +180,7 @@ enum zone_level {
 /**
  * @brief How far a reading has come, and how bad it is.
  *
- * @c pct is the fill for the bar, @c level picks its colour. Keeping them
+ * @c pct is the fill for the bar, @c level picks its color. Keeping them
  * apart matters: the two do not move together, because the warning limit sits
  * at a different fraction of the range for every signal.
  */
@@ -365,10 +365,10 @@ static struct zone_reading grade_rising(int32_t value, int32_t min,
 }
 
 /**
- * @brief Colour for a severity band.
+ * @brief Color for a severity band.
  *
  * @param level  Band from grade_rising() or grade_falling().
- * @return       The strip colour standing for it.
+ * @return       The strip color standing for it.
  */
 static struct led_rgb zone_level_color(enum zone_level level)
 {
@@ -393,7 +393,7 @@ static struct led_rgb zone_level_color(enum zone_level level)
  * @param first  Index of the zone's first LED.
  * @param len    Number of LEDs in the zone.
  * @param pct    Fill, 0…100.
- * @param color  Colour for the lit part.
+ * @param color  Color for the lit part.
  */
 static void zone_fill_bar(uint8_t first, uint8_t len, uint8_t pct,
                           struct led_rgb color)
@@ -414,7 +414,7 @@ static void zone_fill_bar(uint8_t first, uint8_t len, uint8_t pct,
  * one scale, and the highest grade wins: the bar always shows the temperature
  * that is in most trouble, whichever that currently is.
  *
- * The colour comes from the winner's own band, so a bar at 80 % reads as amber
+ * The color comes from the winner's own band, so a bar at 80 % reads as amber
  * or green depending on where that signal's warning limit sits.
  *
  * @param snap  Latest CAN snapshot.
@@ -452,7 +452,7 @@ static void zone_render_temperatures(const struct can_data_snapshot *snap)
  * @brief Middle zone — ten status signals, one LED each.
  *
  * LED_1…LED_8 are plain flags: lit red when set, dark when clear. The last two
- * carry their own colour coding and are handled separately.
+ * carry their own color coding and are handled separately.
  *
  * @param snap  Latest CAN snapshot.
  */
@@ -486,7 +486,7 @@ static void zone_render_status(const struct can_data_snapshot *snap)
     /*
      * DCU_RGB_LED_Themperatur — a three-state code rather than a flag.
      * Anything outside 1…3 is dark, so an unexpected value reads as "no
-     * statement" instead of silently borrowing another state's colour.
+     * statement" instead of silently borrowing another state's color.
      */
     switch (snap->temperature_generic) {
     case 1:  s_pixels[ZONE_MID_FIRST + 9] = red;   break;
@@ -500,7 +500,7 @@ static void zone_render_status(const struct can_data_snapshot *snap)
  * @brief Right zone — HV accumulator voltage.
  *
  * Voltage is graded the other way round from a temperature: the limits are
- * lower bounds, so the bar empties as the pack drains and the colour worsens
+ * lower bounds, so the bar empties as the pack drains and the color worsens
  * on the way down. The fill therefore spans the full declared range rather
  * than stopping at the critical limit — a driver watching this wants to see
  * the pack empty, not the bar sit at zero from the limit onwards.

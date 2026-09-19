@@ -27,7 +27,7 @@
  *              out how far the ends are is to turn the encoder until it stops.
  *
  *              The segments are 45° parallelograms, matching the diagonal
- *              colour edge of the header above them. They are painted in a
+ *              color edge of the header above them. They are painted in a
  *              draw callback rather than built as objects, which costs less
  *              than the ten objects it replaces.
  *

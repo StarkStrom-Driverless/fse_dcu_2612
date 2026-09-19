@@ -497,8 +497,8 @@ def emit_tx_subjects_header(tx_signals: list[tuple]) -> str:
  *
  * Threading: subjects belong to the LVGL thread.  The CAN TX thread must NOT
  * read them — it takes persistent values from the Settings service and volatile
- * ones from app_state, both of which are mutex-protected.  See
- * docs/settings_module.md §2.
+ * ones from app_state, both of which are mutex-protected.  See the ownership
+ * model in services/settings/settings.h.
  *
  * ui_tx_subjects_gen_init() must be called from the LVGL thread before any
  * screen that binds to these subjects is created.
@@ -613,7 +613,7 @@ def emit_settings_schema_header(settings: list[dict], schema_hash: int) -> str:
     lines.append("#include <stdbool.h>\n#include <stdint.h>\n")
     lines.append("""\
 /*
- * Schema for values persisted across reboots (see docs/settings_module.md).
+ * Schema for values persisted across reboots (see services/settings/settings.h).
  *
  * Sources, in this order:
  *   1. TX signals with a `persist:` block in dcu_app.yaml (can_tx = true)

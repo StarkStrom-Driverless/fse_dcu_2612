@@ -5,7 +5,7 @@
  * @ingroup     dcu_settings
  *
  * @details     Implementation notes; the API contract is documented in
- *              settings.h and the design rationale in docs/settings_module.md.
+ *              settings.h, which also carries the design rationale.
  *
  *              ### Compile-time split
  *              Everything below CONFIG_DCU_SETTINGS_PERSIST — the blob type,

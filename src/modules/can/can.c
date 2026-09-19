@@ -473,7 +473,7 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
              * Volatile state comes from app_state, persistent settings from
              * the Settings service — one acquisition for all of them.  The
              * LVGL ui_tx_subj_* subjects are a UI mirror and must not be read
-             * from this thread (see docs/settings_module.md §2).
+             * from this thread (see the ownership model in settings.h).
              */
             uint8_t settings[SETTING_COUNT];
             settings_get_all(settings);

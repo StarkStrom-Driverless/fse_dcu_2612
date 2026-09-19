@@ -27,7 +27,7 @@
  *              never hear the release. It keeps a second backstop anyway — a
  *              screen change away from PRE_RTD clears the button state.
  *
- *              ### Colour
+ *              ### Color
  *              Driven through two user states, because the button is not
  *              checkable and LVGL's own states do not describe "on the bus":
  *
@@ -39,7 +39,7 @@
  *
  *              ui_style_btn_focused is deliberately not added: the button is
  *              its group's only member and permanently focused, so the focus
- *              colour would hide the white "not pressed" state.
+ *              color would hide the white "not pressed" state.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
@@ -186,7 +186,7 @@ static void build_buttons(lv_obj_t *scr)
 }
 
 /**
- * @brief Set the button colour from the press and the bus state.
+ * @brief Set the button color from the press and the bus state.
  *
  * Green needs both: a report of RTD_Button = 1 that arrives after the release
  * must not light the button again.

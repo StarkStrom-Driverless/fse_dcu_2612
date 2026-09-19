@@ -38,12 +38,74 @@ out-of-tree Zephyr module in this repository.
 
 **Persistent settings.** Values that must survive a power cycle are declared
 in the same YAML as the CAN signals and generated into a schema with bounds,
-defaults and a change-detecting hash.
-*Storage is currently disabled* — see [`docs/settings_module.md`](docs/settings_module.md).
+defaults and a change-detecting hash. They are stored in NVS on the board's
+SPI NOR flash.
 
 **Documentation pipeline.** Doxygen builds a website and a PDF manual; GitHub
 Actions checks both on every documentation pull request and publishes them on
 a release tag.
+
+## Hardware
+
+The firmware is written for one specific car and expects that hardware to be
+present. It is not a general-purpose steering-wheel display: every device below
+is resolved from the devicetree at compile time, so a missing one fails the
+build rather than the boot.
+
+| Part | What it is | Devicetree |
+|---|---|---|
+| Processor board | `fse_pb` — STM32F405RG, 168 MHz, 192 KB RAM, 1 MB flash, CAN transceiver | [fse_pb_bootloader](https://github.com/StarkStrom-Driverless/fse_pb_bootloader) |
+| DCU board | Steering-wheel PCB: 2 rotary encoders, 4 buttons, piezo, display backlight | `boards/shields/fse_dcu_2612/` |
+| Display | 3.5" HX8357 (480x320) or 2.8" ST7789V, over SPI2 | `boards/shields/fse_display_*/` |
+| LED strip | APA102, 28 LEDs, over SPI3 | `fse_dcu_2612.overlay`, node `apa102` |
+| Settings storage | AT25DF081A SPI NOR flash (8 Mbit), over SPI1 | `fse_dcu_2612.overlay`, node `nor_flash` |
+| Vehicle bus | CAN at 1 Mbit/s carrying the messages `dbc/dcu_app.yaml` selects | board DTS, `zephyr,canbus` |
+| Debug probe | ST-Link over SWD — flashing, and the shell over RTT | `west flash --runner openocd` |
+
+### Running it on your own hardware
+
+Everything board-specific sits in the devicetree, so adapting it is mostly a
+matter of overlays rather than C. In rough order of effort:
+
+1. **A different display.** Cheapest case: the two panels are separate shields,
+   so swapping them is a build flag. A third panel needs its own shield
+   directory — copy one of the existing two.
+2. **A different carrier board.** Point the shields at your pins: the encoders,
+   buttons, piezo, backlight timer, LED strip and the flash are all plain
+   devicetree nodes in `boards/shields/fse_dcu_2612/fse_dcu_2612.overlay`. The
+   aliases the application resolves (`qdec-input-left`, `keypad-rtd`, `piezo`,
+   `led-strip`, …) are listed at the top of that file and in
+   `boards/qemu_cortex_a53.overlay`.
+3. **A different MCU.** The application code is portable Zephyr, but `prj.conf`
+   and the shield's `Kconfig.defconfig` carry STM32-specific choices (SPI DMA
+   streams, the LVGL draw-buffer sizing for 192 KB of RAM). Expect to revisit
+   those.
+4. **No external flash.** Set `CONFIG_DCU_SETTINGS_PERSIST=n`; the settings
+   service keeps its full API and starts from the schema defaults every boot,
+   which is exactly what the emulator build does.
+5. **No LED strip.** Not a matter of configuration: `lighting.c` resolves the
+   `led-strip` alias with `DEVICE_DT_GET` at file scope, and `CMakeLists.txt`
+   globs every `.c` under `src/`, so the alias has to exist for the build to
+   link at all. Either keep a stand-in node — the QEMU overlay bit-bangs a
+   TLC59731 on an emulated GPIO for this reason — or drop `src/modules/lighting/`
+   and its `lighting_module_init()` call in `src/main.c`.
+6. **A different vehicle.** The CAN layer is generated from `dbc/dcu_can.dbc`
+   plus `dbc/dcu_app.yaml`; signal names, limits and the screens that show them
+   follow from there. Screens themselves are hand-written and assume this car's
+   signal set.
+
+### Without any hardware
+
+The UI can be built and run in QEMU, which needs no board at all:
+
+```sh
+west build -p always -b qemu_cortex_a53 fse_dcu_2612
+west build -t run
+```
+
+The emulator shows the real screens and runs the CAN thread against a loopback
+driver. The inputs exist as emulated GPIOs that nothing drives, so the UI can be
+looked at but not operated — see `boards/qemu_cortex_a53.overlay`.
 
 ## Getting Started
 
@@ -122,19 +184,18 @@ what changed.
 
 ## Documentation
 
-| Document | Contents |
-|---|---|
-| [Manual](docs/manual/) | Operation for drivers and engineers, development guide |
-| [architecture.md](docs/architecture.md) | Overall architecture and design decisions |
-| [modules.md](docs/modules.md) | Module specifications |
-| [event_system.md](docs/event_system.md) | Zbus channels and subscriber model |
-| [thread_model.md](docs/thread_model.md) | Threads, priorities, stack sizes |
-| [ui_data_flow.md](docs/ui_data_flow.md) | Data flow from CAN signal to widget |
-| [settings_module.md](docs/settings_module.md) | Persistence, flash layout, schema generation |
+Everything is built with Doxygen from three sources, so there is no second
+place that can fall out of date:
 
-Building the documentation locally is described in the
-[developer manual](docs/manual/developer.md); the release workflow publishes it
-to GitHub Pages.
+| Source | Contents |
+|---|---|
+| [`docs/index.md`](docs/index.md) | Landing page: architecture in brief, where to start reading |
+| [`docs/manual/`](docs/manual/) | User manual (operation) and developer manual (toolchain, build, extending) |
+| `src/**` | The modules themselves — every header carries its module's design rationale |
+
+Doxygen produces a website and a PDF manual. Building them locally is described
+in the [developer manual](docs/manual/developer.md); the release workflow
+publishes both to GitHub Pages.
 
 ## Versioning
 

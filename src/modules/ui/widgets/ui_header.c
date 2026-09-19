@@ -94,8 +94,8 @@
  * @brief Horizontal offset between a segment's bottom and top edge, in pixels.
  *
  * Equal to the height, which is what makes the slanted sides run at exactly
- * 45° — parallel to the diagonal colour edge in the header above (the gradient
- * axis in init_header_style() is (1,1), so its iso-colour lines rise to the
+ * 45° — parallel to the diagonal color edge in the header above (the gradient
+ * axis in init_header_style() is (1,1), so its iso-color lines rise to the
  * right at 45°).
  *
  * Change this and the segments stop being parallel to that edge; change the
@@ -409,9 +409,9 @@ static void page_bar_draw_cb(lv_event_t *e)
         const int32_t x_tl = x_bl + PAGE_SEG_SLANT;
         const int32_t x_tr = x_br + PAGE_SEG_SLANT;
 
-        const lv_color_t colour = (i == pos) ? UI_C_GREEN : UI_C_WHITE;
-        tri.color  = colour;
-        fill.color = colour;
+        const lv_color_t color = (i == pos) ? UI_C_GREEN : UI_C_WHITE;
+        tri.color  = color;
+        fill.color = color;
 
         /* A — left wedge, from the bottom-left corner up to the top edge. */
         tri.p[0].x = x_bl; tri.p[0].y = y_bot;
@@ -425,7 +425,7 @@ static void page_bar_draw_cb(lv_event_t *e)
          * lv_area_t is inclusive on both ends. The right bound deliberately
          * reaches x_br, one column into wedge C, so that however the triangle
          * rasteriser rounds its vertical edge there can be no hairline gap
-         * between the two. Both pieces are opaque and the same colour, so the
+         * between the two. Both pieces are opaque and the same color, so the
          * overlap is invisible.
          */
         const lv_area_t mid = {

@@ -21,11 +21,55 @@
  *              call settings_set(); the UI publishes intent on ui_input_chan
  *              and lets the App decide.
  *
- *              ### Source of truth
- *              This service owns the runtime values, not app_state.  The CAN
- *              TX thread reads them from here; the LVGL subjects in
- *              ui_tx_subjects_gen.h are a UI-side mirror only and must never
- *              be read from another thread.  See docs/settings_module.md §2.
+ *              ### Ownership model
+ *              Three layers, each with exactly one job:
+ *
+ *              | Layer                | Holds                          | Thread-safe    |
+ *              |----------------------|--------------------------------|----------------|
+ *              | NVS (flash)          | the persisted blob             | yes            |
+ *              | this service         | the authoritative values       | yes (mutex)    |
+ *              | `ui_tx_subj_*`       | a UI-side mirror for widgets   | LVGL thread    |
+ *
+ *              The CAN TX thread reads this service, never an LVGL subject.
+ *              That is the load-bearing rule: subjects belong to the LVGL
+ *              thread (priority 8), and the CAN thread (priority 3) preempts
+ *              it — reading a subject from there is a data race.
+ *
+ *              The generated subjects start at zero and are not fed from here.
+ *              A screen that shows a setting seeds its own widgets with
+ *              settings_get() while being built (see screen_settings.c and
+ *              screen_ev_driving.c), which also picks up changes made on the
+ *              other screen in the meantime.
+ *
+ *              Settings are deliberately *not* stored in app_state.  That holds
+ *              vehicle and mission state; settings are an orthogonal concern
+ *              with their own lifetime — they outlive a power cycle — and their
+ *              own store.  Duplicating them into app_state would create a
+ *              second source of truth for no gain.
+ *
+ *              The App Layer stays in the *control* path: the UI publishes
+ *              intent, the App decides and calls settings_set().  The Dirigent
+ *              pattern governs who may *change* a setting; it does not require
+ *              the App to also *hold* it.
+ *
+ *              ### Data flow of a change
+ *              ```
+ *              Driver turns the encoder
+ *                ├─ UI: lv_subject_set_int()          ← immediate feedback
+ *                └─ UI: publish ui_input_chan {id, value}
+ *                      └─ App: settings_set(id, value)
+ *                            ├─ clamp to the schema range
+ *                            ├─ update the RAM cache
+ *                            ├─ schedule the write-behind (see Flash wear)
+ *                            └─ publish SETTINGS_EVT_UPDATED
+ *                                  └─ CAN picks it up on its next frame
+ *              ```
+ *
+ *              The UI writes its own subject optimistically — otherwise the
+ *              control would lag by two thread switches.  A screen that clamps
+ *              differently than the service would converge on the next build of
+ *              that screen; both clamp against the same generated schema, so
+ *              they do not disagree in practice.
  *
  *              ### Flash wear
  *              Writing the current value is a no-op, and changes are coalesced
