@@ -366,7 +366,9 @@ static void slot_status_observer_cb(lv_observer_t *observer, lv_subject_t *subje
  * being clipped.
  *
  * The position is read here rather than captured at build time, so a redraw
- * always reflects the current screen.
+ * always reflects the current screen. Outside the carousel the bar is hidden
+ * (see page_bar_screen_loaded_cb()), so this callback never runs with
+ * UI_CAROUSEL_POS_NONE.
  *
  * @param e  LV_EVENT_DRAW_MAIN_END from the bar.
  */
@@ -441,6 +443,27 @@ static void page_bar_draw_cb(lv_event_t *e)
 }
 
 /**
+ * @brief Show or hide the bar with the screen it belongs to.
+ *
+ * Runs on LV_EVENT_SCREEN_LOADED, which the display sends while the screen is
+ * being loaded — by then ui.c has recorded the new active screen, so the
+ * position is the one for this screen and not for the previous one.
+ *
+ * Screens outside the carousel (EV DRIVING, DV DRIVING) have no position to
+ * show and hide the bar entirely, rather than showing a bar with no segment
+ * lit.
+ *
+ * @param e  LV_EVENT_SCREEN_LOADED from the screen; user data is the bar.
+ */
+static void page_bar_screen_loaded_cb(lv_event_t *e)
+{
+    lv_obj_t *bar = lv_event_get_user_data(e);
+
+    lv_obj_set_flag(bar, LV_OBJ_FLAG_HIDDEN,
+                    ui_carousel_get_position() == UI_CAROUSEL_POS_NONE);
+}
+
+/**
  * @brief Build the carousel position indicator directly below the header.
  *
  * One segment per carousel screen, dividing the full display width: white for
@@ -461,7 +484,13 @@ static void page_bar_draw_cb(lv_event_t *e)
  * between segments (PAGE_BAR_GAP), and as the band above and below them
  * (PAGE_BAR_H minus PAGE_SEG_H).
  *
- * Suppressed for a carousel of one, where the indicator would state the obvious.
+ * Suppressed for a carousel of one, where the indicator would state the
+ * obvious, and hidden on screens outside the carousel.
+ *
+ * The bar starts hidden: the screen is built before it is loaded, so the
+ * position is not known yet here. page_bar_screen_loaded_cb() reveals it while
+ * the screen loads, which is still before the first frame is drawn — there is
+ * no flicker.
  *
  * @param parent  Screen the header was built on; the bar becomes its child.
  * @param header  Header container, used only as the alignment reference.
@@ -481,8 +510,11 @@ static void page_indicator_create(lv_obj_t *parent, lv_obj_t *header)
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(bar, UI_C_DARK, 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_add_event_cb(bar, page_bar_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
+    lv_obj_add_event_cb(parent, page_bar_screen_loaded_cb,
+                        LV_EVENT_SCREEN_LOADED, bar);
 }
 
 
