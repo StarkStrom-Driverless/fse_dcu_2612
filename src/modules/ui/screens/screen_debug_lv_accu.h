@@ -25,8 +25,10 @@
  *              ```
  *
  *              Each numeric readout turns gold past its warning threshold and
- *              red past its critical one, driven by lv_obj_bind_state_if_lt()
- *              against the limits generated from dbc/dcu_app.yaml.
+ *              red past its critical one, driven by ui_quantity_bind_level()
+ *              against the limits generated from dbc/dcu_app.yaml. The LV
+ *              voltage is a float subject, which LVGL's own
+ *              lv_obj_bind_state_if_lt/gt() refuses — see ui_quantity.h.
  *
  *              Reachable through the screen carousel only.  All three group
  *              accessors return NULL, so the right encoder and both button

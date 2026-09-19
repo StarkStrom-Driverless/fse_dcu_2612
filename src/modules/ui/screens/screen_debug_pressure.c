@@ -107,8 +107,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "Bar");
     lv_obj_add_style(lbl_bar_bp_front_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_bp_front_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_bp_front_value, &ui_subj_brake_pressure_front, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_bp_front_value, &ui_subj_brake_pressure_front, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_bp_front_value, &ui_subj_brake_pressure_front, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_BRAKE_PRESSURE_FRONT_WARN_HIGH, UI_BRAKE_PRESSURE_FRONT_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_bp_front_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_bp_front_value, &ui_subj_brake_pressure_front, "%.2f");
     lv_obj_align_to(lbl_bar_bp_front_value, bar_bp_front, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -134,8 +134,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "Bar");
     lv_obj_add_style(lbl_bar_bp_rear_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_bp_rear_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_bp_rear_value, &ui_subj_brake_pressure_rear, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_bp_rear_value, &ui_subj_brake_pressure_rear, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_bp_rear_value, &ui_subj_brake_pressure_rear, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_BRAKE_PRESSURE_REAR_WARN_HIGH, UI_BRAKE_PRESSURE_REAR_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_bp_rear_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_bp_rear_value, &ui_subj_brake_pressure_rear, "%.2f");
     lv_obj_align_to(lbl_bar_bp_rear_value, bar_bp_rear, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -161,8 +161,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "Bar");
     lv_obj_add_style(lbl_bar_air_front_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_air_front_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_air_front_value, &ui_subj_air_pressure_front, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_air_front_value, &ui_subj_air_pressure_front, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_air_front_value, &ui_subj_air_pressure_front, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_AIR_PRESSURE_FRONT_WARN_HIGH, UI_AIR_PRESSURE_FRONT_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_air_front_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_air_front_value, &ui_subj_air_pressure_front, "%.2f");
     lv_obj_align_to(lbl_bar_air_front_value, bar_air_front, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -188,8 +188,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "Bar");
     lv_obj_add_style(lbl_bar_air_rear_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_air_rear_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_air_rear_value, &ui_subj_air_pressure_rear, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_air_rear_value, &ui_subj_air_pressure_rear, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_air_rear_value, &ui_subj_air_pressure_rear, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_AIR_PRESSURE_REAR_WARN_HIGH, UI_AIR_PRESSURE_REAR_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_air_rear_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_air_rear_value, &ui_subj_air_pressure_rear, "%.2f");
     lv_obj_align_to(lbl_bar_air_rear_value, bar_air_rear, LV_ALIGN_OUT_RIGHT_MID, 20, 0);

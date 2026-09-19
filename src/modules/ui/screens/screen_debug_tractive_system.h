@@ -32,8 +32,10 @@
  *              ```
  *
  *              Each numeric readout turns gold past its warning threshold and
- *              red past its critical one, driven by lv_obj_bind_state_if_lt()
- *              against the limits generated from dbc/dcu_app.yaml.
+ *              red past its critical one, driven by ui_quantity_bind_level()
+ *              against the limits generated from dbc/dcu_app.yaml. The
+ *              tractive-system voltage is the exception: HV_VOLT_TS declares no
+ *              limits there, so that readout stays uncolored.
  *
  *              Reachable through the screen carousel only.  All three group
  *              accessors return NULL, so the right encoder and both button

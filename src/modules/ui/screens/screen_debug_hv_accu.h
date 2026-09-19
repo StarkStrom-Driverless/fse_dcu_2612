@@ -25,8 +25,9 @@
  *              ```
  *
  *              Each numeric readout turns gold past its warning threshold and
- *              red past its critical one, driven by lv_obj_bind_state_if_lt()
- *              against the limits generated from dbc/dcu_app.yaml.
+ *              red past its critical one, driven by ui_quantity_bind_level()
+ *              against the limits generated from dbc/dcu_app.yaml — the voltage
+ *              from below, the temperature from above.
  *
  *              Reachable through the screen carousel only.  All three group
  *              accessors return NULL, so the right encoder and both button

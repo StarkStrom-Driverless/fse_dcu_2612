@@ -107,10 +107,12 @@ static void build_bars(lv_obj_t *scr)
     lv_obj_t *lbl_bar_ts_voltage_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_32,
                                       &BarlowCondensed_Italic_20, "V");
-    lv_obj_add_style(lbl_bar_ts_voltage_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_ts_voltage_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_ts_voltage_value, &ui_subj_voltage_tractive_system, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_ts_voltage_value, &ui_subj_voltage_tractive_system, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    /*
+     * No level coloring: HV_VOLT_TS carries no `limits:` block in
+     * dcu_app.yaml, so the generator emits no thresholds for it. It used to
+     * borrow the HV accu's, which are a different signal. Add the limits there
+     * and wire ui_quantity_bind_level() here to switch the coloring on.
+     */
     // lv_obj_set_size(lbl_bar_ts_voltage_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_ts_voltage_value, &ui_subj_voltage_tractive_system, "%d");
     lv_obj_align_to(lbl_bar_ts_voltage_value, bar_ts_voltage, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -136,8 +138,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "°C");
     lv_obj_add_style(lbl_bar_temp_motor_max_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_temp_motor_max_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_motor_max_value, &ui_subj_temperature_motor, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_motor_max_value, &ui_subj_temperature_motor, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_temp_motor_max_value, &ui_subj_temperature_motor, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_TEMPERATURE_MOTOR_WARN_HIGH, UI_TEMPERATURE_MOTOR_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_temp_motor_max_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_temp_motor_max_value, &ui_subj_temperature_motor, "%d");
     lv_obj_align_to(lbl_bar_temp_motor_max_value, bar_temp_motor_max, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -163,8 +165,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "°C");
     lv_obj_add_style(lbl_bar_temp_inv_max_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_temp_inv_max_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_inv_max_value, &ui_subj_temperature_inverter, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_inv_max_value, &ui_subj_temperature_inverter, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_temp_inv_max_value, &ui_subj_temperature_inverter, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_TEMPERATURE_INVERTER_WARN_HIGH, UI_TEMPERATURE_INVERTER_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_temp_inv_max_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_temp_inv_max_value, &ui_subj_temperature_inverter, "%d");
     lv_obj_align_to(lbl_bar_temp_inv_max_value, bar_temp_inv_max, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -190,8 +192,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "");
     lv_obj_add_style(lbl_bar_apps_l_pos_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_apps_l_pos_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_l_pos_value, &ui_subj_apps_left_position, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_l_pos_value, &ui_subj_apps_left_position, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_apps_l_pos_value, &ui_subj_apps_left_position, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_APPS_LEFT_POSITION_WARN_HIGH, UI_APPS_LEFT_POSITION_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_apps_l_pos_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_apps_l_pos_value, &ui_subj_apps_left_position, "%d");
     lv_obj_align_to(lbl_bar_apps_l_pos_value, bar_apps_l_pos, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -217,8 +219,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "");
     lv_obj_add_style(lbl_bar_apps_r_pos_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_apps_r_pos_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_r_pos_value, &ui_subj_apps_right_position, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_r_pos_value, &ui_subj_apps_right_position, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_apps_r_pos_value, &ui_subj_apps_right_position, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_APPS_RIGHT_POSITION_WARN_HIGH, UI_APPS_RIGHT_POSITION_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_apps_r_pos_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_apps_r_pos_value, &ui_subj_apps_right_position, "%d");
     lv_obj_align_to(lbl_bar_apps_r_pos_value, bar_apps_r_pos, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -244,8 +246,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "");
     lv_obj_add_style(lbl_bar_bpps_pos_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_bpps_pos_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_bpps_pos_value, &ui_subj_bpps_position, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_bpps_pos_value, &ui_subj_bpps_position, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_bpps_pos_value, &ui_subj_bpps_position, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_BPPS_POSITION_WARN_HIGH, UI_BPPS_POSITION_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_bpps_pos_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_bpps_pos_value, &ui_subj_bpps_position, "%d");
     lv_obj_align_to(lbl_bar_bpps_pos_value, bar_bpps_pos, LV_ALIGN_OUT_RIGHT_MID, 20, 0);

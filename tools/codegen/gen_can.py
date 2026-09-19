@@ -13,11 +13,9 @@ application YAML (message whitelist + UI intent) and generates:
                                     plus frame ID table for filter setup
   src/generated/ui_subjects_gen.[ch] LVGL subjects (observer pattern): one
                                     lv_subject_t per RX signal + init/update;
-                                    for signals with limits also a
-                                    ui_bind_level_<x>(lv_obj_t*) helper that
-                                    wires LV_STATE_USER_1/USER_2 state bindings
-                                    directly against the value subject using
-                                    lv_obj_bind_state_if_lt/gt.
+                                    for signals with limits also WARN/CRIT
+                                    threshold defines, to be fed to
+                                    ui_quantity_bind_level().
 
 Pipeline:
   1. Validate YAML against DBC (names, app_name uniqueness, limit monotonicity)
@@ -926,16 +924,22 @@ def emit_subjects_header(rx_messages: list[dict]) -> str:
  * One value subject ui_subj_<x> per RX signal (app_name from dcu_app.yaml).
  *
  * For signals with limits, threshold #defines are generated so screens can
- * wire lv_obj_bind_state_if_lt/gt directly, choosing UI_STATE_WARN /
- * UI_STATE_CRIT (defined in ui_styles.h) and the appropriate LV_PART_*.
+ * color a readout by its own limits, choosing UI_STATE_WARN / UI_STATE_CRIT
+ * (defined in ui_styles.h).
  *
  * Example — label text color:
  *   lv_obj_add_style(lbl, &ui_style_level_warn, UI_STATE_WARN);
  *   lv_obj_add_style(lbl, &ui_style_level_crit, UI_STATE_CRIT);
- *   lv_obj_bind_state_if_lt(lbl, &ui_subj_voltage_accu_hv,
- *                            UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
- *   lv_obj_bind_state_if_lt(lbl, &ui_subj_voltage_accu_hv,
- *                            UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+ *   ui_quantity_bind_level(lbl, &ui_subj_voltage_accu_hv,
+ *                          UI_QUANTITY_LEVEL_BELOW,
+ *                          UI_VOLTAGE_ACCU_HV_WARN_LOW,
+ *                          UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+ *
+ * Use that helper rather than LVGL's lv_obj_bind_state_if_lt/gt: those take an
+ * int32_t reference and reject every subject that is not
+ * LV_SUBJECT_TYPE_INT, so a scaled signal — emitted here as a float subject —
+ * binds to nothing and only logs "Incompatible subject type" at runtime. The
+ * thresholds below are floats for the same reason.
  *
  * Threading: ui_subjects_gen_init() and ui_subjects_gen_update() must ONLY
  * be called from the LVGL thread.

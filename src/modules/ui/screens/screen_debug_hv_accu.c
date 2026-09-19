@@ -109,8 +109,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "V");
     lv_obj_add_style(lbl_bar_hv_accu_volt_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_hv_accu_volt_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_hv_accu_volt_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_hv_accu_volt_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_hv_accu_volt_value, &ui_subj_voltage_accu_hv, UI_QUANTITY_LEVEL_BELOW,
+                           UI_VOLTAGE_ACCU_HV_WARN_LOW, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
     // lv_obj_set_size(lbl_bar_hv_accu_volt_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_hv_accu_volt_value, &ui_subj_voltage_accu_hv, "%d");
     lv_obj_align_to(lbl_bar_hv_accu_volt_value, bar_hv_accu_volt, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
@@ -136,8 +136,8 @@ static void build_bars(lv_obj_t *scr)
                                       &BarlowCondensed_Italic_20, "°C");
     lv_obj_add_style(lbl_bar_hv_accu_temp_value, &ui_style_level_warn, UI_STATE_WARN);
     lv_obj_add_style(lbl_bar_hv_accu_temp_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_hv_accu_temp_value, &ui_subj_temperature_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_hv_accu_temp_value, &ui_subj_temperature_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    ui_quantity_bind_level(lbl_bar_hv_accu_temp_value, &ui_subj_temperature_accu_hv, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_TEMPERATURE_ACCU_HV_WARN_HIGH, UI_TEMPERATURE_ACCU_HV_CRIT_HIGH);
     // lv_obj_set_size(lbl_bar_hv_accu_temp_value, 60, 30);
     ui_quantity_bind_value(lbl_bar_hv_accu_temp_value, &ui_subj_temperature_accu_hv, "%d");
     lv_obj_align_to(lbl_bar_hv_accu_temp_value, bar_hv_accu_temp, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
