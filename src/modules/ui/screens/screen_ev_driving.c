@@ -172,10 +172,10 @@ static lv_group_t *s_right_button_group;
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT]  = "TQG F",
-    [UI_HINT_BTN_LEFT]  = "PWR Lim",
+    [UI_HINT_ENC_LEFT]  = "TQ Gain Front",
+    [UI_HINT_BTN_LEFT]  = "PWR Limit",
     [UI_HINT_BTN_RIGHT] = "TQ Vect",
-    [UI_HINT_ENC_RIGHT] = "TQG R",
+    [UI_HINT_ENC_RIGHT] = "TQ Gain Rear",
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */

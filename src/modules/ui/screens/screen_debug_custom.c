@@ -24,7 +24,7 @@
  *                               on ui_tx_subj_debug_bits, so it shows the last
  *                               confirmed value rather than the highlighted one.
  *
- *                – SET BITS   : publishes UI_INPUT_DEBUG_BITS_SELECTED with the
+ *                – SEND BITS  : publishes UI_INPUT_DEBUG_BITS_SELECTED with the
  *                               highlighted value.  The App Layer forwards it to
  *                               the settings service, which clamps and owns it;
  *                               the CAN module reads it back on its next cycle.
@@ -175,7 +175,7 @@ static lv_obj_t   *s_roller;
 /** @brief "Current Debug Bits: …" label; driven by an observer on the TX subject. */
 static lv_obj_t   *s_roller_lbl;
 
-/** @brief SET BITS button — confirms the highlighted value. */
+/** @brief SEND BITS button — confirms the highlighted value. */
 static lv_obj_t   *s_btn_ok;
 
 /** @brief Input group for the right encoder — holds the roller. */
@@ -184,7 +184,7 @@ static lv_group_t *s_right_encoder_group;
 /** @brief Input group for the left button pad. Never created; stays NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief Input group for the right button pad — holds SET BITS. */
+/** @brief Input group for the right button pad — holds SEND BITS. */
 static lv_group_t *s_right_button_group;
 
 
@@ -195,9 +195,9 @@ static lv_group_t *s_right_button_group;
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT]  = "Screen",
-    [UI_HINT_BTN_RIGHT] = "Set",
-    [UI_HINT_ENC_RIGHT] = "Bits",
+    [UI_HINT_ENC_LEFT]  = "Switch Screen",
+    [UI_HINT_BTN_RIGHT] = "Send Bits",
+    [UI_HINT_ENC_RIGHT] = "Select Bits",
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
@@ -318,7 +318,7 @@ static void build_read_column(lv_obj_t *scr)
 }
 
 /**
- * @brief Build the SET BITS button.
+ * @brief Build the SEND BITS button.
  *
  * @param scr  Screen object to build into.
  */
@@ -336,32 +336,14 @@ static void build_buttons(lv_obj_t *scr)
 
     lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
     lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_ok, "SET BITS");
+    lv_label_set_text(lbl_ok, "SEND BITS");
     lv_obj_align(lbl_ok, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_add_event_cb(s_btn_ok, btn_ok_event_cb, LV_EVENT_CLICKED, NULL);
-
-    /* ── RTD button ────────────────────────────────────────────────────── */
-
-    // s_btn_rtd = lv_button_create(scr);
-    // lv_obj_remove_style_all(s_btn_rtd);
-    // lv_obj_add_style(s_btn_rtd, &ui_style_btn_default, 0);
-    // lv_obj_add_style(s_btn_rtd, &ui_style_btn_checked, LV_STATE_CHECKED);
-    // lv_obj_add_style(s_btn_rtd, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    // lv_obj_set_size(s_btn_rtd, BTN_WIDTH, BTN_HEIGHT);
-    // lv_obj_align(s_btn_rtd, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
-
-    // lv_obj_t *lbl_rtd = lv_label_create(s_btn_rtd);
-    // lv_obj_add_style(lbl_rtd, &ui_style_label_subtitle, 0);
-    // lv_label_set_text(lbl_rtd, "SET BITS");
-    // lv_obj_align(lbl_rtd, LV_ALIGN_CENTER, 0, 0);
-
-    // lv_obj_add_flag(s_btn_rtd, LV_OBJ_FLAG_CHECKABLE);
-    // lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 /**
- * @brief SET BITS click handler — confirm the highlighted debug value.
+ * @brief SEND BITS click handler — confirm the highlighted debug value.
  *
  * Publishes UI_INPUT_DEBUG_BITS_SELECTED. The App Layer hands the value to the
  * settings service; the CAN module reads it from there on its next TX cycle.

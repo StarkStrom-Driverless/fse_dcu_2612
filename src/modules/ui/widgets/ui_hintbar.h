@@ -38,10 +38,10 @@
  *
  *              @code
  *                static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
- *                    [UI_HINT_ENC_LEFT]  = "Screen",
- *                    [UI_HINT_BTN_LEFT]  = "PWR Lim",
+ *                    [UI_HINT_ENC_LEFT]  = "Switch Screen",
+ *                    [UI_HINT_BTN_LEFT]  = "PWR Limit",
  *                    [UI_HINT_BTN_RIGHT] = "TQ Vect",
- *                    [UI_HINT_ENC_RIGHT] = "TQG R",
+ *                    [UI_HINT_ENC_RIGHT] = "TQ Gain Rear",
  *                };
  *                ui_hintbar_create(scr, k_hints);
  *              @endcode

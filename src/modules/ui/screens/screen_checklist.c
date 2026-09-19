@@ -140,8 +140,8 @@ static lv_group_t *s_rtd_button_group;
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT] = "Screen",
-    [UI_HINT_BTN_MID]  = "RTD",
+    [UI_HINT_ENC_LEFT] = "Switch Screen",
+    [UI_HINT_BTN_MID]  = "Hold: Send RTD",
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
@@ -176,7 +176,7 @@ static void build_buttons(lv_obj_t *scr)
 
     lv_obj_t *lbl_rtd = lv_label_create(s_btn_rtd);
     lv_obj_add_style(lbl_rtd, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_rtd, "RTD");
+    lv_label_set_text(lbl_rtd, "SEND RTD");
     lv_obj_align(lbl_rtd, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_PRESSED, NULL);

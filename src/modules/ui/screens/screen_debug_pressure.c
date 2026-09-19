@@ -66,7 +66,7 @@ LOG_MODULE_REGISTER(screen_debug_pressure, CONFIG_LOG_DEFAULT_LEVEL);
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT] = "Screen",
+    [UI_HINT_ENC_LEFT] = "Switch Screen",
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */

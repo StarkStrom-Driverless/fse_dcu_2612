@@ -15,7 +15,7 @@
  *                                 what was last confirmed rather than what is
  *                                 highlighted.
  *
- *                – SET MISSION  : publishes UI_INPUT_MISSION_SELECTED with the
+ *                – SEND MISSION : publishes UI_INPUT_MISSION_SELECTED with the
  *                                 highlighted index and updates the TX subject.
  *                                 The App Layer writes it to app_state; the CAN
  *                                 module transmits it on its next cycle.  No
@@ -156,10 +156,8 @@ static lv_obj_t   *s_roller;
 /** @brief "Current Mission: …" label; driven by an observer, not by the roller. */
 static lv_obj_t   *s_roller_lbl;
 
-/** @brief SET MISSION button — confirms the highlighted mission. */
+/** @brief SEND MISSION button — confirms the highlighted mission. */
 static lv_obj_t   *s_btn_ok;
-
-/* An UNSET MISSION counterpart existed here; the code is retained below. */
 
 /** @brief Input group for the right encoder — holds the roller. */
 static lv_group_t *s_right_encoder_group;
@@ -167,7 +165,7 @@ static lv_group_t *s_right_encoder_group;
 /** @brief Input group for the left button pad. Never created; stays NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief Input group for the right button pad — holds SET MISSION. */
+/** @brief Input group for the right button pad — holds SEND MISSION. */
 static lv_group_t *s_right_button_group;
 
 
@@ -178,9 +176,9 @@ static lv_group_t *s_right_button_group;
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT]  = "Screen",
-    [UI_HINT_BTN_RIGHT] = "Set",
-    [UI_HINT_ENC_RIGHT] = "Mission",
+    [UI_HINT_ENC_LEFT]  = "Switch Screen",
+    [UI_HINT_BTN_RIGHT] = "Send Mission",
+    [UI_HINT_ENC_RIGHT] = "Select Mission",
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
@@ -266,7 +264,7 @@ static void build_roller(lv_obj_t *scr)
 }
 
 /**
- * @brief Build the SET MISSION button.
+ * @brief Build the SEND MISSION button.
  *
  * @param scr  Screen object to build into.
  */
@@ -283,32 +281,14 @@ static void build_buttons(lv_obj_t *scr)
 
     lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
     lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_ok, "SET MISSION");
+    lv_label_set_text(lbl_ok, "SEND MISSION");
     lv_obj_align(lbl_ok, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_add_event_cb(s_btn_ok, btn_ok_event_cb, LV_EVENT_CLICKED, NULL);
-
-    /* ── ESC button ────────────────────────────────────────────────────── */
-
-    // s_btn_esc = lv_button_create(scr);
-    // lv_obj_remove_style_all(s_btn_esc);
-    // lv_obj_add_style(s_btn_esc, &ui_style_btn_default, 0);
-    // lv_obj_add_style(s_btn_esc, &ui_style_btn_checked, LV_STATE_PRESSED);
-    // lv_obj_add_style(s_btn_esc, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    // lv_obj_set_size(s_btn_esc, BTN_WIDTH, BTN_HEIGHT);
-    // lv_obj_align(s_btn_esc, LV_ALIGN_BOTTOM_MID, -BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
-
-    // lv_obj_t *lbl_esc = lv_label_create(s_btn_esc);
-    // lv_obj_add_style(lbl_esc, &ui_style_label_subtitle, 0);
-    // lv_label_set_text(lbl_esc, "UNSET MISSION");
-    // lv_obj_align(lbl_esc, LV_ALIGN_CENTER, 0, 0);
-
-    // lv_obj_add_flag(s_btn_esc, LV_OBJ_FLAG_CHECKABLE);
-    // lv_obj_add_event_cb(s_btn_esc, btn_esc_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
 /**
- * @brief SET MISSION click handler — confirm the highlighted mission.
+ * @brief SEND MISSION click handler — confirm the highlighted mission.
  *
  * Publishes UI_INPUT_MISSION_SELECTED with the roller index. The App Layer
  * stores it in app_state, from where the CAN module reads it on its next TX
@@ -338,34 +318,6 @@ static void btn_ok_event_cb(lv_event_t *e)
         LOG_DBG("Mission selected: %u", (unsigned)idx);
     }
 }
-
-/*
- * Retained: the UNSET MISSION button, which published the same event so the
- * driver could clear a confirmed mission. Re-enable together with the button
- * itself in build_buttons() and the group registration in the factory.
- */
-// static void btn_esc_event_cb(lv_event_t *e)
-// {
-//     uint16_t  idx    = lv_roller_get_selected(s_roller);
-//     char buf[32];
-
-//     lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
-
-//     struct ui_input_event evt = {
-//         .type         = UI_INPUT_MISSION_SELECTED,
-//         .data.mission = (enum mission_id)idx,
-//     };
-
-//     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-//     if (ret != 0) {
-//         LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
-//                 (unsigned)idx, ret);
-//     } else {
-//         lv_label_set_text_fmt(s_roller_lbl, "Selected Mission %s", buf);
-//         LOG_DBG("Mission selected: %u", (unsigned)idx);
-//     }
-// }
-
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 

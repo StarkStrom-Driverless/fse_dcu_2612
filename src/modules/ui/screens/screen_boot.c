@@ -183,7 +183,7 @@ static void bench_patch_create(lv_obj_t *scr)
  * the strings. Controls left out here are dimmed in the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT] = "Screen",
+    [UI_HINT_ENC_LEFT] = "Switch Screen",
 };
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */

@@ -193,10 +193,10 @@ static lv_group_t *s_right_button_group;
  * the strings. Controls left out here are dropped from the bar.
  */
 static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
-    [UI_HINT_ENC_LEFT]  = "Screen",
+    [UI_HINT_ENC_LEFT]  = "Switch Screen",
     [UI_HINT_BTN_LEFT]  = "-",
     [UI_HINT_BTN_RIGHT] = "+",
-    [UI_HINT_ENC_RIGHT] = "Setting",
+    [UI_HINT_ENC_RIGHT] = "Select Setting",
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
@@ -423,7 +423,7 @@ lv_obj_t *screen_settings_create(lv_subject_t *status_subjects)
 
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
-    ui_header_create(scr, "DV SETTINGS", status_subjects);
+    ui_header_create(scr, "SETTINGS", status_subjects);
     build_list(scr);
     build_buttons(scr);
 
