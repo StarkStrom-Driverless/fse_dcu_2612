@@ -2,10 +2,10 @@
  * FSE Display Shield – ST7789V via SPI2
  * SPDX-License-Identifier: Apache-2.0
  *
- * GPIO-Verbindungen:
- *   CS    → PA9   (GPIO, Active Low)
- *   DC    → PB13  (Data/Command, Active High)
- *   RESET → PD2   (Active Low)
+ * GPIO connections:
+ *   CS    -> PA9   (GPIO, active low)
+ *   DC    -> PB13  (data/command, active high)
+ *   RESET -> PD2   (active low)
 
  */
 
@@ -18,23 +18,23 @@
 	};
 
 	/*
-	 * MIPI DBI ist der Abstraktionslayer zwischen Zephyr Display-API
-	 * und dem konkreten SPI-Bus. Er managed DC-GPIO und Reset.
+	 * MIPI DBI is the abstraction layer between the Zephyr display API and
+	 * the actual SPI bus. It manages the DC GPIO and the reset line.
 	 */
 	mipi_dbi_fse_display_2_8: mipi_dbi_fse_display_2_8 {
 		compatible = "zephyr,mipi-dbi-spi";
 		spi-dev = <&spi2>;
 
-		/* DC-Pin: High = Daten, Low = Command */
+		/* DC pin: high = data, low = command */
 		dc-gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>;
 
-		/* Reset: Low-Puls beim Init */
+		/* Reset: low pulse during init */
 		reset-gpios = <&gpiod 2 GPIO_ACTIVE_LOW>;
 
 		/*
-		 * write-only: ST7789V kann prinzipiell lesen, aber die
-		 * meisten Designs sind write-only verdrahtet (spart MISO-Leitung).
-		 * Entfernen, falls dein Shield MISO durchschleift.
+		 * write-only: the ST7789V can be read in principle, but most
+		 * designs are wired write-only (saves the MISO line). Remove
+		 * this if a shield routes MISO through.
 		 */
 		write-only;
 
@@ -43,21 +43,22 @@
 
 		st7789v_fse: st7789v@0 {
 			compatible = "sitronix,st7789v";
-			reg = <0>; /* CS-Index: entspricht erstem Eintrag in cs-gpios */
+			reg = <0>; /* CS index: the first entry in cs-gpios */
 
-			/* SPI-Taktlimit des ST7789V: 20 MHz (Datenblatt: bis 64 MHz,
-			 * aber 20 MHz ist ein konservativer, stabiler Wert) */
+			/* SPI clock limit of the ST7789V: 20 MHz (the datasheet
+			 * allows up to 64 MHz, but 20 MHz is a conservative,
+			 * stable value) */
 			mipi-max-frequency = <20000000>;
 			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
 
-			/* Display-Geometrie */
+			/* Display geometry */
 			width = <240>;
 			height = <320>;
 			x-offset = <0>;
 			y-offset = <0>;
 			pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
 
-			/* Initialisierungsparameter (aus deinem bestehenden Overlay) */
+			/* Initialisation parameters (from the previous overlay) */
 			vcom = <0x2b>;
 			gctrl = <0x35>;
 			vrhs = <0x0b>;
@@ -77,19 +78,19 @@
 };
 
 /*
- * SPI2 Node-Overlay:
- * - Aktiviert den Bus (überschreibt "disabled" aus dem Board-DTS)
- * - Fügt cs-gpios hinzu (Shield-spezifisch)
+ * SPI2 node overlay:
+ * - Enables the bus (overriding "disabled" from the board DTS)
+ * - Adds cs-gpios (shield specific)
  *
- * cs-gpios ist ein Array – bei mehreren SPI-Geräten am selben Bus
- * kommen hier mehrere Einträge rein, reg = <0>, <1>, ... im Device.
+ * cs-gpios is an array – with several SPI devices on the same bus it takes
+ * several entries, and the devices carry reg = <0>, <1>, ... accordingly.
  */
 &spi2 {
 	/*
-	 * 2,8": Steckverbinder-Pin 31 = SCK -> PB13, Pin 32 = DC -> PB10.
-	 * Beim 3,5"-Display sind die beiden Pins genau vertauscht, deshalb
-	 * bringt jedes Display-Shield seine eigene Pinbelegung mit und
-	 * überschreibt damit die Voreinstellung aus dem Board-DTS.
+	 * 2.8": connector pin 31 = SCK -> PB13, pin 32 = DC -> PB10.
+	 * On the 3.5" display those two pins are exactly the other way round,
+	 * which is why each display shield brings its own pin assignment and
+	 * overrides the board DTS default with it.
 	 */
 	pinctrl-0 = <&spi2_sck_pb13 &spi2_mosi_pc3 &spi2_miso_pc2>;
 	pinctrl-names = "default";
