@@ -315,7 +315,9 @@ returns to the screen shown before.
 ### START
 
 First screen after power-up. Shows the current DCU software version and serves
-as the starting point of the carousel.
+as the starting point of the carousel. The gear logo stands still on purpose:
+a turning gear made users think the DCU was still starting up and not yet
+ready. The code for the rotation is in the firmware but disabled.
 
 The version reads `v2612.<minor>.<patch>`, for example `v2612.1.0`. The leading
 number identifies the vehicle generation, the two behind it the firmware

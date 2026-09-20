@@ -213,7 +213,7 @@ messages:
     signals:
       APPS_L_Position:
         app_name: apps_left_position
-        ui: { label: "Left Accelerator Pedal Position", short_label: "APPS L", unit: "%", precision: 0 }
+        ui: { label: "Left Accelerator Pedal Position", short_label: "APPS L", unit: "", precision: 0 }
         range: { min: 0, max: 11000 }
 
   RFC4800_APPS_R:
@@ -222,7 +222,7 @@ messages:
     signals:
       APPS_R_Position:
         app_name: apps_right_position
-        ui: { label: "Right Accelerator Pedal Position", short_label: "APPS R", unit: "%", precision: 0 }
+        ui: { label: "Right Accelerator Pedal Position", short_label: "APPS R", unit: "", precision: 0 }
         range: { min: 0, max: 6000 }
 
   RFC4800_BPPS:
