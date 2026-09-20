@@ -44,7 +44,7 @@
  *              | lv_timer_handler() renders, driver writes the panel | one further UI iteration plus SPI transfer |
  *
  *              So the floor is the panel transfer and the ceiling carries about
- *              15 ms of pure polling quantisation. Expect a spread across
+ *              15 ms of pure polling quantization. Expect a spread across
  *              repeated measurements rather than a single figure — that spread
  *              is the two tick intervals beating against each other, not jitter
  *              in the code. Note also that the subject is set *after*
@@ -219,7 +219,7 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
     ui_header_create(scr, "START", status_subjects);
 
     /*
-     * One centred column: the logo, the product name under it and the version
+     * One centered column: the logo, the product name under it and the version
      * under that. The three do not quite fit by their line boxes — the 80 px
      * name carries empty space above the capitals and below the baseline — so
      * the name and the version are pulled up by NAME_TUCK and VERSION_TUCK.
@@ -238,7 +238,7 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
      *
      * Only the outer ring turns; the inner gear is drawn on top of it and
      * stays put. They share a holder the size of the outer gear, and both are
-     * centred in it, so the inner one lies on the same axis without a
+     * centered in it, so the inner one lies on the same axis without a
      * coordinate of its own.
      */
     LV_IMAGE_DECLARE(outer_gear_a8);

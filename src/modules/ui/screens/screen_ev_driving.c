@@ -45,9 +45,9 @@
  *              and torque vectoring 0…3. This screen is the one the driver uses
  *              at speed, so it offers only the two states that matter there —
  *              any non-zero value reads as ON, switching on writes 1 and
- *              switching off writes 0. A level set on DV SETTINGS therefore
+ *              switching off writes 0. A level set on SETTINGS therefore
  *              survives until the button is used, and is then flattened. Pick
- *              the level on DV SETTINGS, use the button while driving.
+ *              the level on SETTINGS, use the button while driving.
  *
  *              ### Buttons follow the value, not the press
  *              Each button observes its TX subject, and the click handler only
@@ -58,7 +58,7 @@
  *
  *              ### What is not wired up
  *              The torque-gain sliders keep their positions across visits, in
- *              s_sldr_left_val and s_sldr_right_val, and both are now movable —
+ *              s_slider_left_val and s_slider_right_val, and both are now movable —
  *              TQG F on the left encoder, TQG R on the right — but nothing
  *              reads those subjects yet: the values reach neither a setting nor
  *              a CAN signal.
@@ -141,20 +141,20 @@ LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
 /**
  * @brief Torque-gain slider positions — survive screen destroy/recreate.
  *
- * Initialised once, guarded by s_subjects_init, so the sliders come back where
+ * Initialized once, guarded by s_subjects_init, so the sliders come back where
  * the driver left them. Nothing outside this file reads them yet.
  */
-static lv_subject_t s_sldr_left_val;  /**< TQG F slider value. */
-static lv_subject_t s_sldr_right_val; /**< TQG R slider value. */
+static lv_subject_t s_slider_left_val;  /**< TQG F slider value. */
+static lv_subject_t s_slider_right_val; /**< TQG R slider value. */
 
-/** @brief Guard so the two subjects above are initialised exactly once. */
+/** @brief Guard so the two subjects above are initialized exactly once. */
 static bool         s_subjects_init;
 
 /** @brief Torque gain front — vertical slider in the left column, on the left encoder. */
-static lv_obj_t   *s_sldr_left;
+static lv_obj_t   *s_slider_left;
 
 /** @brief Torque gain rear — vertical slider in the right column, on the right encoder. */
-static lv_obj_t   *s_sldr_right;
+static lv_obj_t   *s_slider_right;
 
 /** @brief TQ Vect button — toggles torque vectoring. */
 static lv_obj_t   *s_btn_right;
@@ -209,9 +209,9 @@ static void toggle_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
  * @brief Mirror the TQG F slider into its subject so it survives a rebuild.
  * @param e  LV_EVENT_VALUE_CHANGED from the slider.
  */
-static void sldr_left_value_changed_cb(lv_event_t *e)
+static void slider_left_value_changed_cb(lv_event_t *e)
 {
-    lv_subject_set_int(&s_sldr_left_val,
+    lv_subject_set_int(&s_slider_left_val,
                        lv_slider_get_value(lv_event_get_target_obj(e)));
 }
 
@@ -219,9 +219,9 @@ static void sldr_left_value_changed_cb(lv_event_t *e)
  * @brief Mirror the TQG R slider into its subject so it survives a rebuild.
  * @param e  LV_EVENT_VALUE_CHANGED from the slider.
  */
-static void sldr_right_value_changed_cb(lv_event_t *e)
+static void slider_right_value_changed_cb(lv_event_t *e)
 {
-    lv_subject_set_int(&s_sldr_right_val,
+    lv_subject_set_int(&s_slider_right_val,
                        lv_slider_get_value(lv_event_get_target_obj(e)));
 }
 
@@ -342,7 +342,7 @@ static void build_middle(lv_obj_t *content)
 /**
  * @brief Build one temperature readout: the short caption over a large value.
  *
- * The caption is centred over the value. The value is a ui_quantity bound to
+ * The caption is centered over the value. The value is a ui_quantity bound to
  * the signal, so unit, format and limit coloring come from the descriptor.
  *
  * @param parent  Row to build into.
@@ -574,8 +574,8 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
     if (!s_subjects_init) {
-        lv_subject_init_int(&s_sldr_left_val, 0);
-        lv_subject_init_int(&s_sldr_right_val, 0);
+        lv_subject_init_int(&s_slider_left_val, 0);
+        lv_subject_init_int(&s_slider_right_val, 0);
         s_subjects_init = true;
     }
 
@@ -603,14 +603,14 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
     lv_obj_t *content = ui_layout_content_create(scr);
     lv_obj_set_style_pad_column(content, ui_layout_u(1), 0);
 
-    s_sldr_left  = build_slider_column(content, "TQG F", &s_sldr_left_val,
-                                       sldr_left_value_changed_cb);
+    s_slider_left  = build_slider_column(content, "TQG F", &s_slider_left_val,
+                                         slider_left_value_changed_cb);
     build_middle(content);
-    s_sldr_right = build_slider_column(content, "TQG R", &s_sldr_right_val,
-                                       sldr_right_value_changed_cb);
+    s_slider_right = build_slider_column(content, "TQG R", &s_slider_right_val,
+                                         slider_right_value_changed_cb);
 
     s_right_encoder_group = lv_group_create();
-    lv_group_add_obj(s_right_encoder_group, s_sldr_right);
+    lv_group_add_obj(s_right_encoder_group, s_slider_right);
     lv_group_set_editing(s_right_encoder_group, true);
 
     /*
@@ -619,7 +619,7 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
      * carousel. That is what makes EV driving a navigation dead end.
      */
     s_left_encoder_group = lv_group_create();
-    lv_group_add_obj(s_left_encoder_group, s_sldr_left);
+    lv_group_add_obj(s_left_encoder_group, s_slider_left);
     lv_group_set_editing(s_left_encoder_group, true);
 
     s_left_button_group = lv_group_create();

@@ -53,7 +53,7 @@
  *              Neither setting is a boolean in the schema (power limit 0…7,
  *              torque vectoring 0…3). Here they are reduced to on/off: any
  *              non-zero value shows ON, switching on stores 1, switching off
- *              stores 0. A level chosen on DV SETTINGS is flattened the first
+ *              stores 0. A level chosen on SETTINGS is flattened the first
  *              time the button is pressed.
  *
  *              @note The torque-gain sliders are display-only so far: their

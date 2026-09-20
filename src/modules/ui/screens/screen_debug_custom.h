@@ -39,14 +39,14 @@
  *              |---------------|---------------------------------------------|
  *              | Left encoder  | Screen carousel — handled in ui.c, not here |
  *              | Right encoder | The roller, permanently in edit mode        |
- *              | Right buttons | The SET BITS button                         |
+ *              | Right buttons | The SEND BITS button                         |
  *              | Left buttons  | Nothing; the group accessor returns NULL    |
  *
  *              The read column is display-only and takes no input at all.
  *
  *              ### Selecting versus confirming
  *              Scrolling the roller changes nothing outside this screen. Only
- *              SET BITS publishes UI_INPUT_DEBUG_BITS_SELECTED, which the App
+ *              SEND BITS publishes UI_INPUT_DEBUG_BITS_SELECTED, which the App
  *              Layer hands to the settings service; the CAN module reads the
  *              stored value on its next TX cycle. The label under the roller
  *              shows what was last confirmed.
@@ -84,7 +84,7 @@
  * @brief Create the generic value screen.
  *
  * Builds the header, the two read labels, the 0…7 roller with its
- * confirmed-value label, the SET BITS button and the two input groups.
+ * confirmed-value label, the SEND BITS button and the two input groups.
  * Must be called after ui_styles_init().
  *
  * @param status_subjects  Device-status subjects for the header widget.
@@ -110,7 +110,7 @@ lv_group_t *screen_debug_custom_get_left_button_group(void);
 /**
  * @brief Return the LVGL input group for the right button pad.
  *
- * Contains the SET BITS button.
+ * Contains the SEND BITS button.
  *
  * @return  The group. Valid only after screen_debug_custom_create().
  */

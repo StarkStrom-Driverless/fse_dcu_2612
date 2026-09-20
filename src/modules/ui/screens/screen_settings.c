@@ -180,13 +180,13 @@ static const struct {
 /**
  * @brief One int subject per row, holding the value the label shows.
  *
- * Initialised once, guarded by s_subjects_init; re-seeded from settings_get()
+ * Initialized once, guarded by s_subjects_init; re-seeded from settings_get()
  * on every build. File-scope because the labels bind to them while the screen
  * is constructed and LVGL keeps the binding until the screen is destroyed.
  */
 static lv_subject_t s_value[ROW_COUNT];
 
-/** @brief Guard so the subjects above are initialised exactly once. */
+/** @brief Guard so the subjects above are initialized exactly once. */
 static bool         s_subjects_init;
 
 /**
@@ -372,7 +372,7 @@ static lv_obj_t *build_button(lv_obj_t *parent, const char *text, lv_event_cb_t 
 /**
  * @brief Build the content: "−" button, row list, "+" button, side by side.
  *
- * The row list starts at the top of the content area; the buttons are centred
+ * The row list starts at the top of the content area; the buttons are centered
  * on its height. The list takes the width that is left between them.
  *
  * @param scr  Screen object to build into.

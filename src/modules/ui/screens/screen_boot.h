@@ -5,7 +5,7 @@
  * @ingroup     dcu_ui_screens
  *
  * @details     Provides a single factory function that builds and returns the
- *              boot screen lv_obj_t.  The screen has no interactive widgets;
+ *              START screen lv_obj_t.  The screen has no interactive widgets;
  *              the only moving part is the rotating outer gear, animated by
  *              LVGL itself.
  *
@@ -15,7 +15,7 @@
  *              scaffolding rather than a feature. See screen_boot.c.
  *
  *              ### Navigation context
- *              The boot screen is the carousel's starting position.  Turning
+ *              The START screen is the carousel's starting position.  Turning
  *              the left encoder counter-clockwise walks into the debug
  *              screens, clockwise towards mission selection and driving.  It
  *              offers no input groups, so the right encoder and both button
@@ -36,8 +36,8 @@
  *              └──┴────┴──────────────────────────────┘   only when enabled
  *              ```
  *
- *              Logo, name and version form one column, centred in the content
- *              area (ui_layout.h). The two gears share a holder and are centred
+ *              Logo, name and version form one column, centered in the content
+ *              area (ui_layout.h). The two gears share a holder and are centered
  *              in it. The column is as tall as the content area allows, so the
  *              name and the version are tucked up into the empty space of their
  *              line boxes. No widget has a coordinate; only the benchmark patch,
@@ -94,14 +94,14 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the boot screen.
+ * @brief Create the START screen.
  *
  * Allocates a new top-level LVGL screen object, applies the shared screen
  * background style, and adds the header, the gear logo with its rotation
  * animation, and the product and version labels.
  *
  * Must be called after ui_styles_init() so that the shared style objects
- * are already initialised.
+ * are already initialized.
  *
  * The caller (ui.c) loads the returned screen and later deletes it.
  * Ownership is with the LVGL object tree; the pointer must not be freed.

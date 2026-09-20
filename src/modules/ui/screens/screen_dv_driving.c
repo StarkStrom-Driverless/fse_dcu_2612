@@ -114,7 +114,7 @@ lv_obj_t *screen_dv_driving_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "DV DRIVING", status_subjects);
 
-    /* Caption and mission name, one under the other, centred in the content. */
+    /* Caption and mission name, one under the other, centered in the content. */
     lv_obj_t *content = ui_layout_content_create(scr);
     lv_obj_t *col     = ui_layout_column_create(content, 100);
     lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,

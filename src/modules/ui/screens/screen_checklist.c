@@ -144,7 +144,7 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
-static void build_buttons(lv_obj_t *column);
+static void build_rtd_button(lv_obj_t *column);
 static void rtd_button_refresh(void);
 static void rtd_publish(enum ui_input_type type);
 static void btn_rtd_event_cb(lv_event_t *e);
@@ -174,7 +174,7 @@ static void btn_rtd_event_cb(lv_event_t *e);
  * wide as its parent, the bar takes whatever the value leaves, and nothing here
  * names a coordinate.
  *
- * Bar and value sit in one line and are centred on the same axis, so the value
+ * Bar and value sit in one line and are centered on the same axis, so the value
  * stands level with the bar and not with the caption above it.
  *
  * @param parent   Column to build into.
@@ -223,7 +223,7 @@ static void build_bar_row(lv_obj_t *parent, const struct ui_signal_desc *desc,
 
     /*
      * The line is as tall as its tallest child, which is the value, and the bar
-     * is centred in it — so it would hang below the caption by the difference.
+     * is centered in it — so it would hang below the caption by the difference.
      * Pull the line up by the space above the bar, and the bar sits directly
      * under the caption; the value rises into the free space beside it.
      */
@@ -292,7 +292,7 @@ static lv_obj_t *build_bars(lv_obj_t *scr)
  *
  * @param column  Column to build into.
  */
-static void build_buttons(lv_obj_t *column)
+static void build_rtd_button(lv_obj_t *column)
 {
     lv_obj_t *spacer = lv_obj_create(column);
     lv_obj_remove_style_all(spacer);
@@ -413,7 +413,7 @@ lv_obj_t *screen_checklist_create(lv_subject_t *status_subjects)
     /* A fresh screen starts released, whatever the previous instance saw. */
     s_rtd_pressed = false;
     s_rtd_on_bus  = false;
-    build_buttons(right_column);
+    build_rtd_button(right_column);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 

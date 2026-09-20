@@ -26,7 +26,7 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
- *              One column, centred in the content area (ui_layout.h): the roller,
+ *              One column, centered in the content area (ui_layout.h): the roller,
  *              under it the label of what was last confirmed, under that the send
  *              button, spread over the height. Nothing is placed by a coordinate.
  *
@@ -36,12 +36,12 @@
  *              |---------------|-----------------------------------------------|
  *              | Left encoder  | Screen carousel — handled in ui.c, not here   |
  *              | Right encoder | The roller, permanently in edit mode, so a turn scrolls the list instead of moving focus |
- *              | Right buttons | The SET MISSION button                        |
+ *              | Right buttons | The SEND MISSION button                        |
  *              | Left buttons  | Nothing; the group accessor returns NULL      |
  *
  *              ### Selecting versus confirming
  *              Scrolling the roller changes nothing outside this screen — no
- *              event, no CAN frame. Only SET MISSION publishes
+ *              event, no CAN frame. Only SEND MISSION publishes
  *              UI_INPUT_MISSION_SELECTED, and the App Layer stores that in
  *              app_state, from where the CAN module picks it up on its next
  *              cycle. The label under the roller shows what was last
@@ -82,7 +82,7 @@
  * @brief Create the mission selection screen.
  *
  * Builds the header, the mission roller with its confirmed-mission label, the
- * SET MISSION button and the two input groups.
+ * SEND MISSION button and the two input groups.
  * Must be called after ui_styles_init().
  *
  * @param status_subjects  Device-status subjects for the header widget.
@@ -112,7 +112,7 @@ lv_group_t *screen_mission_select_get_left_button_group(void);
 /**
  * @brief Return the LVGL input group for the right button pad.
  *
- * Contains the SET MISSION button.
+ * Contains the SEND MISSION button.
  *
  * @return  The group. Valid only after screen_mission_select_create().
  */

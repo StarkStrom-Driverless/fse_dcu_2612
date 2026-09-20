@@ -135,22 +135,22 @@ LOG_MODULE_REGISTER(screen_debug_custom, CONFIG_LOG_DEFAULT_LEVEL);
 /**
  * @brief Currently highlighted roller index — survives screen destroy/recreate.
  *
- * Initialised once, guarded by s_subjects_init, and never re-initialised: that
+ * Initialized once, guarded by s_subjects_init, and never re-initialized: that
  * is what carries the highlight across the create/delete cycle.
  */
 static lv_subject_t s_roller_sel;
 
-/** @brief Guard so the subject above is initialised exactly once. */
+/** @brief Guard so the subject above is initialized exactly once. */
 static bool         s_subjects_init;
 
 /** @brief Debug-value roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
 
 /** @brief "Current Debug Bits: …" label; driven by an observer on the TX subject. */
-static lv_obj_t   *s_roller_lbl;
+static lv_obj_t   *s_lbl_confirmed;
 
 /** @brief SEND BITS button — confirms the highlighted value. */
-static lv_obj_t   *s_btn_ok;
+static lv_obj_t   *s_btn_send;
 
 /** @brief Input group for the right encoder — holds the roller. */
 static lv_group_t *s_right_encoder_group;
@@ -177,9 +177,8 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static void build_roller(lv_obj_t *parent);
-static void build_buttons(lv_obj_t *parent);
-static void btn_ok_event_cb(lv_event_t *e);
-// static void btn_esc_event_cb(lv_event_t *e);
+static void build_send_button(lv_obj_t *parent);
+static void btn_send_event_cb(lv_event_t *e);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
@@ -230,7 +229,7 @@ static void build_roller(lv_obj_t *parent)
     lv_obj_set_style_border_color(s_roller, UI_C_DARK,                      LV_PART_MAIN);
     lv_obj_set_style_radius(s_roller,       0,                              LV_PART_MAIN);
 
-    /* ── Selected part: centre row highlight ───────────────────────────── */
+    /* ── Selected part: center row highlight ───────────────────────────── */
     lv_obj_set_style_bg_color(s_roller,   UI_C_ACCENT,                     LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(s_roller,     LV_OPA_COVER,                    LV_PART_SELECTED);
     lv_obj_set_style_text_font(s_roller,  &BarlowCondensed_BoldItalic_18,  LV_PART_SELECTED);
@@ -240,10 +239,10 @@ static void build_roller(lv_obj_t *parent)
 
     /* ── Confirmed bits label (observer-driven) ─────────────────────────── */
 
-    s_roller_lbl = lv_label_create(parent);
-    lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
+    s_lbl_confirmed = lv_label_create(parent);
+    lv_obj_add_style(s_lbl_confirmed, &ui_style_label_subtitle, 0);
     lv_subject_add_observer_obj(&ui_tx_subj_debug_bits, confirmed_bits_observer_cb,
-                                s_roller_lbl, NULL);
+                                s_lbl_confirmed, NULL);
 }
 
 /**
@@ -303,23 +302,23 @@ static void build_read_column(lv_obj_t *col)
  *
  * @param scr  Screen object to build into.
  */
-static void build_buttons(lv_obj_t *parent)
+static void build_send_button(lv_obj_t *parent)
 {
-    /* ── OK button ─────────────────────────────────────────────────────── */
+    /* ── Send button ─────────────────────────────────────────────────────── */
 
-    s_btn_ok = lv_button_create(parent);
-    lv_obj_remove_style_all(s_btn_ok);
-    lv_obj_add_style(s_btn_ok, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_PRESSED);
-    lv_obj_add_style(s_btn_ok, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    lv_obj_set_size(s_btn_ok, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
+    s_btn_send = lv_button_create(parent);
+    lv_obj_remove_style_all(s_btn_send);
+    lv_obj_add_style(s_btn_send, &ui_style_btn_default, 0);
+    lv_obj_add_style(s_btn_send, &ui_style_btn_checked, LV_STATE_PRESSED);
+    lv_obj_add_style(s_btn_send, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
+    lv_obj_set_size(s_btn_send, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
 
-    lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
-    lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_ok, "SEND BITS");
-    lv_obj_align(lbl_ok, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_t *lbl_send = lv_label_create(s_btn_send);
+    lv_obj_add_style(lbl_send, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_send, "SEND BITS");
+    lv_obj_align(lbl_send, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_add_event_cb(s_btn_ok, btn_ok_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_btn_send, btn_send_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
 /**
@@ -339,7 +338,7 @@ static void build_buttons(lv_obj_t *parent)
  *
  * @param e  LV_EVENT_CLICKED from the button. Unused.
  */
-static void btn_ok_event_cb(lv_event_t *e)
+static void btn_send_event_cb(lv_event_t *e)
 {
     ARG_UNUSED(e);
     uint16_t idx = lv_roller_get_selected(s_roller);
@@ -358,32 +357,6 @@ static void btn_ok_event_cb(lv_event_t *e)
         LOG_DBG("Debug bits selected: %u", (unsigned)idx);
     }
 }
-
-/*
- * Retained: a second, checkable button that published only while checked.
- * Left over from the screen this file was copied from; the code below refers
- * to mission selection, not to debug bits.
- */
-// static void btn_rtd_event_cb(lv_event_t *e)
-// {
-//     lv_obj_t *button = lv_event_get_target_obj(e);
-//     uint16_t  idx    = lv_roller_get_selected(s_roller);
-
-//     struct ui_input_event evt = {
-//         .type         = UI_INPUT_MISSION_SELECTED,
-//         .data.mission = (enum mission_id)idx,
-//     };
-
-//     if (lv_obj_has_state(button, LV_STATE_CHECKED)) {
-//         int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-//         if (ret != 0) {
-//             LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
-//                     (unsigned)idx, ret);
-//         } else {
-//             LOG_INF("Mission confirmed via RTD: idx=%u", (unsigned)idx);
-//         }
-//     }
-// }
 
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
@@ -407,7 +380,7 @@ lv_obj_t *screen_debug_custom_create(lv_subject_t *status_subjects)
      * The confirmed-value label is driven by the generated TX subject, which
      * nothing else writes. Re-seed it on every build so it agrees with the
      * settings service — which owns the value and may have been changed from
-     * DV SETTINGS or restored from flash in the meantime.
+     * SETTINGS or restored from flash in the meantime.
      */
     lv_subject_set_int(&ui_tx_subj_debug_bits, (int32_t)stored);
 
@@ -436,7 +409,7 @@ lv_obj_t *screen_debug_custom_create(lv_subject_t *status_subjects)
 
     build_read_column(left);
     build_roller(right);
-    build_buttons(right);
+    build_send_button(right);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 
@@ -450,7 +423,7 @@ lv_obj_t *screen_debug_custom_create(lv_subject_t *status_subjects)
     lv_group_set_editing(s_right_encoder_group, true);
 
     s_right_button_group = lv_group_create();
-    lv_group_add_obj(s_right_button_group, s_btn_ok);
+    lv_group_add_obj(s_right_button_group, s_btn_send);
     lv_group_set_editing(s_right_button_group, true);
 
     ui_hintbar_create(scr, k_hints);

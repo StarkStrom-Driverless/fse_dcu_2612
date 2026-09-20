@@ -21,7 +21,7 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
- *              The caption and the mission name form one column, centred in the
+ *              The caption and the mission name form one column, centered in the
  *              content area (ui_layout.h).
  *
  *              ### How it is reached and left

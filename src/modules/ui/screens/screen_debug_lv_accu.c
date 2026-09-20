@@ -98,7 +98,7 @@ static void build_bars(lv_obj_t *scr);
  * wide as its parent, the bar takes whatever the value leaves, and nothing here
  * names a coordinate.
  *
- * Bar and value sit in one line and are centred on the same axis, so the value
+ * Bar and value sit in one line and are centered on the same axis, so the value
  * stands level with the bar and not with the caption above it.
  *
  * @param parent   Column to build into.
@@ -147,7 +147,7 @@ static void build_bar_row(lv_obj_t *parent, const struct ui_signal_desc *desc,
 
     /*
      * The line is as tall as its tallest child, which is the value, and the bar
-     * is centred in it — so it would hang below the caption by the difference.
+     * is centered in it — so it would hang below the caption by the difference.
      * Pull the line up by the space above the bar, and the bar sits directly
      * under the caption; the value rises into the free space beside it.
      */

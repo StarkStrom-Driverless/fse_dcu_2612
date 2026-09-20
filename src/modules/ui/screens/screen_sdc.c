@@ -24,7 +24,7 @@
  *
  *              The draw callback derives the node index from the cell
  *              coordinates as row × 2 + column, which is the inverse of how
- *              build_checklist() fills the table — the two must stay in step.
+ *              build_table() fills the table — the two must stay in step.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-05
@@ -132,8 +132,7 @@ static lv_obj_t   *s_table;
 /*
  * The three group pointers are never assigned — the screen has no interactive
  * widgets, so the accessors hand ui.c a NULL and the input devices are
- * detached while this screen is shown.  The group creation is retained,
- * commented out, in the factory below.
+ * detached while this screen is shown.
  */
 
 /** @brief Input group for the right encoder. Always NULL. */
@@ -157,7 +156,7 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
-static void build_checklist(lv_obj_t *scr);
+static void build_table(lv_obj_t *parent);
 static void sdc_led_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
 static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject);
 static void sdc_table_draw_cb(lv_event_t *e);
@@ -210,7 +209,7 @@ static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject)
  * the k_sdc_nodes[] order.
  *
  * Requires LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS on the table — see
- * build_checklist().
+ * build_table().
  *
  * @param e  LV_EVENT_DRAW_TASK_ADDED from the table.
  */
@@ -238,15 +237,12 @@ static void sdc_table_draw_cb(lv_event_t *e)
  *
  * @param parent  Container to build into.
  */
-static void build_checklist(lv_obj_t *parent)
+static void build_table(lv_obj_t *parent)
 {
     s_table = lv_table_create(parent);
     lv_obj_remove_style_all(s_table);
 
     lv_table_set_column_count(s_table, 2);
-
-    // lv_table_set_cell_value(s_table, 0, 0, "SDC Components");
-    // lv_table_set_cell_ctrl(s_table, 0, 0, LV_TABLE_CELL_CTRL_MERGE_RIGHT);
 
     for (uint8_t i = 0; i < SDC_NODE_COUNT; i++) {
         lv_table_set_cell_value(s_table, i / 2u, i % 2u, k_sdc_nodes[i].label);
@@ -293,7 +289,7 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
     ui_header_create(scr, "SDC", status_subjects);
 
     /*
-     * Image and table stand side by side in the content area, centred on its
+     * Image and table stand side by side in the content area, centered on its
      * height, with the free width shared evenly around them.
      */
     lv_obj_t *content = ui_layout_content_create(scr);
@@ -325,22 +321,16 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
 
     /* ── Status table (right of the image, 2×6) ─────────────────────────── */
 
-    build_checklist(content);
+    build_table(content);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 
     /*
      * Deliberately not created: with nothing to focus, leaving the groups NULL
      * detaches the input devices, so a stray encoder turn or button press on
-     * this screen does nothing at all.  Retained for when the screen gains an
-     * interactive widget.
+     * this screen does nothing at all.  A screen with something to focus creates
+     * its groups here, as screen_checklist.c does.
      */
-    // s_right_encoder_group = lv_group_create();
-    // lv_group_set_editing(s_right_encoder_group, true);
-
-    // s_right_button_group = lv_group_create();
-    // lv_group_set_editing(s_right_button_group, true);
-
     ui_hintbar_create(scr, k_hints);
 
     return scr;

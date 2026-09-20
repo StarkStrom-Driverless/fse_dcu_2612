@@ -127,23 +127,23 @@ static const char *const k_mission_names[] = {
 /**
  * @brief Currently highlighted roller index — survives screen destroy/recreate.
  *
- * Initialised once, guarded by s_subjects_init, and never re-initialised: that
+ * Initialized once, guarded by s_subjects_init, and never re-initialized: that
  * is what carries the highlight across the create/delete cycle. Re-running
  * lv_subject_init_int() would reset it to zero on every visit.
  */
 static lv_subject_t s_roller_sel;
 
-/** @brief Guard so the subject above is initialised exactly once. */
+/** @brief Guard so the subject above is initialized exactly once. */
 static bool         s_subjects_init;
 
 /** @brief Mission roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
 
 /** @brief "Current Mission: …" label; driven by an observer, not by the roller. */
-static lv_obj_t   *s_roller_lbl;
+static lv_obj_t   *s_lbl_confirmed;
 
 /** @brief SEND MISSION button — confirms the highlighted mission. */
-static lv_obj_t   *s_btn_ok;
+static lv_obj_t   *s_btn_send;
 
 /** @brief Input group for the right encoder — holds the roller. */
 static lv_group_t *s_right_encoder_group;
@@ -170,9 +170,8 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static void build_roller(lv_obj_t *parent);
-static void build_buttons(lv_obj_t *parent);
-static void btn_ok_event_cb(lv_event_t *e);
-// static void btn_esc_event_cb(lv_event_t *e);
+static void build_send_button(lv_obj_t *parent);
+static void btn_send_event_cb(lv_event_t *e);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
@@ -230,7 +229,7 @@ static void build_roller(lv_obj_t *parent)
     lv_obj_set_style_border_color(s_roller, UI_C_DARK,                      LV_PART_MAIN);
     lv_obj_set_style_radius(s_roller,       0,                              LV_PART_MAIN);
 
-    /* ── Selected part: centre row highlight ───────────────────────────── */
+    /* ── Selected part: center row highlight ───────────────────────────── */
     lv_obj_set_style_bg_color(s_roller,   UI_C_ACCENT,                     LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(s_roller,     LV_OPA_COVER,                    LV_PART_SELECTED);
     lv_obj_set_style_text_font(s_roller,  &BarlowCondensed_BoldItalic_18,  LV_PART_SELECTED);
@@ -240,10 +239,10 @@ static void build_roller(lv_obj_t *parent)
 
     /* ── Confirmed mission label (observer-driven) ──────────────────────── */
 
-    s_roller_lbl = lv_label_create(parent);
-    lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
+    s_lbl_confirmed = lv_label_create(parent);
+    lv_obj_add_style(s_lbl_confirmed, &ui_style_label_subtitle, 0);
     lv_subject_add_observer_obj(&ui_tx_subj_drive_mode, confirmed_mission_observer_cb,
-                                s_roller_lbl, NULL);
+                                s_lbl_confirmed, NULL);
 }
 
 /**
@@ -251,22 +250,22 @@ static void build_roller(lv_obj_t *parent)
  *
  * @param scr  Screen object to build into.
  */
-static void build_buttons(lv_obj_t *parent)
+static void build_send_button(lv_obj_t *parent)
 {
-    /* ── OK button ─────────────────────────────────────────────────────── */
+    /* ── Send button ─────────────────────────────────────────────────────── */
 
-    s_btn_ok = lv_button_create(parent);
-    lv_obj_remove_style_all(s_btn_ok);
-    lv_obj_add_style(s_btn_ok, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_ok, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
+    s_btn_send = lv_button_create(parent);
+    lv_obj_remove_style_all(s_btn_send);
+    lv_obj_add_style(s_btn_send, &ui_style_btn_default, 0);
+    lv_obj_add_style(s_btn_send, &ui_style_btn_checked, LV_STATE_PRESSED);
+    lv_obj_set_size(s_btn_send, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
 
-    lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
-    lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_ok, "SEND MISSION");
-    lv_obj_align(lbl_ok, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_t *lbl_send = lv_label_create(s_btn_send);
+    lv_obj_add_style(lbl_send, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_send, "SEND MISSION");
+    lv_obj_align(lbl_send, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_add_event_cb(s_btn_ok, btn_ok_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_btn_send, btn_send_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
 /**
@@ -282,7 +281,7 @@ static void build_buttons(lv_obj_t *parent)
  *
  * @param e  LV_EVENT_CLICKED from the button. Unused.
  */
-static void btn_ok_event_cb(lv_event_t *e)
+static void btn_send_event_cb(lv_event_t *e)
 {
     uint16_t idx = lv_roller_get_selected(s_roller);
 
@@ -334,7 +333,7 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
     ui_header_create(scr, "DV MISSION", status_subjects);
 
     /*
-     * One column, centred: the roller, under it what was last confirmed, under
+     * One column, centered: the roller, under it what was last confirmed, under
      * that the send button. The three are spread over the height, and the
      * column keeps an outline's width free above and below for the button.
      */
@@ -348,7 +347,7 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
     lv_obj_set_style_pad_ver(col, UI_BTN_OUTLINE_W, 0);
 
     build_roller(col);
-    build_buttons(col);
+    build_send_button(col);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 
@@ -366,7 +365,7 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
     lv_group_set_editing(s_right_encoder_group, true);
 
     s_right_button_group = lv_group_create();
-    lv_group_add_obj(s_right_button_group, s_btn_ok);
+    lv_group_add_obj(s_right_button_group, s_btn_send);
     lv_group_set_editing(s_right_button_group, true);
 
     ui_hintbar_create(scr, k_hints);

@@ -27,7 +27,7 @@
  *              ```
  *
  *              Image and table stand side by side in the content area
- *              (ui_layout.h), centred on its height, with the free width shared
+ *              (ui_layout.h), centered on its height, with the free width shared
  *              evenly around them. The only coordinates left are the LED
  *              positions in k_sdc_nodes[]: they are positions on the drawing,
  *              relative to the image, and move with it.

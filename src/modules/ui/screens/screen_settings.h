@@ -21,7 +21,7 @@
  *
  *              ```
  *              ┌──────────────────────────────────────┐
- *              │ DV SETTINGS                   ▪▪▪▪▪▪ │ ← shared header
+ *              │ SETTINGS                   ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
  *              │      ASR                ▓▓░░░░░   0  │
  *              │  ┌─┐ Recuperation       ▓▓▓▓░░░   1  │
@@ -38,7 +38,7 @@
  *              The content area (ui_layout.h) holds three things side by side:
  *              the "-" button, the row list and the "+" button. The list takes
  *              the width the buttons leave, its rows are a fixed share of it
- *              (caption 40 %, slider the rest), and the buttons are centred on
+ *              (caption 40 %, slider the rest), and the buttons are centered on
  *              the list's height. The "saved" notice is the one widget outside
  *              the flow, since it comes and goes: it is aligned above the hint
  *              bar.
