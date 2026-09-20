@@ -17,7 +17,7 @@
  *              | UI_C_RED    | Fault red     | Errors and safety faults        |
  *              | UI_C_WHITE  | Pure white    | Widget backgrounds              |
  *              | UI_C_BAR_BG | Warm beige    | Progress-bar track              |
- *              | UI_C_BORDER | Dark grey     | Border lines                    |
+ *              | UI_C_BORDER | Dark gray     | Border lines                    |
  *
  *              ### Typography (Barlow Condensed family)
  *
@@ -33,7 +33,7 @@
  *
  *              ### Styles
  *              One global lv_style_t instance per semantic role. All styles
- *              are initialised by ui_styles_init(); do not call lv_obj_add_style()
+ *              are initialized by ui_styles_init(); do not call lv_obj_add_style()
  *              before that function returns.
  *
  *              Intended usage:
@@ -101,7 +101,7 @@
 /** @brief Warm beige — progress-bar track background. */
 #define UI_C_BAR_BG     lv_color_hex(0xF5F0E0)
 
-/** @brief Dark grey — secondary border lines. */
+/** @brief Dark gray — secondary border lines. */
 #define UI_C_BORDER     lv_color_hex(0x333333)
 
 
@@ -138,7 +138,7 @@ LV_FONT_DECLARE(FontAwesome_Solid_18)
 /* ── Style Declarations ──────────────────────────────────────────────────────────────────────── */
 
 /*
- * All styles are allocated in ui_styles.c and initialised by ui_styles_init().
+ * All styles are allocated in ui_styles.c and initialized by ui_styles_init().
  * Screen builders add styles to objects; they never call lv_style_init() on
  * these themselves.
  */
@@ -403,14 +403,14 @@ extern lv_style_t ui_style_level_crit_indicator;
 
 /** @} */
 
-/* ── Initialisation ──────────────────────────────────────────────────────────────────────────── */
+/* ── Initialization ──────────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise all shared UI styles.
+ * @brief Initialize all shared UI styles.
  *
- * Must be called once from the UI module after LVGL has been initialised
+ * Must be called once from the UI module after LVGL has been initialized
  * and before any screen builder function runs — a style added to an object
- * before lv_style_init() has run on it is undefined behaviour.
+ * before lv_style_init() has run on it is undefined behavior.
  *
  * The first step of ui_module_init(), and the only caller.
  */

@@ -27,7 +27,7 @@
  *              blob is discarded and defaults apply.  This is what makes
  *              inserting a setting in the middle of the enum safe — without
  *              it, every setting after the insertion point would silently
- *              inherit its neighbour's value.
+ *              inherit its neighbor's value.
  *
  *              ### Locking
  *              s_lock guards s_values only.  It is never held across a call
@@ -243,7 +243,7 @@ static void flush_work_fn(struct k_work *work)
  * @brief Settings subsystem load callback for the "dcu" subtree.
  *
  * Returning 0 without touching s_values leaves the defaults in place, which
- * is the intended behaviour for every recoverable inconsistency — a missing,
+ * is the intended behavior for every recoverable inconsistency — a missing,
  * truncated or schema-stale record must not prevent the system from booting.
  * Only an unknown key is rejected outright.
  *

@@ -150,7 +150,7 @@ struct app_state_can_status {
 };
 
 /**
- * @brief Cached application settings relevant to run-time behaviour.
+ * @brief Cached application settings relevant to run-time behavior.
  *
  * Reserved. The intent is to mirror the values the App Layer needs frequently
  * after a SETTINGS_EVT_LOADED / _UPDATED event, but the settings handler in
@@ -162,12 +162,12 @@ struct app_state_settings {
 };
 
 
-/* ── Initialisation ──────────────────────────────────────────────────────────────────────────── */
+/* ── Initialization ──────────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialisation hook for the application state.
+ * @brief Initialization hook for the application state.
  *
- * The defaults themselves come from the static initialiser in app_state.c, so
+ * The defaults themselves come from the static initializer in app_state.c, so
  * the state is already valid before this runs. The function exists as the
  * documented place to add start-up work that cannot be expressed statically —
  * restoring persisted values, for instance — and currently only logs.

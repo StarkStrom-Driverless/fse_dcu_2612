@@ -41,7 +41,7 @@
 
 /**
  * @ingroup dcu_app
- * @brief Initialise the App Layer.
+ * @brief Initialize the App Layer.
  *
  * Calls app_state_init() to reset the global state to safe defaults, then
  * spawns the App thread (priority 5), which blocks on the Zbus subscriber

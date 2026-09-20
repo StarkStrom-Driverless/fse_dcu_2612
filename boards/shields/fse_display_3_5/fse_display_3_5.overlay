@@ -88,7 +88,7 @@
 			red-blue-swap;
 
 			/* -------------------------------------------------------
-			 * HX8357-D initialisation registers
+			 * HX8357-D initialization registers
 			 * All values match the Adafruit-validated defaults from
 			 * the himax,hx8357.yaml binding and can be overridden here
 			 * per board.

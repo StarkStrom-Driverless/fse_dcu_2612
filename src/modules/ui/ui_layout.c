@@ -58,7 +58,7 @@
 /**
  * @brief Padding at each side of a column, in units.
  *
- * Two neighbouring columns therefore stand 2 × COLUMN_PAD_U apart. The gap is
+ * Two neighboring columns therefore stand 2 × COLUMN_PAD_U apart. The gap is
  * padding inside the columns and not a gap between them on purpose: columns
  * that add up to 100 % of the content width plus a gap between them would be
  * wider than the content area, and flex does not shrink them to fit.

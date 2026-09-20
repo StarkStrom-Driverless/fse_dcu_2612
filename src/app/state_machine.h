@@ -92,7 +92,7 @@ enum sm_event {
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise both state machines in their start states.
+ * @brief Initialize both state machines in their start states.
  *
  * Manual → MANUAL_IDLE (sets @c OPERATING_MODE_DEBUG, already the app_state
  * default). Driverless → AS_OFF.

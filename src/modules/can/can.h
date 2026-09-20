@@ -55,7 +55,7 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise the CAN module.
+ * @brief Initialize the CAN module.
  *
  * Configures the CAN controller (1 Mbit/s, normal mode), installs one hardware
  * RX filter per generated RX frame ID, starts the controller, publishes the

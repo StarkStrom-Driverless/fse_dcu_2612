@@ -395,7 +395,7 @@ static struct led_rgb zone_level_color(enum zone_level level)
  * Both bars grow from the outer edge of the strip towards the middle, which
  * makes them mirror images of each other: the left bar fills from its first
  * LED, the right bar from its last. A driver glancing down reads two bars
- * rising towards the centre rather than two running the same way.
+ * rising towards the center rather than two running the same way.
  *
  * The empty part is not switched off but dimmed to ZONE_TRACK_DIV of the same
  * color. That way the bar's full length is visible at a glance — an unlit
@@ -635,5 +635,5 @@ void lighting_module_init(void)
                     LIGHTING_THREAD_PRIORITY, 0, K_NO_WAIT);
     k_thread_name_set(&s_lighting_thread, "lighting");
 
-    LOG_INF("Lighting module initialised");
+    LOG_INF("Lighting module initialized");
 }

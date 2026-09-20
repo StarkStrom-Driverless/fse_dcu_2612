@@ -187,5 +187,5 @@ void audio_module_init(void)
                     AUDIO_THREAD_PRIORITY, 0, K_NO_WAIT);
     k_thread_name_set(&s_audio_thread, "audio");
 
-    LOG_INF("Audio module initialised");
+    LOG_INF("Audio module initialized");
 }

@@ -110,7 +110,7 @@
  * whichever way round the panel is mounted.
  *
  * Needs the display to exist, i.e. call it while a screen is being built, not
- * from a static initialiser.
+ * from a static initializer.
  *
  * @param n  Number of units.
  * @return   The size in pixels.

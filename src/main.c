@@ -1,13 +1,13 @@
 /**
  * @file        main.c
- * @brief       Firmware entry point — module initialisation sequence
+ * @brief       Firmware entry point — module initialization sequence
  *
  * @details     main() is the single place that wires all modules together in
  *              the correct order.  All real work happens in the threads spawned
  *              by the module init functions; main() returns immediately after
  *              the last init call and the Zephyr kernel takes over.
  *
- *              ### Initialisation order
+ *              ### Initialization order
  *
  *              Each step is a prerequisite of the ones after it:
  *
@@ -27,7 +27,7 @@
  *                 5. **lighting_module_init()** — piezo and LED strip, both
  *                 before the UI so feedback is available from the first screen
  *                 interaction.
- *              6. **ui_module_init()** — initialises the shared styles and LVGL
+ *              6. **ui_module_init()** — initializes the shared styles and LVGL
  *                 subjects, builds and loads the boot screen, and starts the
  *                 LVGL task thread, which renders the first frame and switches
  *                 the backlight on. Last, because the screens it builds publish
@@ -120,10 +120,10 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 /* ── Entry Point ─────────────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Firmware entry point — initialise every module in dependency order.
+ * @brief Firmware entry point — initialize every module in dependency order.
  *
  * Each step is a prerequisite of the ones after it; the ordering rationale is
- * documented per call site below and summarised in the file header.
+ * documented per call site below and summarized in the file header.
  *
  * Returning does not end the program: the module threads created here keep
  * running and the Zephyr kernel takes over the main thread's slot.
@@ -137,7 +137,7 @@ int main(void)
     /*
      * Step 1: App Layer (Dirigent)
      *
-     * Initialises app_state to safe defaults and starts the App thread.
+     * Initializes app_state to safe defaults and starts the App thread.
      * Must run first so the Zbus subscriber queue is draining before
      * any module starts publishing events.
      */
@@ -167,7 +167,7 @@ int main(void)
      * Step 4: Audio module
      *
      * Configures the piezo GPIO and starts the audio subscriber thread.
-     * Initialised before the UI so audio feedback is available from first
+     * Initialized before the UI so audio feedback is available from first
      * screen interaction.
      */
     audio_module_init();
@@ -184,12 +184,12 @@ int main(void)
     /*
      * Step 6: UI module
      *
-     * Initialises styles and LVGL subjects, builds and loads the boot screen,
+     * Initializes styles and LVGL subjects, builds and loads the boot screen,
      * and starts the LVGL task thread — that thread renders the first frame
      * and switches the backlight on.  Started last because encoder and button
      * events flow towards the App thread which must already be active.
      *
-     * Note: All modules prior to UI must be initialised first so that no
+     * Note: All modules prior to UI must be initialized first so that no
      * upward Zbus events are dropped during the UI startup phase.
      */
     ui_module_init();
@@ -205,7 +205,7 @@ int main(void)
     demo_module_init();
 #endif
 
-    LOG_INF("All modules initialised — kernel takes over");
+    LOG_INF("All modules initialized — kernel takes over");
 
     /*
      * main() returns here; all further execution is in the module threads

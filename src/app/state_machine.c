@@ -389,7 +389,7 @@ void state_machine_init(void)
 {
     smf_set_initial(SMF_CTX(&s_manual), &manual_states[MANUAL_STATE_IDLE]);
     smf_set_initial(SMF_CTX(&s_dv), &dv_states[DV_STATE_AS_OFF]);
-    LOG_INF("State machines initialised");
+    LOG_INF("State machines initialized");
 }
 
 void state_machine_post(enum sm_event event)

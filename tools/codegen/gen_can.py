@@ -702,7 +702,7 @@ def settings_schema_hash(settings: list[dict]) -> int:
     changed since the blob was written, so the blob is discarded and defaults
     apply.  This is what makes inserting a setting in the middle safe: without
     it, every setting after the insertion point would silently inherit its
-    neighbour's value.
+    neighbor's value.
     """
     canonical = ";".join(
         f"{s['name']}:{s['default']}:{s['min']}:{s['max']}:{int(s['can_tx'])}"

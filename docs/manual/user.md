@@ -38,7 +38,7 @@ there, not here.
 | Zone | Indication |
 |------|------------|
 | Left | HV battery voltage as a bar |
-| Centre | Status indicators |
+| Center | Status indicators |
 | Right | Whichever of accumulator, inverter or motor temperature is closest to its own limit |
 
 Both bars grow from the outside towards the middle, and their empty part stays
@@ -93,16 +93,16 @@ colored independently.
 
 ## Navigation {#manual-user-navigation}
 
-Once power is applied, the DCU boots and shows the **boot screen**. From there
+Once power is applied, the DCU boots and shows the **START** screen. From there
 you page through the screens with the **left rotary encoder**.
 
-The screens are arranged as a carousel. To the left of the boot screen are the
+The screens are arranged as a carousel. To the left of the START screen are the
 debug screens, to the right the screens for EV and DV operation:
 
-| Turning the encoder | Screens, in order from BOOT |
+| Turning the encoder | Screens, in order from START |
 |---|---|
-| Counter-clockwise | DV SETTINGS, DBG TX, DBG TS, DBG PRESSURE, DBG HV ACCU, DBG LV ACCU |
-| *(start position)* | **BOOT** |
+| Counter-clockwise | SETTINGS, DBG CUSTOM, DBG TS, DBG PRESSURE, DBG HV ACCU, DBG LV ACCU |
+| *(start position)* | **START** |
 | Clockwise | DV MISSION, SDC, EV CHECKLIST |
 
 The carousel does not wrap around: at either end the display simply stops.
@@ -138,7 +138,7 @@ The transition to RTD follows the vehicle: the DCU switches to the
 The debug screens are intended for commissioning and fault finding. They show
 raw values from the CAN bus.
 
-### DBG TX
+### DBG CUSTOM
 
 Sets the `Debug_SETTING` signal of the `DCU_2_mABX` message, which is sent to
 the mABX.
@@ -289,7 +289,7 @@ The controls have a fixed assignment here:
 
 Both buttons work the same way: they show their name and ON or OFF underneath
 and turn green while on. Both only switch between on and off — if a level was
-chosen for one of them on DV SETTINGS, pressing the button here replaces it
+chosen for one of them on SETTINGS, pressing the button here replaces it
 with plain on or off.
 
 In addition to the two torque vectoring values (TQG F, TQG R), the screen shows
@@ -312,7 +312,7 @@ returns to the screen shown before.
 
 ## Other screens
 
-### Boot
+### START
 
 First screen after power-up. Shows the current DCU software version and serves
 as the starting point of the carousel.
@@ -326,7 +326,7 @@ the exact firmware build.
 
 ### Settings
 
-**DV SETTINGS** is the central editor for the persistent settings: ASR,
+**SETTINGS** is the central editor for the persistent settings: ASR,
 recuperation, torque vectoring, power limit and display brightness. Each setting
 is one row with a bar showing where the value sits between its limits. The
 **right encoder** moves the highlight between rows — the highlighted bar turns
@@ -337,7 +337,7 @@ Changes take effect immediately — there is no separate confirm step. The same
 values can still be reached from EV DRIVING; both paths write to the same store,
 so the screens always agree.
 
-The debug bits are **not** on this screen. They are set on DBG TX, which also
+The debug bits are **not** on this screen. They are set on DBG CUSTOM, which also
 documents what each bit means.
 
 Writing to the flash is deferred by two seconds so that turning a value up and

@@ -11,8 +11,8 @@
  *              ```
  *              parent (the screen)
  *                ├─ header                styled with ui_style_header, a flex row
- *                │    ├─ title label      takes the free width, vertically centred
- *                │    └─ icon row (flex)  right, vertically centred
+ *                │    ├─ title label      takes the free width, vertically centered
+ *                │    └─ icon row (flex)  right, vertically centered
  *                │         └─ one 24×24 container per device slot
  *                │              └─ icon label in FontAwesome_Solid_18
  *                └─ page-indicator bar    full width, directly below the header
@@ -45,7 +45,7 @@
  *
  *              Opacity is used rather than LV_OBJ_FLAG_HIDDEN because hiding
  *              an object removes it from the flex layout, which would make the
- *              neighbouring icons jump sideways twice a second.
+ *              neighboring icons jump sideways twice a second.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-04
@@ -109,7 +109,7 @@
  * @brief Height of a single segment.
  *
  * Less than the bar on purpose: the difference is what shows above and below
- * the segments once they are centred, turning the bar's dark background into a
+ * the segments once they are centered, turning the bar's dark background into a
  * frame around them rather than a backdrop behind them.
  *
  * The slant of the sides equals this height, which is what makes them run at
@@ -157,7 +157,7 @@ static inline int32_t page_share(int32_t bar_h, int32_t pct)
 /**
  * @brief Icon for each device slot.
  *
- * Designated initialisers keep the table tied to enum ui_device_slot rather
+ * Designated initializers keep the table tied to enum ui_device_slot rather
  * than to a hand-counted order; the loop below indexes it with the same value
  * it uses for the status subject.
  */
@@ -328,12 +328,10 @@ static void slot_status_observer_cb(lv_observer_t *observer, lv_subject_t *subje
 {
     lv_obj_t *cont    = lv_observer_get_target_obj(observer);
     lv_obj_t *img     = lv_obj_get_child(cont, 0);
-    // lv_obj_t *overlay = lv_obj_get_child(cont, 1);
 
     enum ui_device_status cur  = (enum ui_device_status)lv_subject_get_int(subject);
     enum ui_device_status prev = (enum ui_device_status)lv_subject_get_previous_int(subject);
 
-    // lv_obj_set_style_image_recolor(img, status_to_color(cur), 0);
     lv_obj_set_style_text_color(img, status_to_color(cur), LV_PART_MAIN);
 
     bool should_blink = (cur  == UI_DEVICE_STATUS_ACTIVE);
@@ -381,7 +379,7 @@ static void slot_status_observer_cb(lv_observer_t *observer, lv_subject_t *subje
  * The obvious split — two triangles sharing the bl→tr diagonal — leaves a
  * visible seam down the middle of every segment. Each triangle antialiases its
  * own side of the shared edge, and two half-covered pixels do not add up to one
- * covered pixel: the dark background shows through as a grey line. Because the
+ * covered pixel: the dark background shows through as a gray line. Because the
  * segments are wide and flat, that diagonal runs almost horizontally through
  * the middle, which is exactly where it is most obvious.
  *
@@ -459,7 +457,7 @@ static void page_bar_draw_cb(lv_event_t *e)
          *
          * lv_area_t is inclusive on both ends. The right bound deliberately
          * reaches x_br, one column into wedge C, so that however the triangle
-         * rasteriser rounds its vertical edge there can be no hairline gap
+         * rasterizer rounds its vertical edge there can be no hairline gap
          * between the two. Both pieces are opaque and the same color, so the
          * overlap is invisible.
          */
@@ -571,7 +569,7 @@ lv_obj_t *ui_header_create(lv_obj_t    *parent,
 
     /*
      * The header is a flex row: the title takes what the icons leave, the
-     * icons stand at the right edge, both centred on the header's height.
+     * icons stand at the right edge, both centered on the header's height.
      */
     lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(header,

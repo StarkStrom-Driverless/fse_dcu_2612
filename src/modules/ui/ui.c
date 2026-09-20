@@ -140,7 +140,7 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * 100 pt fonts is what drives the requirement. This is also why the first
  * lv_timer_handler() call was moved out of ui_module_init() — see there.
  */
-#define UI_THREAD_STACK_SIZE    16384U //8192U
+#define UI_THREAD_STACK_SIZE    12288U //8192U
 
 /** @brief Scheduling priority for the LVGL task thread (lowest in the system). */
 #define UI_THREAD_PRIORITY      8
@@ -199,7 +199,7 @@ typedef lv_obj_t *(*screen_factory_fn)(lv_subject_t *);
 /**
  * @brief Builder per screen_id; NULL means "screen not implemented".
  *
- * Sparse by design — the designated initialisers keep the table aligned with
+ * Sparse by design — the designated initializers keep the table aligned with
  * enum screen_id no matter how the enum is reordered, and ui_load_screen()
  * treats a NULL entry as a no-op with a warning.
  */
@@ -235,7 +235,7 @@ static enum screen_id s_active_screen = SCREEN_NONE;
 /**
  * @brief Current index into k_carousel[].
  *
- * @note The initialiser is an index-versus-enum mix-up without consequence:
+ * @note The initializer is an index-versus-enum mix-up without consequence:
  *       SCREEN_BOOT is a screen_id, not a carousel index, and the two do not
  *       coincide. It never matters, because ui_module_init() searches
  *       k_carousel[] for SCREEN_BOOT and overwrites this with the real index
@@ -1026,7 +1026,7 @@ void ui_module_init(void)
     /*
      * ── 1b. Device status subjects ───────────────────────────────────────
      * Must also precede screen creation: header icons subscribe to these
-     * subjects during ui_header_create() and expect them to be initialised.
+     * subjects during ui_header_create() and expect them to be initialized.
      *
      * All slots start at FAULT, not OK. Nothing is known about any device
      * until its first CAN frame arrives, and on a status display the honest
@@ -1132,5 +1132,5 @@ void ui_module_init(void)
                     UI_THREAD_PRIORITY, 0, K_NO_WAIT);
     k_thread_name_set(&s_ui_thread, "ui_lvgl");
 
-    LOG_INF("UI module initialised");
+    LOG_INF("UI module initialized");
 }

@@ -181,7 +181,7 @@ static K_THREAD_STACK_DEFINE(s_can_stack, CAN_THREAD_STACK_SIZE);
 /** @brief Thread control block for the CAN worker thread. */
 static struct k_thread s_can_thread;
 
-/** @brief Flag set after hardware initialisation completes successfully. */
+/** @brief Flag set after hardware initialization completes successfully. */
 static bool s_hw_ready;
 
 /** @brief Tick counter incremented once per CAN_TX_PERIOD_MS cycle. Used to
@@ -452,7 +452,7 @@ static inline uint8_t mission_to_drive_mode(enum mission_id mission)
  * app_state getters and settings_get_all() are mutex-protected internally and
  * safe to call from this thread.
  *
- * The thread returns immediately if hardware initialisation failed, so the
+ * The thread returns immediately if hardware initialization failed, so the
  * rest of the firmware continues to function without CAN.
  *
  * @param p1  Unused.
@@ -579,5 +579,5 @@ void can_module_init(void)
 
     k_thread_name_set(&s_can_thread, "can_worker");
 
-    LOG_INF("CAN module initialised");
+    LOG_INF("CAN module initialized");
 }

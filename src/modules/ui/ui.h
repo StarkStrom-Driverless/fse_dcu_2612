@@ -8,7 +8,7 @@
  *              and the encoder-driven screen carousel.
  *
  *              ### Responsibilities
- *              – Initialise the shared styles and the generated LVGL subjects.
+ *              – Initialize the shared styles and the generated LVGL subjects.
  *              – Run lv_timer_handler() in a dedicated thread (priority 8).
  *                Every LVGL call in the firmware happens in that thread.
  *              – Create screens on first visit and delete them on leaving, so
@@ -74,11 +74,11 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise the UI module.
+ * @brief Initialize the UI module.
  *
  * Performs the following steps in order:
- *  1. Initialise the shared LVGL styles (ui_styles_init()).
- *  2. Initialise the generated RX and TX subjects and the device-status
+ *  1. Initialize the shared LVGL styles (ui_styles_init()).
+ *  2. Initialize the generated RX and TX subjects and the device-status
  *     subjects — screens bind to them while being built, so they must exist
  *     first.
  *  3. Resolve the display device for backlight control.
@@ -92,7 +92,7 @@
  * frame for the same reason.
  *
  * Call last in main() — the screens it builds publish input events that the
- * App thread must already be ready to receive.  LVGL itself is initialised
+ * App thread must already be ready to receive.  LVGL itself is initialized
  * earlier by the Zephyr display driver.
  */
 void ui_module_init(void);

@@ -10,7 +10,7 @@
  *              units.
  *
  *              ### Thread safety
- *              A k_mutex serialises concurrent access, and it is needed: the
+ *              A k_mutex serializes concurrent access, and it is needed: the
  *              app thread (priority 5) writes while the CAN worker thread
  *              (priority 3) reads mission and RTD button on every TX cycle,
  *              and the CAN thread preempts the app thread. Contention is low —
@@ -81,7 +81,7 @@ K_MUTEX_DEFINE(s_mutex);
 /**
  * @brief Global application state instance with safe initial values.
  *
- * This initialiser — not app_state_init() — is what establishes the defaults:
+ * This initializer — not app_state_init() — is what establishes the defaults:
  * operating mode DEBUG, no mission, CAN disconnected, all flags false
  * (i.e. "unknown", never "confirmed OK"), display brightness 80 %.
  */
@@ -120,13 +120,13 @@ static struct app_state s_state = {
 void app_state_init(void)
 {
     /*
-     * The static initialiser above already sets the default values, so there
+     * The static initializer above already sets the default values, so there
      * is nothing to reset here.  The function is kept as the explicit hook for
      * start-up work that cannot be expressed statically — loading persisted
      * values, for instance — and to give main()'s init sequence one obvious
      * place to call.
      */
-    LOG_INF("Application state initialised (mode=DEBUG)");
+    LOG_INF("Application state initialized (mode=DEBUG)");
 }
 
 /* --- Atomic getters ------------------------------------------------------------------- */

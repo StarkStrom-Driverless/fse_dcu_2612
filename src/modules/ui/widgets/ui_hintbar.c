@@ -30,7 +30,7 @@
  *              callback because it is a dozen identical colored shapes. This
  *              bar is images and text, which LVGL has no comparable shortcut
  *              for — an object per element is what it costs, and twelve of
- *              them once per screen build is not worth optimising.
+ *              them once per screen build is not worth optimizing.
  *
  *              ### Icons
  *              The images are I4 (16-color indexed) and are drawn scaled down
@@ -98,7 +98,7 @@ LV_IMAGE_DECLARE(enc_right_b_i4);
 /**
  * @brief Icon per control, indexed by @ref ui_hint_input.
  *
- * Designated initialisers tie the table to the enum rather than to a
+ * Designated initializers tie the table to the enum rather than to a
  * hand-counted order — the build loop indexes both with the same value.
  */
 static const lv_image_dsc_t *const k_hint_icons[UI_HINT_INPUT_COUNT] = {
@@ -161,7 +161,7 @@ lv_obj_t *ui_hintbar_create(lv_obj_t *parent,
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     /*
      * SPACE_EVENLY rather than START: the number of slots varies per screen,
-     * and spreading them keeps a single hint centred instead of stranded at
+     * and spreading them keeps a single hint centered instead of stranded at
      * the left edge.
      */
     lv_obj_set_flex_align(bar,

@@ -58,7 +58,7 @@
 			y-offset = <0>;
 			pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
 
-			/* Initialisation parameters (from the previous overlay) */
+			/* Initialization parameters (from the previous overlay) */
 			vcom = <0x2b>;
 			gctrl = <0x35>;
 			vrhs = <0x0b>;

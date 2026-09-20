@@ -131,7 +131,7 @@
  */
 
 
-/* ── Initialisation ──────────────────────────────────────────────────────────────────────────── */
+/* ── Initialization ──────────────────────────────────────────────────────────────────────────── */
 
 /**
  * @brief Load persisted settings from flash, or fall back to defaults.

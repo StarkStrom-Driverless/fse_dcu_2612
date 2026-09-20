@@ -102,7 +102,7 @@ enum screen_id {
     SCREEN_DEBUG_CUSTOM,      /**< Read and write generic, unassigned values.      */
     SCREEN_SETTINGS,          /**< Editor for every persistent setting.            */
     SCREEN_BOOT,              /**< Splash screen; carousel starting position.      */
-    SCREEN_MISSION_SELECT,    /**< Mission roller + SET MISSION button.            */
+    SCREEN_MISSION_SELECT,    /**< Mission roller + SEND MISSION button.            */
     SCREEN_SDC,               /**< Shutdown-circuit node overview.                 */
     SCREEN_PRE_RTD,           /**< Pre-drive screen; carries the RTD button.       */
     SCREEN_RTD,               /**< Reserved: live telemetry during mission.        */
@@ -192,9 +192,9 @@ struct can_status_event {
  *  Button pads    →  LVGL keypad indevs bound to per-screen groups
  *
  * ### Who publishes what
- *  UI_INPUT_MISSION_SELECTED     screen_mission_select.c (SET MISSION button)
+ *  UI_INPUT_MISSION_SELECTED     screen_mission_select.c (SEND MISSION button)
  *  UI_INPUT_RTD_PRESSED/_RELEASED screen_checklist.c      (RTD button, press / release)
- *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SET BITS button)
+ *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SEND BITS button)
  *  UI_INPUT_SETTING_SELECTED     screen_settings.c        (− / + on a setting)
  *                                screen_ev_driving.c      (PWR Limit, TQ Vect)
  *  UI_INPUT_SCREEN_CHANGED       ui.c                     (every screen load)
@@ -325,7 +325,7 @@ struct feedback_event {
  *
  * Every slot starts at UI_DEVICE_STATUS_FAULT: until a frame has arrived,
  * nothing is known about the device, and unknown is shown as bad rather than
- * good. See the initialisation in ui_module_init().
+ * good. See the initialization in ui_module_init().
  *
  * @note UI_DEVICE_SLOT_COUNT is used as an array size — keep it last.
  */

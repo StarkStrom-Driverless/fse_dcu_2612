@@ -165,7 +165,7 @@ struct tour_stop {
  * ERROR are reserved in the enum and have none.
  */
 static const struct tour_stop k_tour[] = {
-    { SCREEN_BOOT,           "BOOT"         },
+    { SCREEN_BOOT,           "START"        },
     { SCREEN_MISSION_SELECT, "DV MISSION"   },
     { SCREEN_SDC,            "SDC"          },
     { SCREEN_PRE_RTD,        "EV CHECKLIST" },

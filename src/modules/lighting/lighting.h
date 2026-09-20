@@ -44,7 +44,7 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise the Lighting module.
+ * @brief Initialize the Lighting module.
  *
  * Verifies the LED strip device is ready and starts the lighting thread
  * (priority 7), which begins animating immediately.

@@ -328,7 +328,7 @@ west build -t run
 
 The firmware then publishes a fixed, plausible CAN snapshot and loads the next
 screen every five seconds — DV MISSION, SDC, EV CHECKLIST, EV DRIVING, DV DRIVING,
-the debug screens and the settings, then back to the boot screen. Each stop is
+the debug screens and SETTINGS, then back to the START screen. Each stop is
 logged as `Demo: <name>`. `CONFIG_DCU_DEMO_SCREEN_PERIOD_MS` changes the time
 per screen.
 
@@ -491,6 +491,25 @@ The fonts are the one thing that does not scale: they are compiled at fixed
 sizes. A layout can give a large number the room it needs, but it cannot make
 the number smaller.
 
+#### Naming in screens
+
+A screen's names say what a thing is and what it does, and they read the same
+in every file:
+
+- **Widgets** are named `<kind>_<role>`: `btn_send`, `lbl_caption`, `slider_left`,
+  `roller`, `table`. The kinds are `btn`, `lbl`, `slider`, `bar`, `roller`,
+  `qty` (a `ui_quantity`), `row`, `col`. A widget that outlives the factory
+  function is a file-scope `s_<kind>_<role>`.
+- **Builders** are `build_<what>()` and take the container they build into
+  (`parent`, or `content` and `column` where the container is meant).
+- **Callbacks** end in `_event_cb` for LVGL events and `_observer_cb` for
+  subjects, and start with the widget or subject they belong to:
+  `btn_send_event_cb`, `toggle_observer_cb`.
+- **Layout sizes** carry their unit in the name: `_U` for layout units, `_PCT`
+  for a share, none for pixels that are tied to a font or an asset.
+- The header title is the screen's name everywhere: the header, the manual and
+  the demo tour use the same string.
+
 Screens are created lazily and released when left. State that has to outlive
 that does not belong in the screen, but in a module-wide subject, in
 `app_state` or in the settings service.
@@ -500,7 +519,7 @@ that does not belong in the screen, but in a module-wide subject, in
 1. Create a directory under `src/modules/<name>/`
 2. Add the Zbus channel and payload to `events.h` and `event_bus.{c,h}`
 3. Provide `<name>_module_init()` and call it from `main.c` at the right point
-   in the initialisation order
+   in the initialization order
 4. Document the module in its `<name>.h` file header — that header is what
    Doxygen publishes
 
@@ -595,7 +614,7 @@ Results: website under `docs/_build`, PDF under
 
 The public version is **`2612.<minor>.<patch>`**. The leading number identifies
 the vehicle generation — year 26, twelfth car built — and is what appears on
-the boot screen, in the git tag and on the generated documentation.
+the START screen, in the git tag and on the generated documentation.
 
 Internally that number is split across two files, because it does not fit where
 the toolchain stores it.
@@ -632,12 +651,12 @@ numbers in one place. `CMakeLists.txt` reads it and computes `DCU_VEHICLE_ID`.
 
 ```
 VERSION file   12.1.0        Zephyr, MCUboot image header
-Boot screen    v2612.1.0     via app_version.h + DCU_VEHICLE_ID
+START screen   v2612.1.0     via app_version.h + DCU_VEHICLE_ID
 Git tag        v2612.1.0
 ```
 
 The index appears exactly once, so the two representations cannot drift. The
-boot screen reads `APP_VERSION_MINOR` and `APP_PATCHLEVEL` from the generated
+START screen reads `APP_VERSION_MINOR` and `APP_PATCHLEVEL` from the generated
 `app_version.h` rather than a hard-coded string, so what the display shows is
 always what was built.
 
@@ -645,7 +664,7 @@ always what was built.
 
 | Field | Bump when |
 |---|---|
-| `PATCHLEVEL` | Bug fixes, no behavioural change for the driver |
+| `PATCHLEVEL` | Bug fixes, no behavioral change for the driver |
 | `VERSION_MINOR` | New features — a new screen, a new signal, a new setting |
 | `VERSION_MAJOR` | Only with a new vehicle; `DCU_VEHICLE_YEAR` changes with it |
 

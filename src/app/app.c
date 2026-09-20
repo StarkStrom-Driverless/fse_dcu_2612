@@ -266,8 +266,6 @@ static void set_rtd_button(bool pressed)
  */
 static void handle_ui_input(const struct ui_input_event *evt)
 {
-    // LOG_INF("Handle UI Input Event");
-
     switch (evt->type) {
 
     case UI_INPUT_MISSION_SELECTED: {
@@ -458,11 +456,9 @@ static void handle_can_data(const struct can_data_snapshot *snap)
         if (snap->rtd_sound) {
             acmd.type   = AUDIO_CMD_PLAY_EFFECT;
             acmd.effect = AUDIO_EFFECT_RTD_READY;
-            // LOG_INF("RTD sound ON");
         } else {
             acmd.type   = AUDIO_CMD_STOP;
             acmd.effect = AUDIO_EFFECT_NONE;
-            // LOG_INF("RTD sound OFF");
         }
 
         int ret = zbus_chan_pub(&audio_cmd_chan, &acmd, K_NO_WAIT);
@@ -653,5 +649,5 @@ void app_module_init(void)
                     APP_THREAD_PRIORITY, 0, K_NO_WAIT);
     k_thread_name_set(&s_app_thread, "app");
 
-    LOG_INF("App module initialised");
+    LOG_INF("App module initialized");
 }

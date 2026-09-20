@@ -44,7 +44,7 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Initialise the Audio module.
+ * @brief Initialize the Audio module.
  *
  * Configures the piezo GPIO as an inactive output and starts the audio thread
  * (priority 6), which then blocks on audio_cmd_chan.

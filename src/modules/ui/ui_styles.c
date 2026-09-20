@@ -1,10 +1,10 @@
 /**
  * @file        ui_styles.c
- * @brief       LVGL style initialisations for the DCU UI
+ * @brief       LVGL style initializations for the DCU UI
  *
  * @ingroup     dcu_ui_styles
  *
- * @details     Allocates and initialises every shared lv_style_t instance
+ * @details     Allocates and initializes every shared lv_style_t instance
  *              declared in ui_styles.h. The instances have external linkage;
  *              the header declares them extern.
  *
@@ -98,7 +98,7 @@ static lv_grad_dsc_t s_header_grad;
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 /*
- * One initialiser per style family. Each is called exactly once, from
+ * One initializer per style family. Each is called exactly once, from
  * ui_styles_init(), and has no dependency on the others.
  */
 static void init_screen_styles(void);
@@ -143,11 +143,7 @@ static void init_header_style(void)
     };
     static const lv_opa_t grad_opa[2] = { LV_OPA_COVER, LV_OPA_COVER };
 
-    // lv_display_t *disp = lv_display_get_default();
-    // int32_t disp_w = lv_display_get_horizontal_resolution(disp);
-
     lv_grad_init_stops(&s_header_grad, grad_colors, grad_opa, NULL, 2);
-    // lv_grad_linear_init(&s_header_grad, 0, 0, disp_w, 0, LV_GRAD_EXTEND_PAD);
     lv_grad_linear_init(&s_header_grad, 209, 9, 210, 10, LV_GRAD_EXTEND_PAD);
 
     lv_style_init(&ui_style_header);

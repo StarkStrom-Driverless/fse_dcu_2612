@@ -46,7 +46,7 @@
  *                ui_hintbar_create(scr, k_hints);
  *              @endcode
  *
- *              Designated initialisers leave the unused slots NULL, so a screen
+ *              Designated initializers leave the unused slots NULL, so a screen
  *              only writes down the controls it actually uses.
  *
  *              ### Captions have to be short
