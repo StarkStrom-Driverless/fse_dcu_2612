@@ -41,7 +41,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-09-20
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -52,6 +52,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-09-20  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Frame heights (header, page bar, hint bar) exported as
+ *                                      functions; hint bar now a share of the height
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -81,12 +83,21 @@
 #define UI_LAYOUT_HEADER_PCT    15
 
 /**
- * @brief Height of the carousel page bar under the header, in pixels.
+ * @brief Height of the carousel page bar under the header, in layout units.
  *
  * The bar is drawn by ui_header.c, but it takes the space below the header on
  * every screen, so the content area has to know about it.
  */
-#define UI_LAYOUT_PAGEBAR_H     10
+#define UI_LAYOUT_PAGEBAR_U     1
+
+/**
+ * @brief Hint bar height as a percentage of the screen height.
+ *
+ * Owned here rather than in ui_hintbar.c because the content area ends where
+ * the hint bar starts. 11 % is 35 px on the 320 px panel; the caption font
+ * needs about 24 px.
+ */
+#define UI_LAYOUT_HINTBAR_PCT   11
 
 
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
@@ -105,6 +116,28 @@
  * @return   The size in pixels.
  */
 int32_t ui_layout_u(int32_t n);
+
+/**
+ * @brief Height of the header on this display, in pixels.
+ * @return The height, UI_LAYOUT_HEADER_PCT of the display height.
+ */
+int32_t ui_layout_header_h(void);
+
+/**
+ * @brief Height of the carousel page bar on this display, in pixels.
+ * @return The height, UI_LAYOUT_PAGEBAR_U units.
+ */
+int32_t ui_layout_pagebar_h(void);
+
+/**
+ * @brief Height of the hint bar on this display, in pixels.
+ *
+ * Anything a screen anchors to the bottom edge has to add this to its own
+ * margin, or it ends up underneath the bar.
+ *
+ * @return The height, UI_LAYOUT_HINTBAR_PCT of the display height.
+ */
+int32_t ui_layout_hintbar_h(void);
 
 /**
  * @brief Create the content area of a screen.

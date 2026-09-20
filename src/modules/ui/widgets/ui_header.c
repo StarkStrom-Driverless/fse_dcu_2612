@@ -10,8 +10,8 @@
  *              ### Object tree built here
  *              ```
  *              parent (the screen)
- *                ├─ header                styled with ui_style_header
- *                │    ├─ title label      left, vertically centred
+ *                ├─ header                styled with ui_style_header, a flex row
+ *                │    ├─ title label      takes the free width, vertically centred
  *                │    └─ icon row (flex)  right, vertically centred
  *                │         └─ one 24×24 container per device slot
  *                │              └─ icon label in FontAwesome_Solid_18
@@ -28,6 +28,10 @@
  *              LV_EVENT_DRAW_MAIN_END callback, which is both cheaper than one
  *              object per segment and what allows them to be parallelograms;
  *              see page_bar_draw_cb().
+ *
+ *              Sizes are shares of the display or layout units (ui_layout.h);
+ *              what stays in pixels is tied to a glyph: the 24 px icon cell and
+ *              the 16 px hint-bar icons follow their font and asset sizes.
  *
  *              The per-slot container exists so blinking can change the
  *              container's opacity while the icon label keeps its own color,
@@ -75,62 +79,78 @@
  */
 #define HEADER_HEIGHT_PCT   UI_LAYOUT_HEADER_PCT
 
-/** @brief Right margin of the icon row, in pixels. */
-#define ICON_ROW_MARGIN_R   4
+/** @brief Padding at the left edge of the header, in layout units. */
+#define HEADER_PAD_L_U      1
 
-/** @brief Gap between two icons, in pixels. */
-#define ICON_COL_GAP        6
+/**
+ * @brief Padding at the right edge of the header, in half layout units.
+ *
+ * Smaller than the left one: the icon cells carry a few pixels of air of their
+ * own, so the glyphs still stand as far from the edge as the title does.
+ */
+#define HEADER_PAD_R_HALF_U 1
+
+/** @brief Gap between two icons, in half layout units. */
+#define ICON_COL_GAP_HALF_U 1
 
 /** @brief Half period of the blink cycle — one full cycle is twice this. */
 #define BLINK_HALF_MS       400U
 
 /**
- * @brief Height of the page-indicator bar, in pixels.
+ * @name Page-indicator geometry, as shares of the bar's height
  *
- * Defined in ui_layout.h: the bar takes the space under the header on every
- * screen, so the content area has to keep clear of it.
+ * Shares and not pixels, so the segments keep their proportions when the bar
+ * grows with the display. The bar is UI_LAYOUT_PAGEBAR_U layout units high, 10
+ * px on the 480 × 320 panel, which gives 4, 6 and 6 px.
+ * @{
  */
-#define PAGE_BAR_H          UI_LAYOUT_PAGEBAR_H
 
 /**
- * @brief Height of a single segment, in pixels.
+ * @brief Height of a single segment.
  *
- * Less than PAGE_BAR_H on purpose: the difference is what shows above and
- * below the segments once they are centred, turning the bar's dark background
- * into a frame around them rather than a backdrop behind them.
+ * Less than the bar on purpose: the difference is what shows above and below
+ * the segments once they are centred, turning the bar's dark background into a
+ * frame around them rather than a backdrop behind them.
+ *
+ * The slant of the sides equals this height, which is what makes them run at
+ * exactly 45° — parallel to the diagonal color edge in the header above (the
+ * gradient axis in init_header_style() is (1,1), so its iso-color lines rise to
+ * the right at 45°). Change this and the segments stop being parallel to that
+ * edge; change the gradient and this has to follow.
  */
-#define PAGE_SEG_H          4
+#define PAGE_SEG_PCT        40
 
 /**
- * @brief Horizontal offset between a segment's bottom and top edge, in pixels.
- *
- * Equal to the height, which is what makes the slanted sides run at exactly
- * 45° — parallel to the diagonal color edge in the header above (the gradient
- * axis in init_header_style() is (1,1), so its iso-color lines rise to the
- * right at 45°).
- *
- * Change this and the segments stop being parallel to that edge; change the
- * gradient and this has to follow.
- */
-#define PAGE_SEG_SLANT      PAGE_SEG_H
-
-/**
- * @brief Gap between two segments, in pixels.
+ * @brief Gap between two segments.
  *
  * The segments divide the full width; this is the only thing separating them.
  * The gaps show the bar's dark background, so they read as separators without
  * competing with the green marker. Set to 0 for one continuous bar.
  */
-#define PAGE_BAR_GAP        6
+#define PAGE_GAP_PCT        60
 
 /**
- * @brief Inset at the left and right end of the bar, in pixels.
+ * @brief Inset at the left and right end of the bar.
  *
  * Expressed as padding on the bar because the segments are laid out inside its
  * content area — narrowing that area shrinks every segment by the same amount
  * instead of only the outer two.
  */
-#define PAGE_BAR_PAD_H      6
+#define PAGE_PAD_PCT        60
+
+/** @} */
+
+/**
+ * @brief A share of the page bar's height, in pixels.
+ *
+ * @param bar_h  Height of the bar.
+ * @param pct    Share in percent.
+ * @return       The size in pixels.
+ */
+static inline int32_t page_share(int32_t bar_h, int32_t pct)
+{
+    return (bar_h * pct) / 100;
+}
 
 /* ── Per-slot icon configuration ─────────────────────────────────────────── */
 
@@ -372,7 +392,7 @@ static void slot_status_observer_cb(lv_observer_t *observer, lv_subject_t *subje
  *
  * ### Geometry
  *
- * The usable width has PAGE_SEG_SLANT subtracted before the segments divide
+ * The usable width has the slant (one segment height) subtracted before the segments divide
  * it, so the rightmost top corner lands exactly on the content edge instead of
  * being clipped.
  *
@@ -394,17 +414,21 @@ static void page_bar_draw_cb(lv_event_t *e)
     lv_area_t content;
     lv_obj_get_content_coords(bar, &content);
 
+    const int32_t bar_h = lv_obj_get_height(bar);
+    const int32_t seg_h = page_share(bar_h, PAGE_SEG_PCT);   /* = the slant, 45° */
+    const int32_t gap   = page_share(bar_h, PAGE_GAP_PCT);
+
     const int32_t usable = lv_area_get_width(&content)
-                           - PAGE_SEG_SLANT
-                           - ((count - 1) * PAGE_BAR_GAP);
+                           - seg_h
+                           - ((count - 1) * gap);
     if (usable < count) {
         return;   /* narrower than one pixel per segment — nothing to say */
     }
 
     const int32_t seg_w = usable / count;
     const int32_t y_top = content.y1
-                          + (lv_area_get_height(&content) - PAGE_SEG_H) / 2;
-    const int32_t y_bot = y_top + PAGE_SEG_H;
+                          + (lv_area_get_height(&content) - seg_h) / 2;
+    const int32_t y_bot = y_top + seg_h;
 
     lv_draw_triangle_dsc_t tri;
     lv_draw_triangle_dsc_init(&tri);
@@ -415,10 +439,10 @@ static void page_bar_draw_cb(lv_event_t *e)
     fill.opa = LV_OPA_COVER;
 
     for (int32_t i = 0; i < count; i++) {
-        const int32_t x_bl = content.x1 + (i * (seg_w + PAGE_BAR_GAP));
+        const int32_t x_bl = content.x1 + (i * (seg_w + gap));
         const int32_t x_br = x_bl + seg_w;
-        const int32_t x_tl = x_bl + PAGE_SEG_SLANT;
-        const int32_t x_tr = x_br + PAGE_SEG_SLANT;
+        const int32_t x_tl = x_bl + seg_h;
+        const int32_t x_tr = x_br + seg_h;
 
         const lv_color_t color = (i == pos) ? UI_C_GREEN : UI_C_WHITE;
         tri.color  = color;
@@ -491,9 +515,9 @@ static void page_bar_screen_loaded_cb(lv_event_t *e)
  * segments into it. Its padding is what defines the content area they divide.
  *
  * The dark background shows through in three places, and all three are
- * deliberate: as the inset at both ends (PAGE_BAR_PAD_H), as the separators
- * between segments (PAGE_BAR_GAP), and as the band above and below them
- * (PAGE_BAR_H minus PAGE_SEG_H).
+ * deliberate: as the inset at both ends (PAGE_PAD_PCT), as the separators
+ * between segments (PAGE_GAP_PCT), and as the band above and below them
+ * (the bar height minus PAGE_SEG_PCT).
  *
  * Suppressed for a carousel of one, where the indicator would state the
  * obvious, and hidden on screens outside the carousel.
@@ -515,9 +539,9 @@ static void page_indicator_create(lv_obj_t *parent, lv_obj_t *header)
     lv_obj_t *bar = lv_obj_create(parent);
     lv_obj_remove_style_all(bar);
     lv_obj_set_width(bar, lv_pct(100));
-    lv_obj_set_height(bar, PAGE_BAR_H);
+    lv_obj_set_height(bar, ui_layout_pagebar_h());
     lv_obj_align_to(bar, header, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_pad_hor(bar, PAGE_BAR_PAD_H, 0);
+    lv_obj_set_style_pad_hor(bar, page_share(ui_layout_pagebar_h(), PAGE_PAD_PCT), 0);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(bar, UI_C_DARK, 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
@@ -545,24 +569,35 @@ lv_obj_t *ui_header_create(lv_obj_t    *parent,
     lv_obj_align(header, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
+    /*
+     * The header is a flex row: the title takes what the icons leave, the
+     * icons stand at the right edge, both centred on the header's height.
+     */
+    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(header,
+                          LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_left(header, ui_layout_u(HEADER_PAD_L_U), 0);
+    lv_obj_set_style_pad_right(header, (ui_layout_u(HEADER_PAD_R_HALF_U)) / 2, 0);
+
     /* ── Title label (left side) — child index 0 of header ─────────────── */
     lv_obj_t *lbl = lv_label_create(header);
     lv_obj_add_style(lbl, &ui_style_label_title, 0);
     lv_label_set_text(lbl, title);
-    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 10, 0);
+    lv_obj_set_flex_grow(lbl, 1);
 
     /* ── Icon row (right side, flex) — child index 1 of header ─────────── */
     lv_obj_t *icon_row = lv_obj_create(header);
     lv_obj_remove_style_all(icon_row);
     lv_obj_set_size(icon_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_align(icon_row, LV_ALIGN_RIGHT_MID, -ICON_ROW_MARGIN_R, 0);
     lv_obj_set_layout(icon_row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(icon_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(icon_row,
                           LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(icon_row, ICON_COL_GAP, 0);
+    lv_obj_set_style_pad_column(icon_row, ui_layout_u(ICON_COL_GAP_HALF_U) / 2, 0);
     lv_obj_clear_flag(icon_row, LV_OBJ_FLAG_SCROLLABLE);
 
     /* ── One slot per device ────────────────────────────────────────────── */

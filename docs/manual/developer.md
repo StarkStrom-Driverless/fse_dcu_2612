@@ -482,6 +482,11 @@ Where a size has to be a number — a gap, the height of a bar — it is given i
 instead of its pixels. Widths and heights that are a share of the space use
 `lv_pct()`.
 
+The frame is proportional as well: the header and the hint bar are a share of
+the display height (`UI_LAYOUT_HEADER_PCT`, `UI_LAYOUT_HINTBAR_PCT`), the page
+bar one unit. A screen that has to stand something on the bottom edge asks for
+`ui_layout_hintbar_h()` instead of assuming a height.
+
 The fonts are the one thing that does not scale: they are compiled at fixed
 sizes. A layout can give a large number the room it needs, but it cannot make
 the number smaller.

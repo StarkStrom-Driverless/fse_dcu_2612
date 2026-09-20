@@ -65,7 +65,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-31
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -76,6 +76,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-08-31  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Sizes in layout units and shares of the display
+ *                                      instead of pixels; height from ui_layout.h
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -88,20 +90,6 @@
  * @ingroup dcu_ui_widgets
  * @{
  */
-
-/**
- * @brief Height of the hint bar, in pixels.
- *
- * Exported because it is not only this widget's business: it takes height away
- * from the screen above it, so anything a screen anchors to LV_ALIGN_BOTTOM_*
- * has to add it to its own margin or end up underneath the bar. Four screens
- * do exactly that — grep for UI_HINTBAR_H before changing this.
- *
- * Now that the icons are drawn at 16 px this is more headroom than the content
- * needs; the caption font sets the real floor at around 24 px. Lowering it
- * gives every screen the difference back.
- */
-#define UI_HINTBAR_H            36
 
 /**
  * @brief Physical controls, in the order they appear in the bar.

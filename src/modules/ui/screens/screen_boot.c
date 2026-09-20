@@ -182,7 +182,7 @@ static void bench_patch_create(lv_obj_t *scr)
     lv_obj_remove_style_all(patch);
     lv_obj_set_size(patch, BENCH_PATCH_SIZE, BENCH_PATCH_SIZE);
     lv_obj_align(patch, LV_ALIGN_BOTTOM_LEFT, BENCH_PATCH_MARGIN,
-                 -(BENCH_PATCH_MARGIN + UI_HINTBAR_H));
+                 -(BENCH_PATCH_MARGIN + ui_layout_hintbar_h()));
     lv_obj_set_style_bg_opa(patch, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(patch, LV_OBJ_FLAG_SCROLLABLE);
 

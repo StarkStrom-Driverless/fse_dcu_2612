@@ -404,7 +404,7 @@ static void build_saved_notice(lv_obj_t *scr)
     lv_obj_set_style_text_color(s_lbl_saved, UI_C_GREEN, 0);
     lv_label_set_text(s_lbl_saved, "Settings saved");
     lv_obj_align(s_lbl_saved, LV_ALIGN_BOTTOM_MID, 0,
-                 -(UI_HINTBAR_H + ui_layout_u(SAVED_NOTICE_GAP_U)));
+                 -(ui_layout_hintbar_h() + ui_layout_u(SAVED_NOTICE_GAP_U)));
     lv_obj_add_flag(s_lbl_saved, LV_OBJ_FLAG_HIDDEN);
 
     s_saved_timer = lv_timer_create(saved_timer_cb, SAVED_NOTICE_MS, NULL);

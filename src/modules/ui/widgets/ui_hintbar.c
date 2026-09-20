@@ -41,7 +41,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-31
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -52,6 +52,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-08-31  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Sizes in layout units and shares of the display
+ *                                      instead of pixels; height from ui_layout.h
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -65,6 +67,7 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 
 /* ── Layout constants ────────────────────────────────────────────────────── */
@@ -76,11 +79,11 @@
  */
 #define HINT_ICON_SIZE      16
 
-/** @brief Gap between an icon and its caption, in pixels. */
-#define HINT_ICON_GAP       4
+/** @brief Gap between an icon and its caption, in layout units. */
+#define HINT_ICON_GAP_U     1
 
-/** @brief Inset at the left and right end of the bar, in pixels. */
-#define HINT_BAR_PAD_H      6
+/** @brief Inset at the left and right end of the bar, in layout units. */
+#define HINT_BAR_PAD_H_U    1
 
 
 /* ── Icon table ──────────────────────────────────────────────────────────── */
@@ -131,7 +134,7 @@ static void hint_slot_create(lv_obj_t *bar, enum ui_hint_input input,
                           LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(slot, HINT_ICON_GAP, 0);
+    lv_obj_set_style_pad_column(slot, ui_layout_u(HINT_ICON_GAP_U) / 2, 0);
     lv_obj_clear_flag(slot, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *icon = lv_image_create(slot);
@@ -152,7 +155,7 @@ lv_obj_t *ui_hintbar_create(lv_obj_t *parent,
     lv_obj_t *bar = lv_obj_create(parent);
     lv_obj_remove_style_all(bar);
     lv_obj_set_width(bar, lv_pct(100));
-    lv_obj_set_height(bar, UI_HINTBAR_H);
+    lv_obj_set_height(bar, lv_pct(UI_LAYOUT_HINTBAR_PCT));
     lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_layout(bar, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
@@ -165,7 +168,7 @@ lv_obj_t *ui_hintbar_create(lv_obj_t *parent,
                           LV_FLEX_ALIGN_SPACE_EVENLY,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_hor(bar, HINT_BAR_PAD_H, 0);
+    lv_obj_set_style_pad_hor(bar, ui_layout_u(HINT_BAR_PAD_H_U), 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
 
     for (uint8_t i = 0U; i < UI_HINT_INPUT_COUNT; i++) {
