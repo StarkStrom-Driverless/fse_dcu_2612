@@ -246,14 +246,14 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
      * 0 … 3600 in tenths of a degree is one full turn every 6 s, repeating
      * forever.  lv_anim_start() copies the descriptor, so the local is fine.
      */
-    lv_anim_t anim;
-    lv_anim_init(&anim);
-    lv_anim_set_var(&anim, img_outer_gear);
-    lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)lv_image_set_rotation);
-    lv_anim_set_values(&anim, 0, 3600);
-    lv_anim_set_duration(&anim, 6000);
-    lv_anim_set_repeat_count(&anim, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_start(&anim);
+    // lv_anim_t anim;
+    // lv_anim_init(&anim);
+    // lv_anim_set_var(&anim, img_outer_gear);
+    // lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)lv_image_set_rotation);
+    // lv_anim_set_values(&anim, 0, 3600);
+    // lv_anim_set_duration(&anim, 6000);
+    // lv_anim_set_repeat_count(&anim, LV_ANIM_REPEAT_INFINITE);
+    // lv_anim_start(&anim);
 
     LV_IMAGE_DECLARE(inner_gear_a8);
 
