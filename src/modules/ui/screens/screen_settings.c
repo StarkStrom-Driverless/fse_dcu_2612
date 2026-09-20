@@ -97,6 +97,7 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
@@ -111,52 +112,40 @@ LOG_MODULE_REGISTER(screen_settings, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
-/** @brief Y position of the row list, below the header and the page indicator. */
-#define LIST_TOP_Y              64
+/** @brief Height of one row, in layout units (see ui_layout_u()). */
+#define ROW_H_U                 3
 
-/** @brief Row-list width as a percentage of the screen width. */
-#define LIST_WIDTH_PCT          70
+/** @brief Share of a row's width taken by the caption, in percent. */
+#define ROW_LABEL_PCT           40
 
-/** @brief Height of one row, in pixels. */
-#define ROW_H                   28
+/** @brief Width of the value column, in layout units — room for "100". */
+#define ROW_VALUE_W_U           4
 
-/** @brief Gap between two rows, in pixels. */
-#define LIST_PAD_ROW            4
+/** @brief Gap between caption, slider and value, in layout units. */
+#define ROW_PAD_COL_U           1
 
-/** @brief Width of the caption column, in pixels. */
-#define ROW_LABEL_W             136
+/** @brief Height of the slider track, in layout units. */
+#define SLIDER_H_U              1
 
-/** @brief Width of the value column, in pixels — wide enough for "100". */
-#define ROW_VALUE_W             34
+/** @brief Width of the "−" / "+" buttons, in layout units. */
+#define ADJ_BTN_W_U             5
 
-/** @brief Gap between caption, slider and value, in pixels. */
-#define ROW_PAD_COL             8
+/** @brief Height of the "−" / "+" buttons, in layout units. */
+#define ADJ_BTN_H_U             5
 
-/** @brief Height of the slider track, in pixels. */
-#define SLIDER_H                10
-
-/** @brief Width of the "−" / "+" buttons, in pixels. */
-#define ADJ_BTN_W               54
-
-/** @brief Height of the "−" / "+" buttons, in pixels. */
-#define ADJ_BTN_H               46
-
-/** @brief Inset of the "−" / "+" buttons from the screen edge, in pixels. */
-#define ADJ_BTN_MARGIN_X        12
-
-/**
- * @brief Vertical nudge of the "−" / "+" buttons from the screen centre.
- *
- * A few pixels down so the pair clears the header and lines up with the middle
- * of the row list rather than with the geometric centre of the screen.
- */
-#define ADJ_BTN_OFFSET_Y        14
+/** @brief Space between a button and the row list, in layout units. */
+#define ADJ_BTN_GAP_U           1
 
 /** @brief How long the "saved" notice stays up, in milliseconds. */
 #define SAVED_NOTICE_MS         1500
 
-/** @brief Distance of the "saved" notice from the bottom edge, in pixels. */
-#define SAVED_NOTICE_MARGIN_Y   (UI_HINTBAR_H + 4)
+/**
+ * @brief Distance of the "saved" notice above the hint bar, in layout units.
+ *
+ * The notice is the one thing on the screen that is not part of the flow — it
+ * comes and goes, and a hidden object taking space would move the list.
+ */
+#define SAVED_NOTICE_GAP_U      1
 
 
 /* ── Row Table ───────────────────────────────────────────────────────────────────────────────── */
@@ -248,8 +237,7 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static void build_list(lv_obj_t *scr);
-static void build_buttons(lv_obj_t *scr);
+static void build_body(lv_obj_t *scr);
 static void build_saved_notice(lv_obj_t *scr);
 static void row_focused_cb(lv_event_t *e);
 static void btn_minus_event_cb(lv_event_t *e);
@@ -287,17 +275,17 @@ static void build_row(lv_obj_t *list, uint8_t i)
 
     lv_obj_t *row = lv_obj_create(list);
     lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, lv_pct(100), ROW_H);
+    lv_obj_set_size(row, lv_pct(100), ui_layout_u(ROW_H_U));
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(row, ROW_PAD_COL, 0);
+    lv_obj_set_style_pad_column(row, ui_layout_u(ROW_PAD_COL_U), 0);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Caption — fixed width so every slider starts at the same x. */
+    /* Caption — a fixed share of the row, so every slider starts at the same x. */
     lv_obj_t *lbl_name = lv_label_create(row);
     lv_obj_add_style(lbl_name, &ui_style_label_subtitle, 0);
-    lv_obj_set_width(lbl_name, ROW_LABEL_W);
+    lv_obj_set_width(lbl_name, lv_pct(ROW_LABEL_PCT));
     lv_label_set_text(lbl_name, k_rows[i].label);
 
     /*
@@ -315,7 +303,7 @@ static void build_row(lv_obj_t *list, uint8_t i)
                      LV_PART_INDICATOR | LV_STATE_FOCUS_KEY);
     lv_obj_set_style_bg_opa(slider, LV_OPA_TRANSP, LV_PART_KNOB);
     lv_obj_set_flex_grow(slider, 1);
-    lv_obj_set_height(slider, SLIDER_H);
+    lv_obj_set_height(slider, ui_layout_u(SLIDER_H_U));
     lv_slider_set_range(slider, (int32_t)desc->min, (int32_t)desc->max);
     lv_slider_set_value(slider, lv_subject_get_int(&s_value[i]), LV_ANIM_OFF);
     lv_obj_set_user_data(slider, (void *)(uintptr_t)i);
@@ -324,7 +312,7 @@ static void build_row(lv_obj_t *list, uint8_t i)
     /* Value hard against the right edge. */
     lv_obj_t *lbl_value = lv_label_create(row);
     lv_obj_add_style(lbl_value, &ui_style_label_subtitle, 0);
-    lv_obj_set_width(lbl_value, ROW_VALUE_W);
+    lv_obj_set_width(lbl_value, ui_layout_u(ROW_VALUE_W_U));
     lv_obj_set_style_text_align(lbl_value, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_bind_text(lbl_value, &s_value[i], "%d");
 
@@ -334,17 +322,20 @@ static void build_row(lv_obj_t *list, uint8_t i)
 /**
  * @brief Build the row list — one row per k_rows[] entry, in a flex column.
  *
- * @param scr  Screen object to build into.
+ * Takes the width the two buttons leave and is as tall as its rows. The gap to
+ * the buttons is padding, not margin: a flex item that grows does not count its
+ * margin, and the list would push the "+" button off the screen.
+ *
+ * @param content  Content area to build into.
  */
-static void build_list(lv_obj_t *scr)
+static void build_list(lv_obj_t *content)
 {
-    lv_obj_t *list = lv_obj_create(scr);
+    lv_obj_t *list = lv_obj_create(content);
     lv_obj_remove_style_all(list);
-    lv_obj_set_width(list, lv_pct(LIST_WIDTH_PCT));
-    lv_obj_set_height(list, LV_SIZE_CONTENT);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, LIST_TOP_Y);
+    lv_obj_set_size(list, 0, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(list, 1);
+    lv_obj_set_style_pad_hor(list, ui_layout_u(ADJ_BTN_GAP_U), 0);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(list, LIST_PAD_ROW, 0);
     lv_obj_clear_flag(list, LV_OBJ_FLAG_SCROLLABLE);
 
     for (uint8_t i = 0U; i < (uint8_t)ROW_COUNT; i++) {
@@ -355,44 +346,46 @@ static void build_list(lv_obj_t *scr)
 /**
  * @brief Build one edit button.
  *
- * @param scr    Screen object to build into.
- * @param text   Button caption ("−" or "+").
- * @param align  LV_ALIGN_LEFT_MID or LV_ALIGN_RIGHT_MID.
- * @param dx     Horizontal offset for @p align.
- * @param cb     Click handler.
- * @return       The button object.
+ * @param parent  Content area to build into.
+ * @param text    Button caption ("−" or "+").
+ * @param cb      Click handler.
+ * @return        The button object.
  */
-static lv_obj_t *build_button(lv_obj_t *scr, const char *text,
-                              lv_align_t align, int32_t dx, lv_event_cb_t cb)
+static lv_obj_t *build_button(lv_obj_t *parent, const char *text, lv_event_cb_t cb)
 {
-    lv_obj_t *btn = lv_button_create(scr);
+    lv_obj_t *btn = lv_button_create(parent);
     lv_obj_remove_style_all(btn);
     lv_obj_add_style(btn, &ui_style_btn_default, 0);
     lv_obj_add_style(btn, &ui_style_btn_checked, LV_STATE_PRESSED);
     lv_obj_add_style(btn, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    lv_obj_set_size(btn, ADJ_BTN_W, ADJ_BTN_H);
-    lv_obj_align(btn, align, dx, ADJ_BTN_OFFSET_Y);
+    lv_obj_set_size(btn, ui_layout_u(ADJ_BTN_W_U), ui_layout_u(ADJ_BTN_H_U));
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_obj_add_style(lbl, &ui_style_label_title, 0);
     lv_label_set_text(lbl, text);
-    lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_center(lbl);
 
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
     return btn;
 }
 
 /**
- * @brief Build the "−" and "+" buttons flanking the row list.
+ * @brief Build the content: "−" button, row list, "+" button, side by side.
+ *
+ * The row list starts at the top of the content area; the buttons are centred
+ * on its height. The list takes the width that is left between them.
  *
  * @param scr  Screen object to build into.
  */
-static void build_buttons(lv_obj_t *scr)
+static void build_body(lv_obj_t *scr)
 {
-    s_btn_minus = build_button(scr, "-", LV_ALIGN_LEFT_MID,
-                               ADJ_BTN_MARGIN_X, btn_minus_event_cb);
-    s_btn_plus  = build_button(scr, "+", LV_ALIGN_RIGHT_MID,
-                               -ADJ_BTN_MARGIN_X, btn_plus_event_cb);
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_START);
+
+    s_btn_minus = build_button(content, "-", btn_minus_event_cb);
+    build_list(content);
+    s_btn_plus  = build_button(content, "+", btn_plus_event_cb);
 }
 
 /**
@@ -410,7 +403,8 @@ static void build_saved_notice(lv_obj_t *scr)
     lv_obj_add_style(s_lbl_saved, &ui_style_label_subtitle, 0);
     lv_obj_set_style_text_color(s_lbl_saved, UI_C_GREEN, 0);
     lv_label_set_text(s_lbl_saved, "Settings saved");
-    lv_obj_align(s_lbl_saved, LV_ALIGN_BOTTOM_MID, 0, -SAVED_NOTICE_MARGIN_Y);
+    lv_obj_align(s_lbl_saved, LV_ALIGN_BOTTOM_MID, 0,
+                 -(UI_HINTBAR_H + ui_layout_u(SAVED_NOTICE_GAP_U)));
     lv_obj_add_flag(s_lbl_saved, LV_OBJ_FLAG_HIDDEN);
 
     s_saved_timer = lv_timer_create(saved_timer_cb, SAVED_NOTICE_MS, NULL);
@@ -540,7 +534,7 @@ lv_obj_t *screen_settings_create(lv_subject_t *status_subjects)
     /*
      * Re-seed on every build: persistence may be off, and even when it is not
      * the App Layer can have changed a value while this screen was gone.
-     * This runs before build_list(), which reads the subjects to place the
+     * This runs before build_body(), which reads the subjects to place the
      * sliders.
      */
     for (uint8_t i = 0U; i < (uint8_t)ROW_COUNT; i++) {
@@ -556,8 +550,7 @@ lv_obj_t *screen_settings_create(lv_subject_t *status_subjects)
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
     ui_header_create(scr, "SETTINGS", status_subjects);
-    build_list(scr);
-    build_buttons(scr);
+    build_body(scr);
     build_saved_notice(scr);
 
     /* ── Input groups ────────────────────────────────────────────────────── */

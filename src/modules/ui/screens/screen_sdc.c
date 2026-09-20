@@ -55,6 +55,7 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
@@ -235,11 +236,11 @@ static void sdc_table_draw_cb(lv_event_t *e)
  * in sdc_table_draw_cb(); sdc_invalidate_cb() ensures the table repaints
  * whenever any subject changes value.
  *
- * @param scr  Screen object to build into.
+ * @param parent  Container to build into.
  */
-static void build_checklist(lv_obj_t *scr)
+static void build_checklist(lv_obj_t *parent)
 {
-    s_table = lv_table_create(scr);
+    s_table = lv_table_create(parent);
     lv_obj_remove_style_all(s_table);
 
     lv_table_set_column_count(s_table, 2);
@@ -264,7 +265,6 @@ static void build_checklist(lv_obj_t *scr)
     lv_obj_set_style_border_color(s_table, UI_C_DARK,                      LV_PART_MAIN);
 
 
-    lv_obj_align(s_table, LV_ALIGN_RIGHT_MID, -12, 20);
     lv_obj_clear_flag(s_table, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_add_flag(s_table, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
@@ -292,13 +292,20 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "SDC", status_subjects);
 
+    /*
+     * Image and table stand side by side in the content area, centred on its
+     * height, with the free width shared evenly around them.
+     */
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+
     /* ── Topdown Image ───────────────────────────────────────────────────── */
 
     LV_IMAGE_DECLARE(car_topdown_b_i4);
 
-    lv_obj_t *img_car_topdown = lv_image_create(scr);
+    lv_obj_t *img_car_topdown = lv_image_create(content);
     lv_image_set_src(img_car_topdown, &car_topdown_b_i4);
-    lv_obj_align(img_car_topdown, LV_ALIGN_CENTER, -85, 24);
 
     /* ── Overlay LEDs on topdown image ───────────────────────────────────── */
     /*
@@ -316,9 +323,9 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
                                     sdc_led_observer_cb, led, NULL);
     }
 
-    /* ── Status table (right side, 2×6) ─────────────────────────────────── */
+    /* ── Status table (right of the image, 2×6) ─────────────────────────── */
 
-    build_checklist(scr);
+    build_checklist(content);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 

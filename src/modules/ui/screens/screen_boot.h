@@ -36,6 +36,14 @@
  *              └──┴────┴──────────────────────────────┘   only when enabled
  *              ```
  *
+ *              Logo, name and version form one column, centred in the content
+ *              area (ui_layout.h). The two gears share a holder and are centred
+ *              in it. The column is as tall as the content area allows, so the
+ *              name and the version are tucked up into the empty space of their
+ *              line boxes. No widget has a coordinate; only the benchmark patch,
+ *              which is a measurement aid and not part of the layout, sits in a
+ *              corner.
+ *
  *              ### Lifecycle
  *              Like every screen: built on entry, deleted on leaving.  Nothing
  *              here needs to survive that, so the factory holds no state.
@@ -43,7 +51,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -54,6 +62,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 

@@ -26,6 +26,12 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
+ *              Image and table stand side by side in the content area
+ *              (ui_layout.h), centred on its height, with the free width shared
+ *              evenly around them. The only coordinates left are the LED
+ *              positions in k_sdc_nodes[]: they are positions on the drawing,
+ *              relative to the image, and move with it.
+ *
  *              Signal 1 → node closed → green LED, dark text  (healthy)
  *              Signal 0 → node open   → red LED, red text     (interrupted)
  *
@@ -40,7 +46,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-05
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -51,6 +57,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-08-05  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 

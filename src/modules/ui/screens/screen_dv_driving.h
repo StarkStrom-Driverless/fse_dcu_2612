@@ -21,6 +21,9 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
+ *              The caption and the mission name form one column, centred in the
+ *              content area (ui_layout.h).
+ *
  *              ### How it is reached and left
  *              Loaded by the state machine when @c AS_state reaches AS driving,
  *              and left again by the state machine when it ends. It is not on
@@ -38,7 +41,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-09-07
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -49,6 +52,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-09-07  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 

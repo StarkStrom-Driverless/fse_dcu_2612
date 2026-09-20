@@ -35,6 +35,11 @@
  *              ```
  *              Captions are abbreviated here; the screen spells them out.
  *
+ *              The RTD button stands at the foot of the right column: a spacer
+ *              that takes the free height pushes it to the bottom of the
+ *              content area, so it keeps its place whatever the rows above it
+ *              measure.
+ *
  *              ### Readouts
  *              Two columns of three, each a bar with its value to the right.
  *              They are bound to the generated RX subjects, so they follow the
@@ -101,7 +106,8 @@
  * Version  Date        Author          Description
  * 0.1.0    2026-06-08  Mario Wegmann   Initial creation
  * 0.2.0    2026-09-20  Mario Wegmann   Pressure and voltage readouts added; header
- *                                      retitled "EV CHECKLIST"
+ *                                      retitled "EV CHECKLIST"; RTD button placed
+ *                                      in the right column instead of by pixels
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 

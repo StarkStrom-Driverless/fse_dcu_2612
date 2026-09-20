@@ -45,6 +45,7 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
@@ -56,6 +57,9 @@ LOG_MODULE_REGISTER(screen_dv_driving, CONFIG_LOG_DEFAULT_LEVEL);
 
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
+
+/** @brief Gap between the caption and the mission name, in layout units. */
+#define CAPTION_GAP_U   2
 
 /**
  * @brief Mission names, indexed by @ref mission_id.
@@ -110,14 +114,19 @@ lv_obj_t *screen_dv_driving_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "DV DRIVING", status_subjects);
 
-    lv_obj_t *lbl_caption = lv_label_create(scr);
+    /* Caption and mission name, one under the other, centred in the content. */
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_t *col     = ui_layout_column_create(content, 100);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(col, ui_layout_u(CAPTION_GAP_U), 0);
+
+    lv_obj_t *lbl_caption = lv_label_create(col);
     lv_obj_add_style(lbl_caption, &ui_style_label_title, 0);
     lv_label_set_text(lbl_caption, "MISSION");
-    lv_obj_align(lbl_caption, LV_ALIGN_CENTER, 0, -24);
 
-    lv_obj_t *lbl_mission = lv_label_create(scr);
+    lv_obj_t *lbl_mission = lv_label_create(col);
     lv_obj_add_style(lbl_mission, &ui_style_label_value_md, 0);
-    lv_obj_align(lbl_mission, LV_ALIGN_CENTER, 0, 20);
     lv_subject_add_observer_obj(&ui_tx_subj_drive_mode, mission_observer_cb,
                                 lbl_mission, NULL);
 

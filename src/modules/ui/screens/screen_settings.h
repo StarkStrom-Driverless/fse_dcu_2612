@@ -35,6 +35,14 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
+ *              The content area (ui_layout.h) holds three things side by side:
+ *              the "-" button, the row list and the "+" button. The list takes
+ *              the width the buttons leave, its rows are a fixed share of it
+ *              (caption 40 %, slider the rest), and the buttons are centred on
+ *              the list's height. The "saved" notice is the one widget outside
+ *              the flow, since it comes and goes: it is aligned above the hint
+ *              bar.
+ *
  *              ### Input assignment
  *
  *              | Input         | Drives                                         |
@@ -74,7 +82,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-09-01
  *
- * @version     0.2.0
+ * @version     0.3.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -87,6 +95,8 @@
  * 0.1.0    2026-09-01  Mario Wegmann   Initial creation
  * 0.2.0    2026-09-19  Mario Wegmann   Sliders instead of button rows, debug
  *                                      bits moved to DBG CUSTOM, saved notice
+ * 0.3.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 

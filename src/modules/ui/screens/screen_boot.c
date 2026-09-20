@@ -76,6 +76,7 @@
 
 #include <app_version.h>
 
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
@@ -86,6 +87,22 @@
 
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief How far the product name is pulled up under the logo, in pixels.
+ *
+ * Empty space in the line box of the 80 px font, above the capitals. Font
+ * metrics, so pixels and not layout units — like the fonts, it does not scale.
+ */
+#define NAME_TUCK               4
+
+/**
+ * @brief How far the version is pulled up under the name, in pixels.
+ *
+ * The name's line box reaches below its baseline for descenders that "DCU"
+ * does not have; the version moves into that space.
+ */
+#define VERSION_TUCK            14
 
 #ifdef CONFIG_DCU_BENCHMARK_BOOT_PATCH
 
@@ -201,24 +218,16 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "START", status_subjects);
 
-    /* ── Product label ───────────────────────────────────────────────────── */
-
-    lv_obj_t *lbl_dcu = lv_label_create(scr);
-    lv_obj_add_style(lbl_dcu, &ui_style_label_value_md, 0);
-    lv_label_set_text(lbl_dcu, "DCU");
-    lv_obj_align(lbl_dcu, LV_ALIGN_CENTER, -5, 80);
-
     /*
-     * Version comes from the VERSION file via app_version.h, so it cannot
-     * drift from the release.  DCU_VEHICLE_ID (CMakeLists.txt) is the public
-     * major number — 2612 — which does not fit in Zephyr's 8-bit
-     * APP_VERSION_MAJOR and is derived from it instead.
+     * One centred column: the logo, the product name under it and the version
+     * under that. The three do not quite fit by their line boxes — the 80 px
+     * name carries empty space above the capitals and below the baseline — so
+     * the name and the version are pulled up by NAME_TUCK and VERSION_TUCK.
      */
-    lv_obj_t *lbl_version = lv_label_create(scr);
-    lv_obj_add_style(lbl_version, &ui_style_label_title, 0);
-    lv_label_set_text_fmt(lbl_version, "v%d.%d.%d",
-                          DCU_VEHICLE_ID, APP_VERSION_MINOR, APP_PATCHLEVEL);
-    lv_obj_align(lbl_version, LV_ALIGN_CENTER, -5, 120);
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_t *col     = ui_layout_column_create(content, 100);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
 
     /* ── Logo ────────────────────────────────────────────────────────────── */
 
@@ -228,15 +237,24 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
      * one channel instead of three is what keeps them affordable in flash.
      *
      * Only the outer ring turns; the inner gear is drawn on top of it and
-     * stays put.
+     * stays put. They share a holder the size of the outer gear, and both are
+     * centred in it, so the inner one lies on the same axis without a
+     * coordinate of its own.
      */
     LV_IMAGE_DECLARE(outer_gear_a8);
+    LV_IMAGE_DECLARE(inner_gear_a8);
 
-    lv_obj_t *img_outer_gear = lv_image_create(scr);
+    lv_obj_t *logo = lv_obj_create(col);
+    lv_obj_remove_style_all(logo);
+    lv_obj_set_size(logo, outer_gear_a8.header.w, outer_gear_a8.header.h);
+    lv_obj_clear_flag(logo, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(logo, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *img_outer_gear = lv_image_create(logo);
     lv_image_set_src(img_outer_gear, &outer_gear_a8);
     lv_obj_set_style_image_recolor(img_outer_gear, lv_color_hex(0xfa6e00), LV_PART_MAIN);
     lv_obj_set_style_image_recolor_opa(img_outer_gear, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_align(img_outer_gear, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_center(img_outer_gear);
 
     lv_image_set_pivot(img_outer_gear,
                        outer_gear_a8.header.w / 2,
@@ -255,13 +273,30 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
     // lv_anim_set_repeat_count(&anim, LV_ANIM_REPEAT_INFINITE);
     // lv_anim_start(&anim);
 
-    LV_IMAGE_DECLARE(inner_gear_a8);
-
-    lv_obj_t *img_inner_gear = lv_image_create(scr);
+    lv_obj_t *img_inner_gear = lv_image_create(logo);
     lv_image_set_src(img_inner_gear, &inner_gear_a8);
     lv_obj_set_style_image_recolor(img_inner_gear, lv_color_hex(0xcd1a17), LV_PART_MAIN);
     lv_obj_set_style_image_recolor_opa(img_inner_gear, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_align(img_inner_gear, LV_ALIGN_CENTER, 0, -29);
+    lv_obj_center(img_inner_gear);
+
+    /* ── Product label ───────────────────────────────────────────────────── */
+
+    lv_obj_t *lbl_dcu = lv_label_create(col);
+    lv_obj_add_style(lbl_dcu, &ui_style_label_value_md, 0);
+    lv_label_set_text(lbl_dcu, "DCU");
+    lv_obj_set_style_margin_top(lbl_dcu, -NAME_TUCK, 0);
+
+    /*
+     * Version comes from the VERSION file via app_version.h, so it cannot
+     * drift from the release.  DCU_VEHICLE_ID (CMakeLists.txt) is the public
+     * major number — 2612 — which does not fit in Zephyr's 8-bit
+     * APP_VERSION_MAJOR and is derived from it instead.
+     */
+    lv_obj_t *lbl_version = lv_label_create(col);
+    lv_obj_add_style(lbl_version, &ui_style_label_title, 0);
+    lv_label_set_text_fmt(lbl_version, "v%d.%d.%d",
+                          DCU_VEHICLE_ID, APP_VERSION_MINOR, APP_PATCHLEVEL);
+    lv_obj_set_style_margin_top(lbl_version, -VERSION_TUCK, 0);
 
 #ifdef CONFIG_DCU_BENCHMARK_BOOT_PATCH
     /* Built last so it sits on top of everything else. */

@@ -102,31 +102,11 @@ LOG_MODULE_REGISTER(screen_checklist, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
-/** @brief Width of each action button in pixels. */
-#define BTN_WIDTH               100
+/** @brief Width of the RTD button, in layout units (see ui_layout_u()). */
+#define BTN_W_U                 10
 
-/** @brief Height of each action button in pixels. */
-#define BTN_HEIGHT              50
-
-/**
- * @brief Horizontal offset of the button from the screen centre, in pixels.
- *
- * The name is a leftover from the two-button layout this screen was copied
- * from, where it was half the centre-to-centre distance. With one button it is
- * simply how far right of centre that button sits — the second, negative
- * offset is used only by the commented-out counterpart below.
- */
-#define BTN_HALF_SPACING        70
-
-/**
- * @brief Bottom margin for the button row, in pixels.
- *
- * Measured from the top of the hint bar, not from the screen edge — the
- * bar owns the bottom UI_HINTBAR_H pixels, and anything anchored to
- * LV_ALIGN_BOTTOM_* without adding it lands underneath.
- */
-#define BTN_BOTTOM_MARGIN       (UI_HINTBAR_H + 20)
-
+/** @brief Height of the RTD button, in layout units. */
+#define BTN_H_U                 5
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
@@ -164,7 +144,7 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
-static void build_buttons(lv_obj_t *scr);
+static void build_buttons(lv_obj_t *column);
 static void rtd_button_refresh(void);
 static void rtd_publish(enum ui_input_type type);
 static void btn_rtd_event_cb(lv_event_t *e);
@@ -281,8 +261,9 @@ static void build_bar_row(lv_obj_t *parent, const struct ui_signal_desc *desc,
  * labels.
  *
  * @param scr  Screen object to build into.
+ * @return     The right column, which the RTD button is added to.
  */
-static void build_bars(lv_obj_t *scr)
+static lv_obj_t *build_bars(lv_obj_t *scr)
 {
     lv_obj_t *content = ui_layout_content_create(scr);
     lv_obj_t *left    = ui_layout_column_create(content, 50);
@@ -295,6 +276,8 @@ static void build_bars(lv_obj_t *scr)
     build_bar_row(right, &ui_sig_brake_pressure_rear, ui_sig_brake_pressure_rear.label);
     build_bar_row(right, &ui_sig_air_pressure_rear, ui_sig_air_pressure_rear.label);
     build_bar_row(right, &ui_sig_lv_accu_voltage, ui_sig_lv_accu_voltage.label);
+
+    return right;
 }
 
 /**
@@ -303,25 +286,34 @@ static void build_bars(lv_obj_t *scr)
  * One callback for the press and for all three ways a press can end; see the
  * file description for why LV_EVENT_DELETE is among them.
  *
- * @param scr  Screen object to build into.
+ * The button goes at the foot of the right column: a spacer that takes the free
+ * height pushes it down, so it stands on the bottom of the content area
+ * whatever the height of the rows above.
+ *
+ * @param column  Column to build into.
  */
-static void build_buttons(lv_obj_t *scr)
+static void build_buttons(lv_obj_t *column)
 {
+    lv_obj_t *spacer = lv_obj_create(column);
+    lv_obj_remove_style_all(spacer);
+    lv_obj_set_size(spacer, 1, 0);
+    lv_obj_set_flex_grow(spacer, 1);
+    lv_obj_clear_flag(spacer, LV_OBJ_FLAG_CLICKABLE);
 
     /* ── RTD button ────────────────────────────────────────────────────── */
 
-    s_btn_rtd = lv_button_create(scr);
+    s_btn_rtd = lv_button_create(column);
     lv_obj_remove_style_all(s_btn_rtd);
     lv_obj_add_style(s_btn_rtd, &ui_style_btn_default, 0);
     lv_obj_add_style(s_btn_rtd, &ui_style_btn_pending, LV_STATE_USER_1);
     lv_obj_add_style(s_btn_rtd, &ui_style_btn_checked, LV_STATE_USER_2);
-    lv_obj_set_size(s_btn_rtd, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_align(s_btn_rtd, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
+    lv_obj_set_size(s_btn_rtd, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
+    lv_obj_set_style_margin_bottom(s_btn_rtd, UI_BTN_OUTLINE_W, 0);
 
     lv_obj_t *lbl_rtd = lv_label_create(s_btn_rtd);
     lv_obj_add_style(lbl_rtd, &ui_style_label_subtitle, 0);
     lv_label_set_text(lbl_rtd, "SEND RTD");
-    lv_obj_align(lbl_rtd, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_center(lbl_rtd);
 
     lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_btn_rtd, btn_rtd_event_cb, LV_EVENT_RELEASED, NULL);
@@ -416,12 +408,12 @@ lv_obj_t *screen_checklist_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "EV CHECKLIST", status_subjects);
 
-    build_bars(scr);
+    lv_obj_t *right_column = build_bars(scr);
 
     /* A fresh screen starts released, whatever the previous instance saw. */
     s_rtd_pressed = false;
     s_rtd_on_bus  = false;
-    build_buttons(scr);
+    build_buttons(right_column);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 
