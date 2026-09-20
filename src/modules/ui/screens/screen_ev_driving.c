@@ -4,19 +4,28 @@
  *
  * @ingroup     dcu_ui_screens
  *
- * @details     Builds the EV driving screen with:
+ * @details     Builds the EV driving screen from three columns in the content
+ *              area (ui_layout.h), left to right:
  *
- *                – Two sliders   : torque gain front (left edge, left encoder)
- *                                  and rear (right edge, right encoder).
+ *                – Left column   : the torque-gain front slider (left encoder).
  *
- *                – One bar       : HV accumulator voltage along the bottom.
- *                                  A bar rather than a slider because the
- *                                  value comes from the vehicle — there is
- *                                  nothing for the driver to set.
+ *                – Middle column : as wide as the sliders leave it, with three
+ *                                  blocks spread over its height:
+ *                                    · three readouts — HV accumulator,
+ *                                      inverter and motor temperature, bound to
+ *                                      their signal descriptors through the
+ *                                      ui_quantity widget;
+ *                                    · the HV accumulator voltage as a bar. A
+ *                                      bar rather than a slider because the
+ *                                      value comes from the vehicle — there is
+ *                                      nothing for the driver to set;
+ *                                    · the two buttons below.
  *
- *                – Three readouts: HV accumulator, inverter and motor
- *                                  temperature, bound to their generated
- *                                  subjects through the ui_quantity widget.
+ *                – Right column  : the torque-gain rear slider (right encoder).
+ *
+ *              Nothing is placed by a coordinate. The columns and rows lay their
+ *              children out, widths are shares of the space that is there, and
+ *              sizes that have to be numbers are in layout units.
  *
  *                – PWR Limit     : checkable button mirroring
  *                                  ui_tx_subj_pwrlimit_setting.
@@ -57,7 +66,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -68,6 +77,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-15  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns, rows and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -84,6 +95,7 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "app/app_state.h"
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
@@ -101,29 +113,27 @@ LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
-/** @brief Width of each action button in pixels. */
-#define BTN_WIDTH               100
+/** @brief Width of the torque-gain sliders, in layout units (see ui_layout_u()). */
+#define SLIDER_W_U          4
 
-/** @brief Height of each action button in pixels. */
-#define BTN_HEIGHT              50
+/** @brief Height of the HV bar, in layout units. */
+#define BAR_H_U             2
 
-/**
- * @brief Half the centre-to-centre distance between the two buttons, in pixels.
- *
- * The buttons are placed at -BTN_HALF_SPACING and +BTN_HALF_SPACING from the
- * screen centre, so they sit 2 × 100 = 200 px apart centre to centre, leaving
- * a 100 px gap between two BTN_WIDTH-wide buttons.
- */
-#define BTN_HALF_SPACING        100
+/** @brief Width of an on/off button, in layout units. */
+#define BTN_W_U             10
+
+/** @brief Height of an on/off button, in layout units. */
+#define BTN_H_U             5
 
 /**
- * @brief Bottom margin for the button row, in pixels.
+ * @brief How far the ON/OFF caption hangs below a button's content area, in pixels.
  *
- * Measured from the top of the hint bar, not from the screen edge — the
- * bar owns the bottom UI_HINTBAR_H pixels, and anything anchored to
- * LV_ALIGN_BOTTOM_* without adding it lands underneath.
+ * The button's own title sits top left, the caption bottom left. The caption's
+ * line box is a few pixels taller than its glyphs, so it is pushed down by this
+ * much for the glyphs, not the box, to end at the bottom edge. A font metric,
+ * not a layout decision.
  */
-#define BTN_BOTTOM_MARGIN       (UI_HINTBAR_H + 4)
+#define BTN_VALUE_DROP      8
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -140,20 +150,11 @@ static lv_subject_t s_sldr_right_val; /**< TQG R slider value. */
 /** @brief Guard so the two subjects above are initialised exactly once. */
 static bool         s_subjects_init;
 
-/** @brief Torque gain front — vertical slider at the left edge, on the left encoder. */
+/** @brief Torque gain front — vertical slider in the left column, on the left encoder. */
 static lv_obj_t   *s_sldr_left;
 
-/** @brief Torque gain rear — vertical slider at the right edge, on the encoder. */
+/** @brief Torque gain rear — vertical slider in the right column, on the right encoder. */
 static lv_obj_t   *s_sldr_right;
-
-/**
- * @brief HV accumulator voltage — horizontal bar across the bottom.
- *
- * An lv_bar, not an lv_slider: the value comes from the vehicle and there is
- * nothing here for the driver to set. A bar has no knob and no input handling,
- * so the widget cannot be dragged or focused even by accident.
- */
-static lv_obj_t   *s_bar_middle;
 
 /** @brief TQ Vect button — toggles torque vectoring. */
 static lv_obj_t   *s_btn_right;
@@ -188,9 +189,13 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 };
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
-static void build_sliders(lv_obj_t *scr);
-static void build_buttons(lv_obj_t *scr);
-static lv_obj_t *build_toggle_button(lv_obj_t *scr, const char *title, int32_t dx,
+static lv_obj_t *build_slider_column(lv_obj_t *content, const char *title,
+                                     lv_subject_t *value, lv_event_cb_t cb);
+static void build_middle(lv_obj_t *content);
+static void build_temp(lv_obj_t *parent, const struct ui_signal_desc *desc);
+static void build_hv_bar(lv_obj_t *parent);
+static void build_buttons(lv_obj_t *parent);
+static lv_obj_t *build_toggle_button(lv_obj_t *parent, const char *title,
                                      lv_event_cb_t cb, lv_subject_t *subject);
 static void publish_setting(enum setting_id id, lv_subject_t *subject, bool on);
 static void btn_left_event_cb(lv_event_t *e);
@@ -246,159 +251,183 @@ static void toggle_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 }
 
 /**
- * @brief Build the two torque-gain sliders, the HV bar and its readout.
+ * @brief Build one torque-gain column: the title over a vertical slider.
  *
- * The sliders are restored from their subjects. The bar is bound straight to
- * the received signal and needs no state of its own — nothing can change it
- * but the vehicle.
+ * The column is as wide as the slider and as tall as the content area; the
+ * slider takes what the title leaves. The slider is restored from its subject,
+ * so it comes back where the driver left it.
  *
- * @param scr  Screen object to build into.
+ * The column keeps an outline's width free at the sides and the bottom: the
+ * slider's outline is drawn outside its box and the column clips it otherwise.
+ *
+ * @param content  Content area to build into.
+ * @param title    Caption over the slider.
+ * @param value    Subject the slider position survives in.
+ * @param cb       Handler that mirrors the slider into @p value.
+ * @return         The slider, for the caller to put into its input group.
  */
-static void build_sliders(lv_obj_t *scr)
+static lv_obj_t *build_slider_column(lv_obj_t *content, const char *title,
+                                     lv_subject_t *value, lv_event_cb_t cb)
 {
-    /* ── Slider Left ────────────────────────────────────────────────────── */
+    lv_obj_t *col = lv_obj_create(content);
+    lv_obj_remove_style_all(col);
+    lv_obj_set_size(col, LV_SIZE_CONTENT, lv_pct(100));
+    lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(col, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_hor(col, UI_SLIDER_OUTLINE_W, 0);
+    lv_obj_set_style_pad_bottom(col, UI_SLIDER_OUTLINE_W, 0);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
 
-    s_sldr_left = lv_slider_create(scr);
-    lv_obj_remove_style_all(s_sldr_left);
-    lv_obj_add_style(s_sldr_left, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(s_sldr_left, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_obj_set_size(s_sldr_left, 40, 200);
-    lv_obj_set_pos(s_sldr_left, 10, 80);
+    lv_obj_t *lbl_title = lv_label_create(col);
+    lv_obj_add_style(lbl_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_title, title);
 
-    lv_slider_set_value(s_sldr_left, (int32_t)lv_subject_get_int(&s_sldr_left_val), LV_ANIM_OFF);
-    lv_obj_add_event_cb(s_sldr_left, sldr_left_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_t *slider = lv_slider_create(col);
+    lv_obj_remove_style_all(slider);
+    lv_obj_add_style(slider, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(slider, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_obj_set_size(slider, ui_layout_u(SLIDER_W_U), 0);
+    lv_obj_set_flex_grow(slider, 1);
 
-    lv_obj_t *lbl_sldr_left_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_sldr_left_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_sldr_left_title, "TQG F");
-    lv_obj_align_to(lbl_sldr_left_title, s_sldr_left, LV_ALIGN_OUT_TOP_MID, 0, 0);
+    lv_slider_set_value(slider, (int32_t)lv_subject_get_int(value), LV_ANIM_OFF);
+    lv_obj_add_event_cb(slider, cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    /* ── Slider Right ───────────────────────────────────────────────────── */
+    return slider;
+}
 
-    s_sldr_right = lv_slider_create(scr);
-    lv_obj_remove_style_all(s_sldr_right);
-    lv_obj_add_style(s_sldr_right, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(s_sldr_right, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_obj_set_size(s_sldr_right, 40, 200);
-    lv_obj_set_pos(s_sldr_right, 430, 80);
+/**
+ * @brief Build the middle column: temperatures, HV bar and the two buttons.
+ *
+ * Takes the width the two slider columns leave. The three blocks are spread
+ * over its height, the first at the top and the last at the bottom, so nothing
+ * is placed by a coordinate and the gaps follow the space that is there.
+ *
+ * @param content  Content area to build into.
+ */
+static void build_middle(lv_obj_t *content)
+{
+    lv_obj_t *mid = lv_obj_create(content);
+    lv_obj_remove_style_all(mid);
+    lv_obj_set_size(mid, 0, lv_pct(100));
+    lv_obj_set_flex_grow(mid, 1);
+    lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(mid, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(mid, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
 
-    lv_slider_set_value(s_sldr_right, (int32_t)lv_subject_get_int(&s_sldr_right_val), LV_ANIM_OFF);
-    lv_obj_add_event_cb(s_sldr_right, sldr_right_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    /* A little air between the buttons and the hint bar. */
+    lv_obj_set_style_pad_bottom(mid, ui_layout_u(1) / 2, 0);
 
-    lv_obj_t *lbl_sldr_right_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_sldr_right_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_sldr_right_title, "TQG R");
-    lv_obj_align_to(lbl_sldr_right_title, s_sldr_right, LV_ALIGN_OUT_TOP_MID, 0, 0);
+    /* Row of the three temperatures. */
+    lv_obj_t *temps = lv_obj_create(mid);
+    lv_obj_remove_style_all(temps);
+    lv_obj_set_size(temps, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(temps, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(temps, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(temps, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(temps, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
 
-    /* ── Bar Middle — HV accumulator, display only ──────────────────────── */
+    build_temp(temps, &ui_sig_temperature_accu_hv);
+    build_temp(temps, &ui_sig_temperature_inverter);
+    build_temp(temps, &ui_sig_temperature_motor);
+
+    build_hv_bar(mid);
+    build_buttons(mid);
+}
+
+/**
+ * @brief Build one temperature readout: the short caption over a large value.
+ *
+ * The caption is centred over the value. The value is a ui_quantity bound to
+ * the signal, so unit, format and limit coloring come from the descriptor.
+ *
+ * @param parent  Row to build into.
+ * @param desc    The temperature signal to show.
+ */
+static void build_temp(lv_obj_t *parent, const struct ui_signal_desc *desc)
+{
+    lv_obj_t *item = lv_obj_create(parent);
+    lv_obj_remove_style_all(item);
+    lv_obj_set_size(item, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(item, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(item, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *lbl_title = lv_label_create(item);
+    lv_obj_add_style(lbl_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_title, desc->short_label);
+
+    lv_obj_t *qty = ui_quantity_create(item,
+                                       &BarlowCondensed_BoldItalic_80,
+                                       &BarlowCondensed_Italic_44, desc->unit);
+    ui_quantity_bind_signal(qty, desc);
+}
+
+/**
+ * @brief Build the HV accumulator voltage: caption and value over a bar.
+ *
+ * The caption stands at the left and the value at the right, both on the line
+ * above the bar, which spans the full width. The bar is an lv_bar, not a
+ * slider: the value comes from the vehicle and there is nothing here for the
+ * driver to set, so it has no knob and no input handling.
+ *
+ * The block keeps an outline's width free at the sides and the bottom for the
+ * bar's outline, which the container would otherwise clip.
+ *
+ * @param parent  Column to build into.
+ */
+static void build_hv_bar(lv_obj_t *parent)
+{
+    const struct ui_signal_desc *hv = &ui_sig_voltage_accu_hv;
+
+    lv_obj_t *block = lv_obj_create(parent);
+    lv_obj_remove_style_all(block);
+    lv_obj_set_size(block, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(block, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(block, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_hor(block, UI_SLIDER_OUTLINE_W, 0);
+    lv_obj_set_style_pad_bottom(block, UI_SLIDER_OUTLINE_W, 0);
+    lv_obj_set_flex_flow(block, LV_FLEX_FLOW_COLUMN);
+
+    /* Caption at the left, value at the right, standing on the bar. */
+    lv_obj_t *head = lv_obj_create(block);
+    lv_obj_remove_style_all(head);
+    lv_obj_set_size(head, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(head, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(head, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(head, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(head, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END,
+                          LV_FLEX_ALIGN_END);
+
+    lv_obj_t *lbl_title = lv_label_create(head);
+    lv_obj_add_style(lbl_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_title, hv->label);
+
+    lv_obj_t *qty = ui_quantity_create(head,
+                                       &BarlowCondensed_BoldItalic_32,
+                                       &BarlowCondensed_Italic_20, hv->unit);
+    ui_quantity_bind_signal(qty, hv);
 
     /*
      * Styled with the shared slider styles like every other bar in the tree:
      * ui_style_slider_main paints the track, ui_style_slider_indicator the
      * fill. The names are about the visual role, not the widget type.
      */
-    const struct ui_signal_desc *hv = &ui_sig_voltage_accu_hv;
-
-    s_bar_middle = lv_bar_create(scr);
-    lv_obj_remove_style_all(s_bar_middle);
-    lv_obj_add_style(s_bar_middle, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(s_bar_middle, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_obj_set_size(s_bar_middle, 300, 20);
+    lv_obj_t *bar = lv_bar_create(block);
+    lv_obj_remove_style_all(bar);
+    lv_obj_add_style(bar, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar, &ui_style_slider_indicator, LV_PART_INDICATOR);
     if (hv->flags & UI_SIG_RANGE) {
-        lv_bar_set_range(s_bar_middle, (int32_t)hv->range_min, (int32_t)hv->range_max);
+        lv_bar_set_range(bar, (int32_t)hv->range_min, (int32_t)hv->range_max);
     }
-    lv_bar_bind_value(s_bar_middle, hv->subject);
-    /* Clears both the hint bar and the button row that moved up with it. */
-    lv_obj_align(s_bar_middle, LV_ALIGN_BOTTOM_MID, 0, -(UI_HINTBAR_H + 60));
-
-    lv_obj_t *lbl_bar_middle_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_bar_middle_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_middle_title, hv->label);
-    lv_obj_align_to(lbl_bar_middle_title, s_bar_middle, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
-
-    lv_obj_t *lbl_bar_middle_value = ui_quantity_create(scr,
-                                      &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, hv->unit);
-    lv_obj_set_size(lbl_bar_middle_value, 60, 30);
-    ui_quantity_bind_signal(lbl_bar_middle_value, hv);
-    lv_obj_align_to(lbl_bar_middle_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
-    
-}
-
-/**
- * @brief Build the three temperature readouts across the middle of the screen.
- *
- * Each is a ui_quantity bound to its generated subject. The level styles
- * are attached but the state bindings are commented out, so none of the three
- * changes color yet — the thresholds they were bound to belonged to the HV
- * voltage signal, not to a temperature.
- *
- * @param scr  Screen object to build into.
- */
-static void build_labels(lv_obj_t *scr)
-{
-    /* ── Label HV Accu Temp ─────────────────────────────────────────────── */
-    lv_obj_t *lbl_temp_hv_accu_value = ui_quantity_create(scr,
-                                      &BarlowCondensed_BoldItalic_80,
-                                      &BarlowCondensed_Italic_44, ui_sig_temperature_accu_hv.unit);
-    ui_quantity_bind_signal(lbl_temp_hv_accu_value, &ui_sig_temperature_accu_hv);
-    lv_obj_set_pos(lbl_temp_hv_accu_value, 85, 100);
-
-    lv_obj_t *lbl_temp_hv_accu_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_temp_hv_accu_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_temp_hv_accu_title, ui_sig_temperature_accu_hv.short_label);
-    lv_obj_align_to(lbl_temp_hv_accu_title, lbl_temp_hv_accu_value, LV_ALIGN_OUT_TOP_MID, 0, 0);
-    
-    /* ── Label Inverter Temp ────────────────────────────────────────────── */
-
-    lv_obj_t *lbl_temp_inverter_value = ui_quantity_create(scr,
-                                      &BarlowCondensed_BoldItalic_80,
-                                      &BarlowCondensed_Italic_44, ui_sig_temperature_inverter.unit);
-    ui_quantity_bind_signal(lbl_temp_inverter_value, &ui_sig_temperature_inverter);
-    lv_obj_set_pos(lbl_temp_inverter_value, 205, 100);
-
-    lv_obj_t *lbl_temp_inverter_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_temp_inverter_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_temp_inverter_title, ui_sig_temperature_inverter.short_label);
-    lv_obj_align_to(lbl_temp_inverter_title, lbl_temp_inverter_value, LV_ALIGN_OUT_TOP_MID, 0, 0); 
-    
-    /* ── Label Motor Temp ───────────────────────────────────────────────── */
-
-    lv_obj_t *lbl_temp_motor_value = ui_quantity_create(scr,
-                                      &BarlowCondensed_BoldItalic_80,
-                                      &BarlowCondensed_Italic_44, ui_sig_temperature_motor.unit);
-    ui_quantity_bind_signal(lbl_temp_motor_value, &ui_sig_temperature_motor);
-    lv_obj_set_pos(lbl_temp_motor_value, 325, 100);
-
-    lv_obj_t *lbl_temp_motor_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_temp_motor_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_temp_motor_title, ui_sig_temperature_motor.short_label);
-    lv_obj_align_to(lbl_temp_motor_title, lbl_temp_motor_value, LV_ALIGN_OUT_TOP_MID, 0, 0);  
-
-    // lv_obj_t *lbl_mean_power = lv_label_create(scr);
-    // lv_obj_add_style(lbl_mean_power, &ui_style_label_value_lg, 0);
-    // lv_obj_add_style(lbl_mean_power, &ui_style_level_warn, UI_STATE_WARN);
-    // lv_obj_add_style(lbl_mean_power, &ui_style_level_crit, UI_STATE_CRIT);
-    // lv_obj_bind_state_if_gt(lbl_mean_power, &ui_subj_power_average, UI_STATE_WARN, UI_POWER_AVERAGE_WARN_HIGH);
-    // lv_obj_bind_state_if_gt(lbl_mean_power, &ui_subj_power_average, UI_STATE_CRIT, UI_POWER_AVERAGE_CRIT_HIGH);
-    // lv_label_bind_text(lbl_mean_power, &ui_subj_power_average, "%d");
-    // lv_obj_align(lbl_mean_power, LV_ALIGN_LEFT_MID, 10, 0);
-
-    // lv_obj_t *lbl_hv_volt_akku = ui_quantity_create(scr,
-    //                                   &BarlowCondensed_BoldItalic_100,
-    //                                   &BarlowCondensed_Italic_44, "V");
-    // lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_warn, UI_STATE_WARN);
-    // lv_obj_add_style(lbl_hv_volt_akku, &ui_style_level_crit, UI_STATE_CRIT);
-    // lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    // lv_obj_bind_state_if_lt(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // ui_quantity_bind_value(lbl_hv_volt_akku, &ui_subj_voltage_accu_hv, "%d");
-    // lv_obj_align(lbl_hv_volt_akku, LV_ALIGN_LEFT_MID, 150, 0);
-
-    // lv_obj_t *lbl_hv_volt_ts = lv_label_create(scr);
-    // lv_obj_add_style(lbl_hv_volt_ts, &ui_style_label_value_lg, 0);
-    // lv_obj_set_style_text_color(lbl_hv_volt_ts, UI_C_DARK, 0);
-    // lv_label_bind_text(lbl_hv_volt_ts, &ui_subj_voltage_tractive_system, "%d");
-    // lv_obj_align(lbl_hv_volt_ts, LV_ALIGN_LEFT_MID, 300, 0);
+    lv_bar_bind_value(bar, hv->subject);
+    lv_obj_set_size(bar, lv_pct(100), ui_layout_u(BAR_H_U));
 }
 
 /**
@@ -414,23 +443,21 @@ static void build_labels(lv_obj_t *scr)
  * the setting says. The focus is not information here; which pad was pressed
  * is never in doubt.
  *
- * @param scr      Screen object to build into.
+ * @param parent   Row to build into; it places the button.
  * @param title    Caption in the top left of the button.
- * @param dx       Horizontal offset from the screen centre.
  * @param cb       LV_EVENT_VALUE_CHANGED handler.
  * @param subject  TX subject the button mirrors.
  * @return         The button object.
  */
-static lv_obj_t *build_toggle_button(lv_obj_t *scr, const char *title, int32_t dx,
+static lv_obj_t *build_toggle_button(lv_obj_t *parent, const char *title,
                                      lv_event_cb_t cb, lv_subject_t *subject)
 {
-    lv_obj_t *btn = lv_button_create(scr);
+    lv_obj_t *btn = lv_button_create(parent);
     lv_obj_remove_style_all(btn);
     lv_obj_add_style(btn, &ui_style_btn_default, 0);
     lv_obj_add_style(btn, &ui_style_btn_checked, LV_STATE_CHECKED);
-    lv_obj_set_size(btn, BTN_WIDTH, BTN_HEIGHT);
+    lv_obj_set_size(btn, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
     lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, dx, -BTN_BOTTOM_MARGIN);
 
     lv_obj_t *lbl_title = lv_label_create(btn);
     lv_obj_add_style(lbl_title, &ui_style_label_subtitle, 0);
@@ -440,7 +467,7 @@ static lv_obj_t *build_toggle_button(lv_obj_t *scr, const char *title, int32_t d
     lv_obj_t *lbl_value = lv_label_create(btn);
     lv_obj_add_style(lbl_value, &ui_style_label_title, 0);
     lv_label_set_text(lbl_value, "OFF");
-    lv_obj_align(lbl_value, LV_ALIGN_BOTTOM_LEFT, 0, 8);
+    lv_obj_align(lbl_value, LV_ALIGN_BOTTOM_LEFT, 0, BTN_VALUE_DROP);
 
     /* The shared observer is handed the button only; this is how it finds the caption. */
     lv_obj_set_user_data(btn, lbl_value);
@@ -456,36 +483,29 @@ static lv_obj_t *build_toggle_button(lv_obj_t *scr, const char *title, int32_t d
 /**
  * @brief Build the PWR Limit and TQ Vect buttons and subscribe them to their subjects.
  *
- * @param scr  Screen object to build into.
+ * Two buttons in a row, spread evenly over its width. The row keeps an
+ * outline's width free above and below: the buttons' outline is drawn outside
+ * their boxes and the row clips it otherwise.
+ *
+ * @param parent  Column to build into.
  */
-static void build_buttons(lv_obj_t *scr)
+static void build_buttons(lv_obj_t *parent)
 {
-    s_btn_left  = build_toggle_button(scr, "PWR Limit", -BTN_HALF_SPACING,
-                                      btn_left_event_cb,
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_ver(row, UI_BTN_OUTLINE_W, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
+
+    s_btn_left  = build_toggle_button(row, "PWR Limit", btn_left_event_cb,
                                       &ui_tx_subj_pwrlimit_setting);
 
-    s_btn_right = build_toggle_button(scr, "TQ Vect", BTN_HALF_SPACING,
-                                      btn_right_event_cb,
+    s_btn_right = build_toggle_button(row, "TQ Vect", btn_right_event_cb,
                                       &ui_tx_subj_torquevect_setting);
-
-    // lv_obj_t * btn1 = lv_button_create(lv_screen_active());
-    // lv_obj_remove_style_all(btn1);
-    // lv_obj_add_style(btn1, &style, 0);
-    // lv_obj_add_style(btn1, &style_checked, LV_STATE_CHECKED);
-    // lv_obj_set_size(btn1, 140, 50);
-    // lv_obj_align(btn1, LV_ALIGN_BOTTOM_MID, -80, 0);
-    // lv_obj_add_flag(btn1, LV_OBJ_FLAG_CHECKABLE);
-    // lv_obj_add_event_cb(btn1, button_event_cb, LV_EVENT_VALUE_CHANGED, (void *)BUTTON_LEFT);
-
-    // label1 = lv_label_create(btn1);
-    // lv_obj_set_style_text_font(label1, &BarlowCondensed_BoldItalic_18, 0);
-    // lv_label_set_text(label1, "PWR Limit");
-    // lv_obj_align(label1, LV_ALIGN_TOP_LEFT, 0, 0);
-
-    // buttonLeftValueLabel = lv_label_create(btn1);
-    // lv_obj_set_style_text_font(buttonLeftValueLabel, &BarlowCondensed_BoldItalic_32, 0);
-    // lv_label_set_text(buttonLeftValueLabel, "OFF");
-    // lv_obj_align(buttonLeftValueLabel, LV_ALIGN_BOTTOM_LEFT, 0, 8);
 }
 
 /**
@@ -578,9 +598,16 @@ lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects)
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
     ui_header_create(scr, "EV DRIVING", status_subjects);
-    build_sliders(scr);
-    build_labels(scr);
-    build_buttons(scr);
+
+    /* TQG F | temperatures, HV bar, buttons | TQG R */
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_set_style_pad_column(content, ui_layout_u(1), 0);
+
+    s_sldr_left  = build_slider_column(content, "TQG F", &s_sldr_left_val,
+                                       sldr_left_value_changed_cb);
+    build_middle(content);
+    s_sldr_right = build_slider_column(content, "TQG R", &s_sldr_right_val,
+                                       sldr_right_value_changed_cb);
 
     s_right_encoder_group = lv_group_create();
     lv_group_add_obj(s_right_encoder_group, s_sldr_right);

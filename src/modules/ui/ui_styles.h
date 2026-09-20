@@ -254,6 +254,14 @@ extern lv_style_t ui_style_btn_focused;
  */
 extern lv_style_t ui_style_btn_pending;
 
+/**
+ * @brief Width of the outline around a button, in pixels.
+ *
+ * Drawn outside the button's box, like the slider outline — see
+ * UI_SLIDER_OUTLINE_W for what that asks of the container around it.
+ */
+#define UI_BTN_OUTLINE_W        2
+
 /* --- Progress bar (slider) -------------------------------------------------------- */
 
 /**

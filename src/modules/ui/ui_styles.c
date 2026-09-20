@@ -217,7 +217,7 @@ static void init_button_styles(void)
     lv_style_set_radius(&ui_style_btn_default,        0);
     lv_style_set_bg_opa(&ui_style_btn_default,        LV_OPA_COVER);
     lv_style_set_bg_color(&ui_style_btn_default,      UI_C_WHITE);
-    lv_style_set_outline_width(&ui_style_btn_default, 2);
+    lv_style_set_outline_width(&ui_style_btn_default, UI_BTN_OUTLINE_W);
     lv_style_set_outline_color(&ui_style_btn_default, UI_C_DARK);
     lv_style_set_text_color(&ui_style_btn_default,    UI_C_DARK);
     lv_style_set_pad_all(&ui_style_btn_default,       2);
@@ -227,7 +227,7 @@ static void init_button_styles(void)
     lv_style_set_radius(&ui_style_btn_checked,        0);
     lv_style_set_bg_opa(&ui_style_btn_checked,        LV_OPA_COVER);
     lv_style_set_bg_color(&ui_style_btn_checked,      UI_C_GREEN);
-    lv_style_set_outline_width(&ui_style_btn_checked, 2);
+    lv_style_set_outline_width(&ui_style_btn_checked, UI_BTN_OUTLINE_W);
     lv_style_set_outline_color(&ui_style_btn_checked, UI_C_DARK);
     lv_style_set_text_color(&ui_style_btn_checked,    UI_C_WHITE);
     lv_style_set_pad_all(&ui_style_btn_checked,       2);
@@ -237,7 +237,7 @@ static void init_button_styles(void)
     lv_style_set_radius(&ui_style_btn_focused,        0);
     lv_style_set_bg_opa(&ui_style_btn_focused,        LV_OPA_COVER);
     lv_style_set_bg_color(&ui_style_btn_focused,      UI_C_ACCENT);
-    lv_style_set_outline_width(&ui_style_btn_focused, 2);
+    lv_style_set_outline_width(&ui_style_btn_focused, UI_BTN_OUTLINE_W);
     lv_style_set_outline_color(&ui_style_btn_focused, UI_C_DARK);
     lv_style_set_text_color(&ui_style_btn_focused,    UI_C_DARK);
     lv_style_set_pad_all(&ui_style_btn_focused,       2);
@@ -247,7 +247,7 @@ static void init_button_styles(void)
     lv_style_set_radius(&ui_style_btn_pending,        0);
     lv_style_set_bg_opa(&ui_style_btn_pending,        LV_OPA_COVER);
     lv_style_set_bg_color(&ui_style_btn_pending,      UI_C_ACCENT);
-    lv_style_set_outline_width(&ui_style_btn_pending, 2);
+    lv_style_set_outline_width(&ui_style_btn_pending, UI_BTN_OUTLINE_W);
     lv_style_set_outline_color(&ui_style_btn_pending, UI_C_DARK);
     lv_style_set_text_color(&ui_style_btn_pending,    UI_C_DARK);
     lv_style_set_pad_all(&ui_style_btn_pending,       2);

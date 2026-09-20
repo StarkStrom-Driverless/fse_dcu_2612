@@ -14,17 +14,22 @@
  *              ┌──────────────────────────────────────┐
  *              │ EV DRIVING                    ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
- *              │ ▓  HV Accu   Inverter   Motor      ▓ │
- *              │ ▓   42°C      38°C      52°C       ▓ │ ← left/right sliders
+ *              │TQG F  HV Accu  Inverter   Motor TQG R│
+ *              │ ▓      38°C      52°C      61°C    ▓ │ ← left/right sliders
  *              │ ▓                                  ▓ │   TQG F / TQG R
- *              │ ▓  HV SoC                  488 V   ▓ │
- *              │ ▓  ▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░   ▓ │
- *              │  ┌───────────┐      ┌───────────┐    │
- *              │  │ PWR Limit │      │ TQ Vect   │    │
- *              │  │ OFF       │      │ ON        │    │ ← green while ON
- *              │  └───────────┘      └───────────┘    │
+ *              │ ▓  HV Accu Voltage          496 V  ▓ │
+ *              │ ▓  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░   ▓ │
+ *              │ ▓    ┌───────────┐ ┌───────────┐   ▓ │
+ *              │ ▓    │ PWR Limit │ │ TQ Vect   │   ▓ │
+ *              │ ▓    │ OFF       │ │ ON        │   ▓ │ ← green while ON
+ *              │      └───────────┘ └───────────┘     │
  *              └──────────────────────────────────────┘
  *              ```
+ *
+ *              Three columns in the content area (ui_layout.h): the two sliders
+ *              take what their width needs, the middle column takes the rest.
+ *              Its three blocks — the temperatures, the HV bar and the buttons —
+ *              are spread over its height. No widget has a coordinate.
  *
  *              ### Input assignment
  *
@@ -58,7 +63,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -69,6 +74,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-15  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns, rows and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -85,8 +92,8 @@
 /**
  * @brief Create the EV driving screen.
  *
- * Builds the header, the three sliders, the temperature readouts, the two
- * setting buttons and the three input groups.
+ * Builds the header, the two torque-gain sliders, the temperature readouts,
+ * the HV bar, the two setting buttons and the four input groups.
  * Must be called after ui_styles_init().
  *
  * @param status_subjects  Device-status subjects for the header widget.
