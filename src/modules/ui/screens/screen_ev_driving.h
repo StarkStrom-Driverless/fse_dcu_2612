@@ -14,22 +14,27 @@
  *              ┌──────────────────────────────────────┐
  *              │ EV DRIVING                    ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
- *              │TQG F  HV Accu  Inverter   Motor TQG R│
- *              │ ▓      38°C      52°C      61°C    ▓ │ ← left/right sliders
- *              │ ▓                                  ▓ │   TQG F / TQG R
- *              │ ▓  HV Accu Voltage          496 V  ▓ │
- *              │ ▓  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░   ▓ │
- *              │ ▓    ┌───────────┐ ┌───────────┐   ▓ │
- *              │ ▓    │ PWR Limit │ │ TQ Vect   │   ▓ │
- *              │ ▓    │ OFF       │ │ ON        │   ▓ │ ← green while ON
- *              │      └───────────┘ └───────────┘     │
- *              └──────────────────────────────────────┘
+ *              │TQG F                            TQG R│
+ *              │ ▓                                  ▓ │
+ *              │ ▓  HV Accu  Inverter   Motor      ▓ │ ← left/right sliders
+ *              │ ▓   38°C      52°C      61°C      ▓ │   TQG F / TQG R
+ *              │ ▓                                  ▓ │
+ *              │ ▓   HV Accu Voltage        496 V   ▓ │
+ *              │ ▓   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░    ▓ │
+ *              │ ▓   ┌───────────┐   ┌───────────┐  ▓ │
+ *              │ ▓   │ PWR Limit │   │ TQ Vect   │  ▓ │
+ *              │     │ OFF       │   │ ON        │    │ ← green while ON
+ *              │     └───────────┘   └───────────┘    │
  *              ```
  *
  *              Three columns in the content area (ui_layout.h): the two sliders
  *              take what their width needs, the middle column takes the rest.
- *              Its three blocks — the temperatures, the HV bar and the buttons —
- *              are spread over its height. No widget has a coordinate.
+ *              In the middle column the HV bar and the two buttons form a block
+ *              at the foot, a share of the column's width, centered: the bar is
+ *              shorter than the column, and the buttons hang at its two ends so
+ *              their outer edges line up with the ends of the bar. The three
+ *              temperatures take the height above the block and stand on it.
+ *              No widget has a coordinate.
  *
  *              ### Input assignment
  *

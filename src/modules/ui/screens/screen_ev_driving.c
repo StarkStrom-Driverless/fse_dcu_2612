@@ -108,6 +108,15 @@ LOG_MODULE_REGISTER(screen_ev_driving, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Height of the HV bar, in layout units. */
 #define BAR_H_U             2
 
+/**
+ * @brief Width of the HV bar and the button row under it, as a share of the
+ *        middle column.
+ *
+ * The bar is shorter than the column, and the two buttons hang at its outer
+ * ends, so bar and buttons stand as one block.
+ */
+#define BAR_W_PCT           85
+
 /** @brief Width of an on/off button, in layout units. */
 #define BTN_W_U             10
 
@@ -289,9 +298,11 @@ static lv_obj_t *build_slider_column(lv_obj_t *content, const char *title,
 /**
  * @brief Build the middle column: temperatures, HV bar and the two buttons.
  *
- * Takes the width the two slider columns leave. The three blocks are spread
- * over its height, the first at the top and the last at the bottom, so nothing
- * is placed by a coordinate and the gaps follow the space that is there.
+ * Takes the width the two slider columns leave. The HV bar and the buttons
+ * form a block at the foot of the column, BAR_W_PCT of its width and centered.
+ * The three temperatures take the height above it and stand on it, so nothing
+ * is placed by a coordinate and the temperatures follow the space that is
+ * there.
  *
  * @param content  Content area to build into.
  */
@@ -304,28 +315,51 @@ static void build_middle(lv_obj_t *content)
     lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(mid, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_flex_flow(mid, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START,
+    lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_START);
 
     /* A little air between the buttons and the hint bar. */
     lv_obj_set_style_pad_bottom(mid, ui_layout_u(1) / 2, 0);
 
-    /* Row of the three temperatures. */
+    /*
+     * Row of the three temperatures: as tall as what the block below leaves,
+     * with the values standing at its lower edge, just above the HV bar.
+     *
+     * The 80 px font's line box reaches below the baseline for descenders the
+     * digits do not have; build_temp() draws its item that far lower, so the
+     * digits, not the empty part of the line box, stand above the block.
+     */
     lv_obj_t *temps = lv_obj_create(mid);
     lv_obj_remove_style_all(temps);
-    lv_obj_set_size(temps, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_size(temps, lv_pct(100), 0);
+    lv_obj_set_flex_grow(temps, 1);
     lv_obj_clear_flag(temps, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(temps, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_bottom(temps, ui_layout_u(1), 0);
     lv_obj_set_flex_flow(temps, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(temps, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_START);
+    lv_obj_set_flex_align(temps, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_END,
+                          LV_FLEX_ALIGN_END);
 
     build_temp(temps, &ui_sig_temperature_accu_hv);
     build_temp(temps, &ui_sig_temperature_inverter);
     build_temp(temps, &ui_sig_temperature_motor);
 
-    build_hv_bar(mid);
-    build_buttons(mid);
+    /*
+     * HV bar and buttons in one block, half a unit apart. Each of the two rows
+     * keeps an outline's width free at its sides — a container clips at its own
+     * edge, and the outline is drawn outside the box — so the bar and the
+     * buttons end at the same edges and neither outline is clipped.
+     */
+    lv_obj_t *stack = lv_obj_create(mid);
+    lv_obj_remove_style_all(stack);
+    lv_obj_set_size(stack, lv_pct(BAR_W_PCT), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(stack, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(stack, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_row(stack, ui_layout_u(1) / 2, 0);
+    lv_obj_set_flex_flow(stack, LV_FLEX_FLOW_COLUMN);
+
+    build_hv_bar(stack);
+    build_buttons(stack);
 }
 
 /**
@@ -348,6 +382,12 @@ static void build_temp(lv_obj_t *parent, const struct ui_signal_desc *desc)
     lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
 
+    /*
+     * Drawn lower than laid out: translation does not take part in the layout,
+     * so the row and everything around it stay where they are.
+     */
+    lv_obj_set_style_translate_y(item, (int32_t)BarlowCondensed_BoldItalic_80.base_line, 0);
+
     lv_obj_t *lbl_title = lv_label_create(item);
     lv_obj_add_style(lbl_title, &ui_style_label_subtitle, 0);
     lv_label_set_text(lbl_title, desc->short_label);
@@ -369,7 +409,7 @@ static void build_temp(lv_obj_t *parent, const struct ui_signal_desc *desc)
  * The block keeps an outline's width free at the sides and the bottom for the
  * bar's outline, which the container would otherwise clip.
  *
- * @param parent  Column to build into.
+ * @param parent  Block to build into.
  */
 static void build_hv_bar(lv_obj_t *parent)
 {
@@ -472,11 +512,12 @@ static lv_obj_t *build_toggle_button(lv_obj_t *parent, const char *title,
 /**
  * @brief Build the PWR Limit and TQ Vect buttons and subscribe them to their subjects.
  *
- * Two buttons in a row, spread evenly over its width. The row keeps an
- * outline's width free above and below: the buttons' outline is drawn outside
+ * Two buttons in a row that hang at its two ends, so the outer edges of the
+ * buttons line up with the ends of the HV bar above. The row keeps an
+ * outline's width free on all sides: the buttons' outline is drawn outside
  * their boxes and the row clips it otherwise.
  *
- * @param parent  Column to build into.
+ * @param parent  Block to build into.
  */
 static void build_buttons(lv_obj_t *parent)
 {
@@ -485,9 +526,9 @@ static void build_buttons(lv_obj_t *parent)
     lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_pad_ver(row, UI_BTN_OUTLINE_W, 0);
+    lv_obj_set_style_pad_all(row, UI_BTN_OUTLINE_W, 0);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START,
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_START);
 
     s_btn_left  = build_toggle_button(row, "PWR Limit", btn_left_event_cb,
