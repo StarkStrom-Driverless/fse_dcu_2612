@@ -1,5 +1,5 @@
 /**
- * @file        screen_boot.c
+ * @file
  * @brief       Boot (splash) screen implementation
  *
  * @ingroup     dcu_ui_screens
@@ -8,10 +8,14 @@
  *              header, the StarkStrom gear logo, the product name and the
  *              firmware version.
  *
- *              There are no interactive widgets.  The one dynamic element is an
- *              LVGL animation that rotates the outer gear continuously; it is
- *              owned by the object and dies with it, so nothing has to stop it
- *              when the screen is deleted.
+ *              There are no interactive widgets.  The one dynamic element would
+ *              be an LVGL animation that rotates the outer gear continuously; it
+ *              would be owned by the object and die with it, so nothing would
+ *              have to stop it when the screen is deleted.
+ *
+ *              The animation is currently disabled: its code is in place but
+ *              commented out below. A turning gear made users think the DCU was
+ *              still starting up and not yet ready, so the gear stands still.
  *
  *              Navigation away from this screen is handled by ui.c.
  *
@@ -54,18 +58,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
@@ -261,6 +255,9 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
                        outer_gear_a8.header.h / 2);
 
     /*
+     * Rotation — disabled, see the file description. Remove the comment marks
+     * to switch it on.
+     *
      * 0 … 3600 in tenths of a degree is one full turn every 6 s, repeating
      * forever.  lv_anim_start() copies the descriptor, so the local is fine.
      */

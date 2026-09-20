@@ -1,5 +1,5 @@
 /**
- * @file        screen_settings.h
+ * @file
  * @brief       Settings screen factory — edit every persistent setting
  *
  * @ingroup     dcu_ui_screens
@@ -82,22 +82,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-09-01
  *
- * @version     0.3.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-09-01  Mario Wegmann   Initial creation
- * 0.2.0    2026-09-19  Mario Wegmann   Sliders instead of button rows, debug
- *                                      bits moved to DBG CUSTOM, saved notice
- * 0.3.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
- *                                      layout units instead of pixel positions
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef MODULES_UI_SCREENS_SCREEN_SETTINGS_H

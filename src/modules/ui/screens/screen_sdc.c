@@ -1,5 +1,5 @@
 /**
- * @file        screen_sdc.c
+ * @file
  * @brief       Shutdown-circuit screen implementation
  *
  * @ingroup     dcu_ui_screens
@@ -29,18 +29,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-05
  *
- * @version     0.1.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-08-05  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */

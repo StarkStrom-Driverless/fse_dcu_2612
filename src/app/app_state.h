@@ -1,5 +1,5 @@
 /**
- * @file        app_state.h
+ * @file
  * @brief       Application state types, read accessors, and write setters
  *
  * @ingroup     dcu_app
@@ -38,18 +38,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef APP_APP_STATE_H

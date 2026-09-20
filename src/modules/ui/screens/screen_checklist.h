@@ -1,5 +1,5 @@
 /**
- * @file        screen_checklist.h
+ * @file
  * @brief       EV checklist screen factory (SCREEN_PRE_RTD) — readouts and the Ready-to-Drive button
  *
  * @ingroup     dcu_ui_screens
@@ -94,21 +94,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
  *
- * @version     0.2.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-06-08  Mario Wegmann   Initial creation
- * 0.2.0    2026-09-20  Mario Wegmann   Pressure and voltage readouts added; header
- *                                      retitled "EV CHECKLIST"; RTD button placed
- *                                      in the right column instead of by pixels
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef MODULES_UI_SCREENS_SCREEN_CHECKLIST_H

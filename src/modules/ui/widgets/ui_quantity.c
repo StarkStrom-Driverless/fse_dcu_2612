@@ -1,5 +1,5 @@
 /**
- * @file        ui_quantity.c
+ * @file
  * @brief       Physical quantity display widget based on lv_spangroup
  *
  * @ingroup     dcu_ui_widgets
@@ -13,21 +13,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-16
  *
- * @version     0.2.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-06-16  Mario Wegmann   Initial creation
- * 0.2.0    2026-09-20  Mario Wegmann   ui_quantity_bind_signal() replaces
- *                                      ui_quantity_bind_level(); limits from the
- *                                      signal descriptor
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */

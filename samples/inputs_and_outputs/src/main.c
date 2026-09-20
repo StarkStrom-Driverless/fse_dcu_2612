@@ -1,5 +1,5 @@
 /**
- * @file        main.c
+ * @file
  * @brief       <Short one-line description of this file's purpose>
  *
  * @details     <Optional extended description. Explain the module's role,
@@ -8,20 +8,11 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-05-20
  *
- * @version     0.1.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann
  *              SPDX-License-Identifier: Apache-2.0
  *
  * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
  *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-05-20  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */

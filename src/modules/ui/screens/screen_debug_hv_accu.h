@@ -1,5 +1,5 @@
 /**
- * @file        screen_debug_hv_accu.h
+ * @file
  * @brief       Debug screen for the high-voltage accumulator
  *
  * @ingroup     dcu_ui_screens
@@ -40,18 +40,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-25
  *
- * @version     0.1.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-06-25  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef MODULES_UI_SCREENS_SCREEN_DEBUG_HV_ACCU_H

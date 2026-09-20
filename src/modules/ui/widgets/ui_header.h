@@ -1,5 +1,5 @@
 /**
- * @file        ui_header.h
+ * @file
  * @brief       Reusable header widget — title bar with device status icons
  *
  * @ingroup     dcu_ui_widgets

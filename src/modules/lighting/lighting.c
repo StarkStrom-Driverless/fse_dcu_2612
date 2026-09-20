@@ -1,5 +1,5 @@
 /**
- * @file        lighting.c
+ * @file
  * @brief       Lighting module — digital LED strip effects
  *
  * @ingroup     dcu_lighting
@@ -13,8 +13,9 @@
  *              On SCREEN_EV_DRIVING the strip becomes an instrument and shows
  *              the three-zone view described below. On every other screen it
  *              runs the gear animation: orange teeth rotating along the strip,
- *              matching the turning gear on the boot screen, rendered from a
- *              sin^4 lookup table that needs no floating-point maths.
+ *              matching the gear on the START screen (whose own rotation is
+ *              currently disabled), rendered from a sin^4 lookup table that
+ *              needs no floating-point math.
  *
  *              ### The three zones
  *
@@ -56,18 +57,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-07-06
  *
- * @version     0.1.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-07-06  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
@@ -237,7 +228,7 @@ struct zone_reading {
  * resembles distinct gear teeth.  The negative half of the sine wave
  * is clamped to 0, creating a dark valley between each tooth.
  *
- * Precomputed so the animation needs no floating-point maths at runtime.
+ * Precomputed so the animation needs no floating-point math at runtime.
  */
 static const uint8_t k_gear_lut[GEAR_LUT_SIZE] = {
       0,   0,   0,   2,   5,  13,  24,  41,
@@ -304,7 +295,7 @@ static inline struct led_rgb *strip_px(uint8_t pos)
  *
  * The phase counts *down*: positions run left to right while the strip is
  * wired right to left, and counting up would turn the gear against the one on
- * the boot screen.
+ * the START screen, should its rotation be switched on.
  *
  * This writes every LED each frame, so no clearing is needed beforehand.
  *

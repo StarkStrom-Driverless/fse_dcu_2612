@@ -1,5 +1,5 @@
 /**
- * @file        screen_mission_select.c
+ * @file
  * @brief       Mission selection screen implementation
  *
  * @ingroup     dcu_ui_screens
@@ -40,20 +40,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.2.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
- * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
- *                                      layout units instead of pixel positions
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */

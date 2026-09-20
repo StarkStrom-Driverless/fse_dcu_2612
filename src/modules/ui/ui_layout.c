@@ -1,5 +1,5 @@
 /**
- * @file        ui_layout.c
+ * @file
  * @brief       Shared screen geometry — implementation
  *
  * @ingroup     dcu_ui_layout
@@ -22,20 +22,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-09-20
  *
- * @version     0.2.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-09-20  Mario Wegmann   Initial creation
- * 0.2.0    2026-09-20  Mario Wegmann   Frame heights (header, page bar, hint bar) exported as
- *                                      functions; hint bar now a share of the height
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */

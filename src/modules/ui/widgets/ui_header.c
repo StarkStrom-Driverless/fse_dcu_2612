@@ -1,5 +1,5 @@
 /**
- * @file        ui_header.c
+ * @file
  * @brief       Reusable header widget — title bar with device status icons
  *
  * @ingroup     dcu_ui_widgets
@@ -552,7 +552,6 @@ static void page_indicator_create(lv_obj_t *parent, lv_obj_t *header)
 
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
-
 
 lv_obj_t *ui_header_create(lv_obj_t    *parent,
                             const char  *title,

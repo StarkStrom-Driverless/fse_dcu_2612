@@ -1,13 +1,15 @@
 /**
- * @file        screen_boot.h
+ * @file
  * @brief       Boot (splash) screen factory
  *
  * @ingroup     dcu_ui_screens
  *
  * @details     Provides a single factory function that builds and returns the
  *              START screen lv_obj_t.  The screen has no interactive widgets;
- *              the only moving part is the rotating outer gear, animated by
- *              LVGL itself.
+ *              nothing moves. A rotation of the outer gear, animated by
+ *              LVGL itself, is prepared in screen_boot.c but currently
+ *              disabled: a turning gear made users think the DCU was still
+ *              starting up and not yet ready.
  *
  *              It carries no vehicle data either, unless
  *              CONFIG_DCU_BENCHMARK_BOOT_PATCH is enabled — that adds a
@@ -51,20 +53,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.2.0
- *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- */
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
- * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
- *                                      layout units instead of pixel positions
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef MODULES_UI_SCREENS_SCREEN_BOOT_H
@@ -97,8 +87,8 @@
  * @brief Create the START screen.
  *
  * Allocates a new top-level LVGL screen object, applies the shared screen
- * background style, and adds the header, the gear logo with its rotation
- * animation, and the product and version labels.
+ * background style, and adds the header, the gear logo (its rotation
+ * animation is disabled, see screen_boot.c), and the product and version labels.
  *
  * Must be called after ui_styles_init() so that the shared style objects
  * are already initialized.
