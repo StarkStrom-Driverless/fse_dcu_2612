@@ -214,6 +214,16 @@ generation. It appears on the boot screen and as the git tag. The split between
 
 - Mario Wegmann <mario.wegmann@web.de>
 
+## AI assistance
+
+Large parts of this repository were written with the help of an AI coding
+assistant, [Claude](https://www.anthropic.com/claude) by Anthropic, used
+through Claude Code. That covers firmware source, documentation and the helper scripts under `tools/`.
+
+The requirements and the architecture come from the author, who reviewed the
+results and built, flashed and tested the firmware on the target hardware. 
+
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).

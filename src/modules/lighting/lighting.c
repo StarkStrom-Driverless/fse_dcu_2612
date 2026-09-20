@@ -114,7 +114,13 @@ LOG_MODULE_REGISTER(lighting_module, CONFIG_LOG_DEFAULT_LEVEL);
 #error "LED strip alias led_strip has no chain-length property"
 #endif
 
-/** @brief Thread stack size for the lighting thread. */
+/**
+ * @brief Thread stack size for the lighting thread.
+ *
+ * Raised from 512 after the thread analyzer reported 328 of them in use, which
+ * left 184 bytes. The strip update calls into the LED strip driver and from
+ * there into SPI, and that path is deeper than the animation code above it.
+ */
 #define LIGHTING_THREAD_STACK_SIZE  2048U
 
 /** @brief Scheduling priority for the lighting thread. */

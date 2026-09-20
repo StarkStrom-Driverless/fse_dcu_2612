@@ -65,8 +65,20 @@ LOG_MODULE_REGISTER(audio_module, CONFIG_LOG_DEFAULT_LEVEL);
 
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
-/** @brief Stack size for the audio thread. Small — the thread only toggles a pin. */
-#define AUDIO_THREAD_STACK_SIZE     512U
+/**
+ * @brief Stack size for the audio thread.
+ *
+ * The thread only toggles a pin, so this used to be 256. The thread analyzer
+ * then reported 192 of those 256 bytes in use with 64 left — and that reading
+ * was taken while the thread had burned 976 CPU cycles in three minutes, i.e.
+ * it had never left its initial wait. 192 bytes is the entry frame; the GPIO
+ * calls and the log statements in the work loop had not run at all.
+ *
+ * 64 bytes is also less than one Cortex-M exception frame plus a nested call:
+ * every interrupt hardware-stacks 32 bytes onto the stack of whichever thread
+ * it interrupts, before switching to the ISR stack.
+ */
+#define AUDIO_THREAD_STACK_SIZE     1024U
 
 /** @brief Scheduling priority for the audio thread. */
 #define AUDIO_THREAD_PRIORITY       6
