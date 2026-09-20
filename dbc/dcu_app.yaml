@@ -1,38 +1,50 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# dcu_app.yaml — Applikations-Intent für den CAN-Code-Generator
+# dcu_app.yaml — application intent for the CAN code generator
 #
-# Regeln:
-#   * Die DBC (dcu_can.dbc) ist die einzige Wahrheit für das Bit-Layout.
-#     Diese Datei referenziert DBC-Namen, dupliziert aber nichts daraus.
-#   * Nur Messages, die hier gelistet sind, werden generiert (Whitelist).
-#   * limits sind in physikalischen Einheiten (nach DBC-Faktor/Offset).
-#     Semantik (alle Grenzen optional):
+# Rules:
+#   * The DBC (dcu_can.dbc) is the only truth for the bit layout. This file
+#     references DBC names but duplicates nothing from them.
+#   * Only messages listed here are generated (whitelist).
+#   * limits are in physical units (after the DBC factor/offset).
+#     Semantics, all limits optional:
 #       value <  critical_low                  → CRITICAL
 #       value <  warning_low                   → WARNING
 #       warning_low <= value <= warning_high   → OK
 #       value >  warning_high                  → WARNING
 #       value >  critical_high                 → CRITICAL
-#     Validierung: critical_low <= warning_low <= warning_high <= critical_high
-#   * range gibt den absoluten Anzeigebereich in physikalischen Einheiten an.
-#     Wird als UI_<NAME>_RANGE_MIN / UI_<NAME>_RANGE_MAX in ui_subjects_gen.h
-#     generiert. Verwendung z.B.: lv_bar_set_range(bar, UI_X_RANGE_MIN, UI_X_RANGE_MAX)
-#     min und max sind jeweils optional; wenn beide angegeben, muss min < max sein.
-#   * persist markiert ein TX-Signal als über Neustart hinweg speicherbar.
-#     Erzeugt einen Eintrag in settings_schema_gen.h. Pflichtfeld: default.
-#     min/max sind optional — ohne Angabe gilt der Bereich aus der DBC-Bitbreite
-#     (N Bit unsigned → [0, 2^N-1]) bzw. das explizite DBC-Minimum/Maximum.
-#     Siehe src/services/settings/settings.h.
+#     Validation: critical_low <= warning_low <= warning_high <= critical_high,
+#     and every limit lies inside `range` when one is given. A limit beyond the
+#     range would turn the readout gold or red at a value the bar cannot show.
+#   * range is the absolute display range in physical units — what a bar spans.
+#     min and max are each optional; when both are given, min < max.
+#   * ui says how a numeric signal is presented. All keys are optional:
+#       label        full caption, as on a debug screen
+#       short_label  compact caption for tight layouts; falls back to label
+#       unit         unit suffix. Falls back to the DBC unit, so give it only
+#                    where the DBC has none (or has it garbled).
+#       precision    decimals shown, 0..4. Above 0 only for a signal with a
+#                    factor or offset in the DBC, i.e. a float one.
+#     Signals that are flags (one bit) get no presentation.
+#   * label, unit, precision, range and limits end up together in one
+#     `struct ui_signal_desc ui_sig_<app_name>` in ui_subjects_gen.h, and the
+#     screens read everything from there: no caption, unit, format, bar range or
+#     limit is written into a screen.
+#   * persist marks a TX signal as storable across a restart. Creates an entry
+#     in settings_schema_gen.h. Required: default. min/max are optional —
+#     without them the range from the DBC bit width applies (N bit unsigned →
+#     [0, 2^N-1]) or the explicit DBC minimum/maximum.
+#     See src/services/settings/settings.h.
 #
-# Regenerieren: python3 tools/codegen/gen_can.py   (west-venv aktiv)
+# Regenerate: python3 tools/codegen/gen_can.py   (west venv active)
 # ─────────────────────────────────────────────────────────────────────────────
 
 version: 1
 
-# ── Persistente Einstellungen ohne CAN-Signal ────────────────────────────────
+# ── Persistent settings without a CAN signal ─────────────────────────────────
 #
-# CAN-gebundene Settings werden am Signal per `persist:` markiert (siehe
-# messages: unten). Dieser Block ist für Werte, hinter denen kein CAN-Signal
-# steht. Beide Quellen landen in derselben enum setting_id.
+# CAN-bound settings are marked on the signal with `persist:` (see messages:
+# below). This block is for values with no CAN signal behind them. Both sources
+# end up in the same enum setting_id.
 #
 settings:
   display_brightness:
@@ -72,6 +84,11 @@ messages:
 
 
   # ── RX: mABX → DCU ─────────────────────────────────────────────────────────
+  #
+  # Limits and ranges below are EXAMPLE VALUES — adjust them to the real vehicle
+  # data. Where a signal has no limits, that is deliberate: it is an input or a
+  # command (a pedal position, a brake pressure) and not a health value, and a
+  # limit would color it during normal driving.
 
   mABX_2_DCU_1:
     direction: rx
@@ -107,7 +124,7 @@ messages:
         app_name: led_reserved_0
       Leistung_Durschnitt:
         app_name: power_average
-        ui: { label: "Power Avg", precision: 0 }
+        ui: { label: "Power Average", short_label: "Power Avg", precision: 0 }   # unit kW from the DBC
         limits: { warning_high: 60, critical_high: 75 }
         range: { min: 0, max: 80 }
 
@@ -117,32 +134,36 @@ messages:
     signals:
       DCU_Temperatur_Akku:
         app_name: temperature_accu_hv
-        ui: { label: "Accu Temp", precision: 0 }
-        # Beispielwerte — an reale Fahrzeugdaten anpassen!
+        ui: { label: "HV Accu Temperature", short_label: "HV Accu Temp", unit: "°C", precision: 0 }
         limits: { warning_high: 50, critical_high: 60 }
         range: { min: 0, max: 80 }
       DCU_Temperatur_Umrichter:
         app_name: temperature_inverter
-        ui: { label: "Inverter Temp", precision: 0 }
+        ui: { label: "Inverter Temperature", short_label: "Inverter Temp", unit: "°C", precision: 0 }
         limits: { warning_high: 70, critical_high: 90 }
         range: { min: 0, max: 120 }
       DCU_Temperatur_Motor:
         app_name: temperature_motor
-        ui: { label: "Motor Temp", precision: 0 }
+        ui: { label: "Highest Motor Temperature", short_label: "Motor Temp", unit: "°C", precision: 0 }
         limits: { warning_high: 80, critical_high: 100 }
         range: { min: 0, max: 120 }
       HV_VOLT_AKKU:
         app_name: voltage_accu_hv
-        ui: { label: "HV Accu", precision: 0 }
-        limits: { critical_low: 470, warning_low: 488 }
-        range: { min: 400, max: 600 }
+        ui: { label: "HV Accu Voltage", short_label: "HV Accu", unit: "V", precision: 0 }
+        limits: { critical_low: 470, warning_low: 488, warning_high: 585, critical_high: 595 }
+        range: { min: 0, max: 600 }
       HV_VOLT_TS:
         app_name: voltage_tractive_system
-        ui: { label: "HV TS", precision: 0 }
+        # No limits: the tractive system is dead while it is switched off, and
+        # 0 V is then the normal state, not a fault.
+        ui: { label: "Tractive System Voltage", short_label: "HV TS", unit: "V", precision: 0 }
+        range: { min: 0, max: 600 }
       DCU_Custom_Wert_1:
         app_name: custom_1
+        ui: { label: "Custom Value 1", precision: 0 }
       DCU_Custom_Wert_2:
         app_name: custom_2
+        ui: { label: "Custom Value 2", precision: 0 }
 
   M01_Brake_Pressure_Front:
     direction: rx
@@ -150,8 +171,9 @@ messages:
     signals:
       Brake_Pressure_Front:
         app_name: brake_pressure_front
-        ui: { label: "Brake Pressure Front", precision: 0 }
-        limits: { warning_high: 50, critical_high: 60 }
+        ui: { label: "Brake Pressure Front", short_label: "Brake Front", precision: 2 }   # unit bar from the DBC
+        limits: { warning_high: 50, critical_high: 55 }
+        range: { min: 0, max: 60 }
 
   M01_Brake_Pressure_Rear:
     direction: rx
@@ -159,17 +181,21 @@ messages:
     signals:
       Brake_Pressure_Rear:
         app_name: brake_pressure_rear
-        ui: { label: "Brake Pressure Rear", precision: 0 }
-        limits: { warning_high: 50, critical_high: 60 }
+        ui: { label: "Brake Pressure Rear", short_label: "Brake Rear", precision: 2 }
+        limits: { warning_high: 50, critical_high: 55 }
+        range: { min: 0, max: 60 }
 
+  # Air pressure is dangerous when it is too LOW — the pneumatics cannot work —
+  # as well as too high, which is why all four limits are set here.
   Air_Pressure_front:
     direction: rx
     timeout_ms: 500
     signals:
       Pressure:
         app_name: air_pressure_front
-        ui: { label: "Air Pressure Front", precision: 0 }
-        limits: { warning_high: 50, critical_high: 60 }
+        ui: { label: "Air Pressure Front", short_label: "Air Front", unit: "bar", precision: 2 }
+        limits: { critical_low: 3, warning_low: 5, warning_high: 9, critical_high: 9.5 }
+        range: { min: 0, max: 10 }
 
   Air_Pressure_rear:
     direction: rx
@@ -177,8 +203,9 @@ messages:
     signals:
       Pressure:
         app_name: air_pressure_rear
-        ui: { label: "Air Pressure Rear", precision: 0 }
-        limits: { warning_high: 50, critical_high: 60 }
+        ui: { label: "Air Pressure Rear", short_label: "Air Rear", unit: "bar", precision: 2 }
+        limits: { critical_low: 3, warning_low: 5, warning_high: 9, critical_high: 9.5 }
+        range: { min: 0, max: 10 }
 
   RFC4800_APPS_L:
     direction: rx
@@ -186,9 +213,8 @@ messages:
     signals:
       APPS_L_Position:
         app_name: apps_left_position
-        ui: { label: "Left Accelerator Pedal Position", precision: 0 }
-        limits: { warning_high: 50, critical_high: 60 }
-        range: { min: 0, max: 100 }
+        ui: { label: "Left Accelerator Pedal Position", short_label: "APPS L", unit: "%", precision: 0 }
+        range: { min: 0, max: 11000 }
 
   RFC4800_APPS_R:
     direction: rx
@@ -196,9 +222,8 @@ messages:
     signals:
       APPS_R_Position:
         app_name: apps_right_position
-        ui: { label: "Right Accelerator Pedal Position", precision: 0 }
-        limits: { warning_high: 50, critical_high: 60 }
-        range: { min: 0, max: 100 }
+        ui: { label: "Right Accelerator Pedal Position", short_label: "APPS R", unit: "%", precision: 0 }
+        range: { min: 0, max: 6000 }
 
   RFC4800_BPPS:
     direction: rx
@@ -206,8 +231,7 @@ messages:
     signals:
       BPPS_Position:
         app_name: bpps_position
-        ui: { label: "Break Pedal Position", precision: 0 }
-        limits: { warning_high: 50, critical_high: 60 }
+        ui: { label: "Brake Pedal Position", short_label: "BPPS", unit: "%", precision: 0 }
         range: { min: 0, max: 100 }
 
   SensorUnitRear_2_Vehicle:
@@ -237,8 +261,10 @@ messages:
         ui: { label: "", precision: 0 }
       LV_Akku:
         app_name: lv_accu_voltage
-        ui: { label: "", precision: 0 }
-        limits: { warning_low: 22, critical_low: 21 }
+        # The DBC gives 20..32.75 V for the LV battery, factor 0.1. Unit V from the DBC.
+        ui: { label: "LV Accu Voltage", short_label: "LV Accu", precision: 1 }
+        limits: { critical_low: 21, warning_low: 22, warning_high: 30, critical_high: 32 }
+        range: { min: 0, max: 36 }
 
   SensorUnitFront_2_Vehicle:
     direction: rx
