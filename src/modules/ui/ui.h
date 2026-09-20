@@ -49,6 +49,10 @@
 
 #include <stdint.h>
 
+/* ── LVGL Include ────────────────────────────────────────────────────────────────────────────── */
+
+#include <lvgl.h>
+
 /**
  * @defgroup dcu_ui UI module
  * @ingroup  dcu_modules
@@ -129,6 +133,27 @@ uint8_t ui_carousel_get_length(void);
  *         carousel.
  */
 uint8_t ui_carousel_get_position(void);
+
+/**
+ * @brief Create an input group that lives and dies with a screen.
+ *
+ * LVGL keeps every group in a global list and frees none of them by itself:
+ * deleting the widgets takes them out of their group, but the group stays.
+ * A screen that is built on every visit and creates its groups with
+ * lv_group_create() therefore leaks a little each time, until the LVGL memory
+ * pool runs dry and the firmware faults.
+ *
+ * A group made here is deleted together with @p owner. The deletion also
+ * detaches it from any input device that still points at it.
+ *
+ * The callback carries the group itself, not a file-scope pointer, so a screen
+ * that is rebuilt before the old instance is deleted cannot free the new
+ * instance's groups.
+ *
+ * @param owner  The screen object the group belongs to.
+ * @return       The new group, or NULL if the LVGL pool is exhausted.
+ */
+lv_group_t *ui_group_create(lv_obj_t *owner);
 
 /** @} */ /* dcu_ui */
 

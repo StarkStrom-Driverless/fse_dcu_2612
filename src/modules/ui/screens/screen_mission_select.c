@@ -57,6 +57,7 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "app/app_state.h"
+#include "modules/ui/ui.h"
 #include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
@@ -348,11 +349,11 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
      * them on leaving.  The groups themselves are owned by LVGL and released
      * with the screen.
      */
-    s_right_encoder_group = lv_group_create();
+    s_right_encoder_group = ui_group_create(scr);
     lv_group_add_obj(s_right_encoder_group, s_roller);
     lv_group_set_editing(s_right_encoder_group, true);
 
-    s_right_button_group = lv_group_create();
+    s_right_button_group = ui_group_create(scr);
     lv_group_add_obj(s_right_button_group, s_btn_send);
     lv_group_set_editing(s_right_button_group, true);
 

@@ -983,6 +983,27 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
+/**
+ * @brief LV_EVENT_DELETE handler of a screen — free one of its groups.
+ *
+ * @param e  Event; its user data is the group registered by ui_group_create().
+ */
+static void owned_group_delete_cb(lv_event_t *e)
+{
+    lv_group_delete((lv_group_t *)lv_event_get_user_data(e));
+}
+
+lv_group_t *ui_group_create(lv_obj_t *owner)
+{
+    lv_group_t *group = lv_group_create();
+
+    if (group != NULL) {
+        lv_obj_add_event_cb(owner, owned_group_delete_cb, LV_EVENT_DELETE, group);
+    }
+
+    return group;
+}
+
 uint8_t ui_carousel_get_length(void)
 {
     return (uint8_t)CAROUSEL_LEN;
