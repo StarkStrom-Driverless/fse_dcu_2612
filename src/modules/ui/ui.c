@@ -49,12 +49,18 @@
  *              next cycle. See reserve_button_cb() for why LVGL is the wrong
  *              path for a button that must survive a screen change mid-press.
  *
- *              ### Zbus — three channels, polled, never blocking
- *              ui_cmd_chan (screen switches, CAN snapshots), can_status_chan
- *              (CAN icon) and vehicle_status_chan are drained with K_NO_WAIT
- *              at the end of every LVGL iteration.  Polling instead of a
- *              blocking subscriber thread keeps every LVGL call in this one
- *              thread; the cost is up to UI_TASK_PERIOD_MS of latency.
+ *              ### Zbus — polled, never blocking
+ *              ui_nav_chan (screen switches), can_status_chan (CAN icon) and
+ *              vehicle_status_chan are drained with K_NO_WAIT at the end of
+ *              every LVGL iteration.  Polling instead of a blocking subscriber
+ *              thread keeps every LVGL call in this one thread; the cost is up
+ *              to UI_TASK_PERIOD_MS of latency.
+ *
+ *              ui_cmd_chan (CAN snapshots, RTD feedback, "settings saved") is
+ *              polled the same way but announced by a listener that sets a
+ *              flag instead of a queued subscriber: at 100 snapshots a second
+ *              a queue overflows whenever a screen is being built, see
+ *              ui_cmd_listener.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
@@ -134,7 +140,7 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * 100 pt fonts is what drives the requirement. This is also why the first
  * lv_timer_handler() call was moved out of ui_module_init() — see there.
  */
-#define UI_THREAD_STACK_SIZE    16384U // 8192U // 16384U
+#define UI_THREAD_STACK_SIZE    8192U
 
 /** @brief Scheduling priority for the LVGL task thread (lowest in the system). */
 #define UI_THREAD_PRIORITY      8
@@ -315,9 +321,44 @@ static lv_subject_t s_device_status[UI_DEVICE_SLOT_COUNT];
 ZBUS_SUBSCRIBER_DEFINE(ui_nav_sub, 4);
 ZBUS_CHAN_ADD_OBS(ui_nav_chan, ui_nav_sub, 0);
 
-/** @brief Subscriber for ui_cmd_chan (App Layer → UI module). */
-ZBUS_SUBSCRIBER_DEFINE(ui_cmd_sub, 4);
-ZBUS_CHAN_ADD_OBS(ui_cmd_chan, ui_cmd_sub, 0);
+/**
+ * @brief Set when ui_cmd_chan holds a message the UI thread has not read yet.
+ *
+ * Written by ui_cmd_listener_cb() in the publisher's context, cleared by the
+ * LVGL thread when it picks the message up.
+ */
+static atomic_t s_cmd_pending;
+
+/**
+ * @brief Ring the doorbell: ui_cmd_chan has something new.
+ *
+ * Runs synchronously in the publishing thread with the channel claimed, so it
+ * does nothing but set a flag.
+ *
+ * @param chan  The channel that was published on. Unused.
+ */
+static void ui_cmd_listener_cb(const struct zbus_channel *chan)
+{
+    ARG_UNUSED(chan);
+    atomic_set(&s_cmd_pending, 1);
+}
+
+/**
+ * @brief Observer for ui_cmd_chan (App Layer → UI module).
+ *
+ * A listener with a flag rather than a subscriber with a queue, and that is a
+ * property of the traffic, not a matter of taste. The UI never uses the
+ * notification itself — it reads the channel's *current* message when it gets
+ * around to it — so a notification is only a doorbell, and a second ring while
+ * the first is unanswered adds nothing. The channel carries a CAN snapshot
+ * every 10 ms, while building a screen keeps the UI thread away for well over
+ * 100 ms; a queue of any fixed depth overflows in that time, and every overflow
+ * is logged as an error by zbus and once more by the App Layer, although
+ * nothing has been lost that the next snapshot does not supersede.
+ * A flag cannot overflow.
+ */
+ZBUS_LISTENER_DEFINE(ui_cmd_listener, ui_cmd_listener_cb);
+ZBUS_CHAN_ADD_OBS(ui_cmd_chan, ui_cmd_listener, 0);
 
 /** @brief Subscriber for vehicle_status_chan. Reserved — nothing publishes there. */
 ZBUS_SUBSCRIBER_DEFINE(vehicle_status_sub, 4);
@@ -914,10 +955,18 @@ static void ui_thread_fn(void *p1, void *p2, void *p3)
         }
 
         /* ── Zbus commands from App Layer (non-blocking) ────────────────── */
-        while (zbus_sub_wait(&ui_cmd_sub, &chan, K_NO_WAIT) == 0) {
+        if (atomic_cas(&s_cmd_pending, 1, 0)) {
             struct ui_cmd cmd;
-            if (zbus_chan_read(chan, &cmd, K_NO_WAIT) == 0) {
+            if (zbus_chan_read(&ui_cmd_chan, &cmd, K_NO_WAIT) == 0) {
                 handle_ui_cmd(&cmd);
+            } else {
+                /*
+                 * The channel was claimed by a publisher at that moment. Ring
+                 * again for ourselves, so the next iteration retries instead of
+                 * waiting for the next snapshot — which for anything but a
+                 * snapshot may be a long time.
+                 */
+                atomic_set(&s_cmd_pending, 1);
             }
         }
 

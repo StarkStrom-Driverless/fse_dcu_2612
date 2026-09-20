@@ -17,8 +17,8 @@
  *                (INPUT_REL_WHEEL, handled through Zephyr's input callback).
  *              – Route the RIGHT encoder and the two button pads to the input
  *                groups the active screen provides.
- *              – Subscribe to ui_cmd_chan (App → UI) for programmatic screen
- *                switches and CAN data pushes, and to can_status_chan for the
+ *              – Follow ui_nav_chan (App → UI) for screen switches, ui_cmd_chan
+ *                for CAN data pushes and feedback, and can_status_chan for the
  *                CAN icon in the header.
  *
  *              ### Input devices (devicetree aliases)
