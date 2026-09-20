@@ -1,28 +1,58 @@
 /**
  * @file        screen_checklist.h
- * @brief       Pre-RTD screen factory — carries the Ready-to-Drive button
+ * @brief       EV checklist screen factory (SCREEN_PRE_RTD) — readouts and the Ready-to-Drive button
  *
  * @ingroup     dcu_ui_screens
  *
- * @details     Registered for SCREEN_PRE_RTD.  The name is historical: the
- *              screen is intended to become the guided pre-drive checklist,
- *              but at present it holds nothing but the RTD button.
+ * @details     Registered for SCREEN_PRE_RTD; the header reads "EV CHECKLIST".
+ *              The screen carries the RTD button and six live readouts of the
+ *              values a driver looks at before requesting Ready-to-Drive.
  *
  *              This is the only screen from which Ready-to-Drive can be
  *              requested.
  *
+ *              The name still promises more than there is: the readouts are
+ *              displayed, not evaluated. Nothing on this screen checks them
+ *              against a precondition or holds the RTD button back — whether
+ *              the vehicle may enter R2D is decided by the mABX.
+ *
  *              ### Screen layout (480 × 320)
  *              ```
  *              ┌──────────────────────────────────────┐
- *              │ PRE RTD                       ▪▪▪▪▪▪ │ ← shared header
+ *              │ EV CHECKLIST                  ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
- *              │                                      │
- *              │            (checklist to follow)     │
+ *              │ Brake Front       Brake Rear         │
+ *              │ ▓▓▓▓░░░  8.2 Bar  ▓▓▓░░░░  7.9 Bar   │
+ *              │ Air Front         Air Rear           │
+ *              │ ▓▓▓▓▓░░  8.4 Bar  ▓▓▓▓▓░░  8.2 Bar   │
+ *              │ HV Accu           LV Accu            │
+ *              │ ▓▓▓▓▓▓▓  496 V    ▓▓▓▓▓░░  24.3 V    │
  *              │                                      │
  *              │                   ┌───────────┐      │
- *              │                   │    RTD    │      │ ← dedicated RTD pad
+ *              │                   │ SEND RTD  │      │ ← dedicated RTD pad
  *              │                   └───────────┘      │
- *              └──────────────────────────────────────┘```
+ *              └──────────────────────────────────────┘
+ *              ```
+ *              Captions are abbreviated here; the screen spells them out.
+ *
+ *              ### Readouts
+ *              Two columns of three, each a bar with its value to the right.
+ *              They are bound to the generated RX subjects, so they follow the
+ *              bus without any code of their own here.
+ *
+ *              | Column | Row | Readout               | Subject                       | Bar range |
+ *              |--------|-----|-----------------------|-------------------------------|-----------|
+ *              | Left   | 1   | Brake Pressure Front  | ui_subj_brake_pressure_front  | 0…20 Bar  |
+ *              | Left   | 2   | Air Pressure Front    | ui_subj_air_pressure_front    | 0…10 Bar  |
+ *              | Left   | 3   | HV Accu Voltage       | ui_subj_voltage_accu_hv       | 0…500 V   |
+ *              | Right  | 1   | Brake Pressure Rear   | ui_subj_brake_pressure_rear   | 0…20 Bar  |
+ *              | Right  | 2   | Air Pressure Rear     | ui_subj_air_pressure_rear     | 0…10 Bar  |
+ *              | Right  | 3   | LV Accu Voltage       | ui_subj_lv_accu_voltage       | 0…36 V    |
+ *
+ *              Each value is colored by its generated limits, through
+ *              ui_quantity_bind_level(): gold past the warning limit, red past
+ *              the critical one. The pressures are out of range above their
+ *              limits, the two voltages below them.
  *
  *              ### Input assignment
  *
@@ -57,7 +87,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -68,6 +98,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-08  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Pressure and voltage readouts added; header
+ *                                      retitled "EV CHECKLIST"
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -82,10 +114,11 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the pre-RTD screen.
+ * @brief Create the EV checklist screen (SCREEN_PRE_RTD).
  *
- * Builds the header, the RTD button and the input groups.
- * Must be called after ui_styles_init().
+ * Builds the header, the six readouts, the RTD button and the input groups.
+ * Must be called after ui_styles_init() and ui_subjects_gen_init(), since the
+ * readouts bind to the generated subjects while they are being built.
  *
  * @param status_subjects  Device-status subjects for the header widget.
  * @return                 Pointer to the top-level screen object. Never NULL.

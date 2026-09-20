@@ -13,7 +13,7 @@ encoders are available for input.
 |---------|------|----------------|
 | Button | Left | Context-dependent, varies by screen |
 | Button | Right | Confirm selection |
-| Button | Ready to Drive (RTD) | Request RTD — hold, PRE RTD screen only |
+| Button | Ready to Drive (RTD) | Request RTD — hold, EV CHECKLIST screen only |
 | Button | Reserve | Sets `DCU_RESERVE_BUTTON` on the bus while held — any screen |
 | Rotary encoder | Left | Page through screens |
 | Rotary encoder | Right | Select values within a screen |
@@ -103,13 +103,13 @@ debug screens, to the right the screens for EV and DV operation:
 |---|---|
 | Counter-clockwise | DV SETTINGS, DBG TX, DBG TS, DBG PRESSURE, DBG HV ACCU, DBG LV ACCU |
 | *(start position)* | **BOOT** |
-| Clockwise | DV MISSION, SDC, PRE RTD |
+| Clockwise | DV MISSION, SDC, EV CHECKLIST |
 
 The carousel does not wrap around: at either end the display simply stops.
 
 **EV DRIVING** and **DV DRIVING** are not on the carousel. EV DRIVING appears
 when the mABX reports that the vehicle is ready to drive, after RTD was
-requested on the PRE RTD screen (see @ref manual-user-pre-rtd); DV DRIVING
+requested on the EV CHECKLIST screen (see @ref manual-user-pre-rtd); DV DRIVING
 appears when the autonomous system enters the *AS driving* state. Neither can
 be paged away from. Each closes by itself when its state ends: EV DRIVING once
 the vehicle leaves the ready-to-drive state, DV DRIVING once the autonomous
@@ -221,10 +221,28 @@ BSPD, ASCU, HVD, MH, RES, BOTS and inertia.
 cause is usually the first one in sequence — the shutdown circuit is a series
 circuit.
 
-### PRE RTD {#manual-user-pre-rtd}
+### EV CHECKLIST {#manual-user-pre-rtd}
 
-The only screen from which ready-to-drive (RTD) can be requested. The RTD
-button does nothing on any other screen — page to PRE RTD first.
+The last screen before driving off. It shows the values worth a look before the
+car is started — brake and air pressure, and the state of both batteries — and
+it is the only screen from which ready-to-drive (RTD) can be requested. The RTD
+button does nothing on any other screen — page to EV CHECKLIST first.
+
+**Readouts:** six bars, each with its value to the right, in two columns:
+
+| | Left column | Right column |
+|---|---|---|
+| Top | Brake pressure front | Brake pressure rear |
+| Middle | Air pressure front | Air pressure rear |
+| Bottom | HV battery voltage | LV battery voltage |
+
+A value turns gold once it passes its warning limit and red past its critical
+one — for the pressures when they get too high, for the voltages when they get
+too low. The same values, and more, are on DBG PRESSURE, DBG HV ACCU and
+DBG LV ACCU.
+
+The screen only *shows* the values. It does not check them or hold the RTD
+button back; whether the vehicle enters ready-to-drive is decided by the mABX.
 
 **Operation:** Press the brake pedal, then press and **hold** the RTD button
 until the button on the display turns green.
@@ -246,13 +264,10 @@ the vehicle reports ready-to-drive, the RTD sound plays and the display
 switches to **EV DRIVING** on its own — the button can then be released. When
 the vehicle leaves the ready-to-drive state, the display comes back here.
 
-<!-- Guided checklist before driving off. The screen lists the preconditions
-that must be met before RTD can be requested. -->
-
 ### EV DRIVING {#manual-user-ev}
 
 Shown automatically as soon as the mABX reports that the vehicle is ready to
-drive — request it by holding the RTD button on the PRE RTD screen, see
+drive — request it by holding the RTD button on the EV CHECKLIST screen, see
 @ref manual-user-pre-rtd.
 
 **Paging to other screens is locked on this screen.** This is intentional and
@@ -260,7 +275,7 @@ prevents accidental input while driving.
 
 The screen closes on its own as soon as the vehicle leaves the ready-to-drive
 state — when the shutdown circuit opens, for instance. The display returns to
-the screen shown before, usually PRE RTD, from where RTD can be requested
+the screen shown before, usually EV CHECKLIST, from where RTD can be requested
 again.
 
 The controls have a fixed assignment here:
@@ -340,7 +355,7 @@ Common observations and their likely cause:
 | CAN symbol gold | Elevated error counters — check wiring and termination |
 | SDC symbol red, vehicle does not move off | Open the SDC screen, identify the open component |
 | Kistler symbol red | Measurement system not responding, check wiring |
-| RTD button has no effect, display button stays white | Not on the PRE RTD screen — the button only works there |
+| RTD button has no effect, display button stays white | Not on the EV CHECKLIST screen — the button only works there |
 | Display button stays gold while held | Held for less than 0.5 s, or the request cannot be sent — check the CAN symbol |
 | Display button green, but no RTD | The mABX refuses: brake not pressed, tractive system not active or a precondition not met |
 | Display stays dark | Check power supply; booting only takes a few seconds |

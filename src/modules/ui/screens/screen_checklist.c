@@ -1,12 +1,27 @@
 /**
  * @file        screen_checklist.c
- * @brief       Pre-RTD screen implementation — the Ready-to-Drive button
+ * @brief       EV checklist screen implementation — readouts and the RTD button
  *
  * @ingroup     dcu_ui_screens
  *
- * @details     Builds the pre-RTD screen. Its only widget is the RTD button;
- *              the checklist the file is named after is still to come.
+ * @details     Builds the screen registered for SCREEN_PRE_RTD, titled
+ *              "EV CHECKLIST". The contract and the layout sketch are in
+ *              screen_checklist.h.
  *
+ *              ### Readouts
+ *              build_bars() creates six bar-and-value pairs in two columns of
+ *              three: brake pressure, air pressure and accumulator voltage,
+ *              front / HV on the left, rear / LV on the right. Each pair is the
+ *              same block — a bar bound to its generated subject with
+ *              lv_bar_bind_value(), a caption above it and a ui_quantity to its
+ *              right that shows the value and is colored by
+ *              ui_quantity_bind_level(). Everything follows the bus through the
+ *              subjects; the screen keeps no state for them. The bar ranges are
+ *              fixed in build_bars(), not taken from the generated limits.
+ *              Nothing is evaluated: the readouts do not influence the RTD
+ *              button.
+ *
+ *              ### The RTD button
  *              The button reports the physical press, nothing more: it
  *              publishes UI_INPUT_RTD_PRESSED on LV_EVENT_PRESSED and
  *              UI_INPUT_RTD_RELEASED on every way a press can end. The hold
@@ -44,7 +59,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -55,6 +70,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-08  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Pressure and voltage readouts added; header
+ *                                      retitled "EV CHECKLIST"
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -73,8 +90,10 @@
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
+#include "modules/ui/widgets/ui_quantity.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
+#include "generated/ui_subjects_gen.h"
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -97,7 +116,7 @@ LOG_MODULE_REGISTER(screen_checklist, CONFIG_LOG_DEFAULT_LEVEL);
  * simply how far right of centre that button sits — the second, negative
  * offset is used only by the commented-out counterpart below.
  */
-#define BTN_HALF_SPACING        55
+#define BTN_HALF_SPACING        70
 
 /**
  * @brief Bottom margin for the button row, in pixels.
@@ -152,6 +171,185 @@ static void btn_rtd_event_cb(lv_event_t *e);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
+
+/**
+ * @brief Build every bar and its numeric readout.
+ *
+ * Six blocks in two columns of three, rows 50 px apart. One block per value,
+ * each following the same shape: create the bar, strip the LVGL defaults,
+ * apply the shared slider styles, set the range, bind it to its subject, then
+ * add the caption above and the readout to its right.
+ *
+ * Left column: brake pressure front, air pressure front, HV accumulator
+ * voltage. Right column: brake pressure rear, air pressure rear, LV
+ * accumulator voltage.
+ *
+ * @param scr  Screen object to build into.
+ */
+static void build_bars(lv_obj_t *scr)
+{
+    /* ── Brake Pressure Front ───────────────────────────────────────────── */
+
+    lv_obj_t * bar_bp_front = lv_bar_create(scr);
+    lv_obj_remove_style_all(bar_bp_front);
+    lv_obj_add_style(bar_bp_front, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar_bp_front, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_bar_set_range(bar_bp_front, 0, 20);
+    lv_bar_bind_value(bar_bp_front, &ui_subj_brake_pressure_front);
+    lv_obj_set_size(bar_bp_front, 120, 20);
+    lv_obj_align(bar_bp_front, LV_ALIGN_TOP_MID, -160, 80);
+
+    lv_obj_t *lbl_bar_bp_front_title = lv_label_create(scr);
+    lv_obj_add_style(lbl_bar_bp_front_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_bar_bp_front_title, "Break Pressure Front");
+    lv_obj_align_to(lbl_bar_bp_front_title, bar_bp_front, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
+
+    lv_obj_t *lbl_bar_bp_front_value = ui_quantity_create(scr,
+                                      &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, "Bar");
+    lv_obj_add_style(lbl_bar_bp_front_value, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_bar_bp_front_value, &ui_style_level_crit, UI_STATE_CRIT);
+    ui_quantity_bind_level(lbl_bar_bp_front_value, &ui_subj_brake_pressure_front, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_BRAKE_PRESSURE_FRONT_WARN_HIGH, UI_BRAKE_PRESSURE_FRONT_CRIT_HIGH);
+    // lv_obj_set_size(lbl_bar_bp_front_value, 60, 30);
+    ui_quantity_bind_value(lbl_bar_bp_front_value, &ui_subj_brake_pressure_front, "%.2f");
+    lv_obj_align_to(lbl_bar_bp_front_value, bar_bp_front, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+
+    /* ── Air Pressure Front ───────────────────────────────────────────── */
+
+    lv_obj_t * bar_air_front = lv_bar_create(scr);
+    lv_obj_remove_style_all(bar_air_front);
+    lv_obj_add_style(bar_air_front, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar_air_front, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_bar_set_range(bar_air_front, 0, 10);
+    lv_bar_bind_value(bar_air_front, &ui_subj_air_pressure_front);
+    lv_obj_set_size(bar_air_front, 120, 20);
+    lv_obj_align(bar_air_front, LV_ALIGN_TOP_MID, -160, 130);
+
+    lv_obj_t *lbl_bar_air_front_title = lv_label_create(scr);
+    lv_obj_add_style(lbl_bar_air_front_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_bar_air_front_title, "Air Pressure Front");
+    lv_obj_align_to(lbl_bar_air_front_title, bar_air_front, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
+
+    lv_obj_t *lbl_bar_air_front_value = ui_quantity_create(scr,
+                                      &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, "Bar");
+    lv_obj_add_style(lbl_bar_air_front_value, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_bar_air_front_value, &ui_style_level_crit, UI_STATE_CRIT);
+    ui_quantity_bind_level(lbl_bar_air_front_value, &ui_subj_air_pressure_front, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_AIR_PRESSURE_FRONT_WARN_HIGH, UI_AIR_PRESSURE_FRONT_CRIT_HIGH);
+    // lv_obj_set_size(lbl_bar_air_front_value, 60, 30);
+    ui_quantity_bind_value(lbl_bar_air_front_value, &ui_subj_air_pressure_front, "%.2f");
+    lv_obj_align_to(lbl_bar_air_front_value, bar_air_front, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+
+    /* ── HV Accu Voltage ────────────────────────────────────────────────── */
+
+    lv_obj_t * bar_hv_accu_volt = lv_bar_create(scr);
+    lv_obj_remove_style_all(bar_hv_accu_volt);
+    lv_obj_add_style(bar_hv_accu_volt, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar_hv_accu_volt, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_bar_set_range(bar_hv_accu_volt, 0, 500);
+    lv_bar_bind_value(bar_hv_accu_volt, &ui_subj_voltage_accu_hv);
+    lv_obj_set_size(bar_hv_accu_volt, 120, 20);
+    lv_obj_align(bar_hv_accu_volt, LV_ALIGN_TOP_MID, -160, 180);
+
+    lv_obj_t *lbl_bar_hv_accu_volt_title = lv_label_create(scr);
+    lv_obj_add_style(lbl_bar_hv_accu_volt_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_bar_hv_accu_volt_title, "HV Accu Voltage");
+    lv_obj_align_to(lbl_bar_hv_accu_volt_title, bar_hv_accu_volt, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
+
+    lv_obj_t *lbl_bar_hv_accu_volt_value = ui_quantity_create(scr,
+                                      &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, "V");
+    lv_obj_add_style(lbl_bar_hv_accu_volt_value, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_bar_hv_accu_volt_value, &ui_style_level_crit, UI_STATE_CRIT);
+    ui_quantity_bind_level(lbl_bar_hv_accu_volt_value, &ui_subj_voltage_accu_hv, UI_QUANTITY_LEVEL_BELOW,
+                           UI_VOLTAGE_ACCU_HV_WARN_LOW, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+    // lv_obj_set_size(lbl_bar_hv_accu_volt_value, 60, 30);
+    ui_quantity_bind_value(lbl_bar_hv_accu_volt_value, &ui_subj_voltage_accu_hv, "%d");
+    lv_obj_align_to(lbl_bar_hv_accu_volt_value, bar_hv_accu_volt, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+
+    /* ── Brake Pressure Rear ────────────────────────────────────────────── */
+
+    lv_obj_t * bar_bp_rear = lv_bar_create(scr);
+    lv_obj_remove_style_all(bar_bp_rear);
+    lv_obj_add_style(bar_bp_rear, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar_bp_rear, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_bar_set_range(bar_bp_rear, 0, 20);
+    lv_bar_bind_value(bar_bp_rear, &ui_subj_brake_pressure_rear);
+    lv_obj_set_size(bar_bp_rear, 120, 20);
+    lv_obj_align(bar_bp_rear, LV_ALIGN_TOP_MID, 70, 80);
+
+    lv_obj_t *lbl_bar_bp_rear_title = lv_label_create(scr);
+    lv_obj_add_style(lbl_bar_bp_rear_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_bar_bp_rear_title, "Break Pressure Rear");
+    lv_obj_align_to(lbl_bar_bp_rear_title, bar_bp_rear, LV_ALIGN_OUT_TOP_LEFT, 00, 0);
+
+    lv_obj_t *lbl_bar_bp_rear_value = ui_quantity_create(scr,
+                                      &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, "Bar");
+    lv_obj_add_style(lbl_bar_bp_rear_value, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_bar_bp_rear_value, &ui_style_level_crit, UI_STATE_CRIT);
+    ui_quantity_bind_level(lbl_bar_bp_rear_value, &ui_subj_brake_pressure_rear, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_BRAKE_PRESSURE_REAR_WARN_HIGH, UI_BRAKE_PRESSURE_REAR_CRIT_HIGH);
+    // lv_obj_set_size(lbl_bar_bp_rear_value, 60, 30);
+    ui_quantity_bind_value(lbl_bar_bp_rear_value, &ui_subj_brake_pressure_rear, "%.2f");
+    lv_obj_align_to(lbl_bar_bp_rear_value, bar_bp_rear, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+
+    /* ── Air Pressure Rear ────────────────────────────────────────────── */
+
+    lv_obj_t * bar_air_rear = lv_bar_create(scr);
+    lv_obj_remove_style_all(bar_air_rear);
+    lv_obj_add_style(bar_air_rear, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar_air_rear, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_bar_set_range(bar_air_rear, 0, 10);
+    lv_bar_bind_value(bar_air_rear, &ui_subj_air_pressure_rear);
+    lv_obj_set_size(bar_air_rear, 120, 20);
+    lv_obj_align(bar_air_rear, LV_ALIGN_TOP_MID, 70, 130);
+
+    lv_obj_t *lbl_bar_air_rear_title = lv_label_create(scr);
+    lv_obj_add_style(lbl_bar_air_rear_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_bar_air_rear_title, "Air Pressure Rear");
+    lv_obj_align_to(lbl_bar_air_rear_title, bar_air_rear, LV_ALIGN_OUT_TOP_LEFT, 00, 0);
+
+    lv_obj_t *lbl_bar_air_rear_value = ui_quantity_create(scr,
+                                      &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, "Bar");
+    lv_obj_add_style(lbl_bar_air_rear_value, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_bar_air_rear_value, &ui_style_level_crit, UI_STATE_CRIT);
+    ui_quantity_bind_level(lbl_bar_air_rear_value, &ui_subj_air_pressure_rear, UI_QUANTITY_LEVEL_ABOVE,
+                           UI_AIR_PRESSURE_REAR_WARN_HIGH, UI_AIR_PRESSURE_REAR_CRIT_HIGH);
+    // lv_obj_set_size(lbl_bar_air_rear_value, 60, 30);
+    ui_quantity_bind_value(lbl_bar_air_rear_value, &ui_subj_air_pressure_rear, "%.2f");
+    lv_obj_align_to(lbl_bar_air_rear_value, bar_air_rear, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+
+    /* ── LV Accu Voltage ────────────────────────────────────────────────── */
+
+    lv_obj_t * bar_lv_accu_volt = lv_bar_create(scr);
+    lv_obj_remove_style_all(bar_lv_accu_volt);
+    lv_obj_add_style(bar_lv_accu_volt, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar_lv_accu_volt, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    lv_bar_set_range(bar_lv_accu_volt, 0, 36);
+    lv_bar_bind_value(bar_lv_accu_volt, &ui_subj_lv_accu_voltage);
+    lv_obj_set_size(bar_lv_accu_volt, 120, 20);
+    lv_obj_align(bar_lv_accu_volt, LV_ALIGN_TOP_MID, 70, 180);
+
+    lv_obj_t *lbl_bar_lv_accu_volt_title = lv_label_create(scr);
+    lv_obj_add_style(lbl_bar_lv_accu_volt_title, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_bar_lv_accu_volt_title, "LV Accu Voltage");
+    lv_obj_align_to(lbl_bar_lv_accu_volt_title, bar_lv_accu_volt, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
+
+    lv_obj_t *lbl_bar_lv_accu_volt_value = ui_quantity_create(scr,
+                                      &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, "V");
+    lv_obj_add_style(lbl_bar_lv_accu_volt_value, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(lbl_bar_lv_accu_volt_value, &ui_style_level_crit, UI_STATE_CRIT);
+    ui_quantity_bind_level(lbl_bar_lv_accu_volt_value, &ui_subj_lv_accu_voltage, UI_QUANTITY_LEVEL_BELOW,
+                           UI_LV_ACCU_VOLTAGE_WARN_LOW, UI_LV_ACCU_VOLTAGE_CRIT_LOW);
+    // lv_obj_set_size(lbl_bar_lv_accu_volt_value, 60, 30);
+    ui_quantity_bind_value(lbl_bar_lv_accu_volt_value, &ui_subj_lv_accu_voltage, "%.2f");
+    lv_obj_align_to(lbl_bar_lv_accu_volt_value, bar_lv_accu_volt, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+}
 
 /**
  * @brief Build the RTD button.
@@ -270,7 +468,9 @@ lv_obj_t *screen_checklist_create(lv_subject_t *status_subjects)
 
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
-    ui_header_create(scr, "PRE RTD", status_subjects);
+    ui_header_create(scr, "EV CHECKLIST", status_subjects);
+
+    build_bars(scr);
 
     /* A fresh screen starts released, whatever the previous instance saw. */
     s_rtd_pressed = false;
