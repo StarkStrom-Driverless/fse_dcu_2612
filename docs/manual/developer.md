@@ -94,6 +94,7 @@ receive commands.
 | CAN | 3 | Decode RX, send TX, bus status |
 | App | 5 | Process events, issue commands |
 | UI (LVGL) | 8 | `lv_timer_handler()`, input, rendering |
+| Demo | 9 | Emulator only, see @ref manual-developer-demo |
 
 All LVGL calls happen exclusively in the UI thread. Values needed by other
 threads live in `app_state` or in the settings service — both are mutex
@@ -312,6 +313,34 @@ For UI work without hardware:
 west build -p always -b qemu_cortex_a53
 west build -t run
 ```
+
+The emulator has no way to feed it input, and its CAN controller is a loopback
+that never receives anything from outside, so the screens show only zeros.
+
+#### Demo mode {#manual-developer-demo}
+
+To take screenshots, add the demo overlay:
+
+```sh
+west build -p always -b qemu_cortex_a53 -- -DEXTRA_CONF_FILE=demo.conf
+west build -t run
+```
+
+The firmware then publishes a fixed, plausible CAN snapshot and loads the next
+screen every five seconds — DV MISSION, SDC, EV CHECKLIST, EV DRIVING, DV DRIVING,
+the debug screens and the settings, then back to the boot screen. Each stop is
+logged as `Demo: <name>`. `CONFIG_DCU_DEMO_SCREEN_PERIOD_MS` changes the time
+per screen.
+
+The snapshot goes into the same channel the CAN thread publishes on, so header
+icons, bars and colors react as they would to real bus traffic. The CAN driver
+itself and its decoder are not exercised. All values are inside their limits on
+purpose: a screenshot then shows the layout, not a fault. To show the gold or
+red coloring, move a value past its threshold in `s_snapshot` in
+`src/modules/demo/demo.c`.
+
+The option depends on the emulator target, so it cannot be enabled in a
+hardware build.
 
 <!-- ### Resource budget
 

@@ -47,6 +47,36 @@ config DCU_BENCHMARK_BOOT_PATCH
 	  autonomous system state, and the signal keeps its normal meaning
 	  everywhere else. Keep this off in anything that goes on the car.
 
+config DCU_DEMO_MODE
+	bool "Demo mode: tour through every screen on fake CAN data"
+	default n
+	# Not an option on real hardware, and the dependency is the point: the
+	# demo publishes an invented snapshot on can_data_chan, which is the
+	# channel the App Layer and every screen believe. On a car that would
+	# paint a healthy vehicle over whatever the bus actually says.
+	depends on QEMU_TARGET
+	help
+	  Feed the application a fixed, plausible CAN snapshot and load the
+	  next screen every DCU_DEMO_SCREEN_PERIOD_MS, endlessly, so that the
+	  emulator can be left running while screenshots are taken.
+
+	  The snapshot goes into can_data_chan, the same channel and the same
+	  struct the CAN thread publishes on, so header icons, bars, colors
+	  and the shutdown-circuit screen all react exactly as they would to
+	  bus traffic. Nothing is faked below that line: the CAN driver, its
+	  decoder and the timeouts are not exercised.
+
+	  Enabled through demo.conf, see there for the build command.
+
+config DCU_DEMO_SCREEN_PERIOD_MS
+	int "Time each screen stays up in demo mode, in milliseconds"
+	default 5000
+	range 1000 60000
+	depends on DCU_DEMO_MODE
+	help
+	  The tour visits twelve screens, so the default of 5 s makes one lap
+	  a minute.
+
 endmenu
 
 source "Kconfig.zephyr"

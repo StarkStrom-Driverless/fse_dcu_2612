@@ -47,7 +47,13 @@ target_compile_definitions(app PRIVATE DCU_VEHICLE_ID=${DCU_VEHICLE_ID})
 
 # Collect all .c files recursively under src/
 FILE(GLOB_RECURSE app_sources src/*.c)
+
+# The demo module is scaffolding for the emulator and must not slip into a
+# firmware by way of the glob: it is compiled only when CONFIG_DCU_DEMO_MODE is
+# set, which Kconfig in turn allows only on a QEMU target.
+list(FILTER app_sources EXCLUDE REGEX "/src/modules/demo/")
 target_sources(app PRIVATE ${app_sources})
+target_sources_ifdef(CONFIG_DCU_DEMO_MODE app PRIVATE src/modules/demo/demo.c)
 
 # Add src/ as include root so headers can be included as:
 #   #include "services/event_bus/event_bus.h"

@@ -43,6 +43,10 @@
  *              | lighting | 7        | modules/lighting/lighting.c|
  *              | ui_lvgl  | 8        | modules/ui/ui.c            |
  *
+ *              An emulator build with CONFIG_DCU_DEMO_MODE adds a seventh step
+ *              and a "demo" thread (priority 9) that fakes the CAN data and tours
+ *              the screens — see modules/demo/demo.c.
+ *
  *              A module whose hardware is unavailable logs the reason and stays
  *              inactive; no init step aborts the boot.
  *
@@ -103,6 +107,10 @@
 #include "modules/lighting/lighting.h"
 #include "modules/ui/ui.h"
 #include "services/settings/settings.h"
+
+#ifdef CONFIG_DCU_DEMO_MODE
+#include "modules/demo/demo.h"
+#endif
 
 /* ── Zephyr Logging ──────────────────────────────────────────────────────────────────────────── */
 
@@ -185,6 +193,17 @@ int main(void)
      * upward Zbus events are dropped during the UI startup phase.
      */
     ui_module_init();
+
+#ifdef CONFIG_DCU_DEMO_MODE
+    /*
+     * Step 7 (emulator only): Demo module
+     *
+     * Publishes invented CAN data and walks through every screen. Last, so
+     * that the UI is already listening and the boot screen is the first stop
+     * of the tour. Kconfig only allows this option on a QEMU target.
+     */
+    demo_module_init();
+#endif
 
     LOG_INF("All modules initialised — kernel takes over");
 
