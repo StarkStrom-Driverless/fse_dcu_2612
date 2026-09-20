@@ -29,8 +29,9 @@
  *                               the settings service, which clamps and owns it;
  *                               the CAN module reads it back on its next cycle.
  *
- *              The whole column sits SEND_COL_OFFSET_X right of centre, which
- *              is what leaves room for the read column.
+ *              The screen is two columns of equal width in the content area
+ *              (ui_layout.h): the read column on the left, the send column on the
+ *              right. Nothing is placed by a coordinate.
  *
  *              ### Range and ownership
  *              The roller offers 0…7 because Debug_SETTING is three bits wide
@@ -55,7 +56,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-09
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -66,6 +67,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-09  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -81,6 +84,7 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
@@ -116,51 +120,14 @@ LOG_MODULE_REGISTER(screen_debug_custom, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Number of roller rows visible simultaneously (one above/below the selection). */
 #define ROLLER_VISIBLE_ROWS     3U
 
-/** @brief Width of the roller widget in pixels. */
-#define ROLLER_WIDTH            220
+/** @brief Width of the send button, in layout units (see ui_layout_u()). */
+#define BTN_W_U             10
 
-/** @brief Width of each action button in pixels. */
-#define BTN_WIDTH               100
+/** @brief Height of the send button, in layout units. */
+#define BTN_H_U             5
 
-/** @brief Height of each action button in pixels. */
-#define BTN_HEIGHT              50
-
-/**
- * @brief Horizontal offset of the button from the screen centre, in pixels.
- *
- * The name is a leftover from the two-button layout this screen was copied
- * from, where it was half the centre-to-centre distance. With one button it is
- * simply how far right of centre that button sits — the second, negative
- * offset is used only by the commented-out counterpart below.
- */
-#define BTN_HALF_SPACING        55
-
-/**
- * @brief Bottom margin for the button row, in pixels.
- *
- * Measured from the top of the hint bar, not from the screen edge — the
- * bar owns the bottom UI_HINTBAR_H pixels, and anything anchored to
- * LV_ALIGN_BOTTOM_* without adding it lands underneath.
- */
-#define BTN_BOTTOM_MARGIN       (UI_HINTBAR_H + 20)
-
-/**
- * @brief Horizontal offset of the whole send column from the screen centre.
- *
- * Shifts roller, confirmed-value label and button together to the right, which
- * is what frees the left half for the received values. One constant moves the
- * entire column.
- */
-#define SEND_COL_OFFSET_X       110
-
-/** @brief Left margin of the read column, in pixels. */
-#define READ_COL_X              20
-
-/** @brief Y position of the first read row, below header and page indicator. */
-#define READ_ROW1_Y             75
-
-/** @brief Vertical distance between the two read rows, in pixels. */
-#define READ_ROW_SPACING        90
+/** @brief Space between the two read rows, in layout units. */
+#define READ_ROW_GAP_U      3
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -209,8 +176,8 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static void build_roller(lv_obj_t *scr);
-static void build_buttons(lv_obj_t *scr);
+static void build_roller(lv_obj_t *parent);
+static void build_buttons(lv_obj_t *parent);
 static void btn_ok_event_cb(lv_event_t *e);
 // static void btn_esc_event_cb(lv_event_t *e);
 
@@ -244,15 +211,15 @@ static void confirmed_bits_observer_cb(lv_observer_t *observer, lv_subject_t *su
  *
  * @param scr  Screen object to build into.
  */
-static void build_roller(lv_obj_t *scr)
+static void build_roller(lv_obj_t *parent)
 {
-    s_roller = lv_roller_create(scr);
+    s_roller = lv_roller_create(parent);
 
     lv_roller_set_options(s_roller, ROLLER_OPTIONS, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller, ROLLER_VISIBLE_ROWS);
     lv_roller_set_selected(s_roller, (uint16_t)lv_subject_get_int(&s_roller_sel), LV_ANIM_OFF);
 
-    lv_obj_set_width(s_roller, ROLLER_WIDTH);
+    lv_obj_set_width(s_roller, lv_pct(100));
 
     /* ── Main part: all items ──────────────────────────────────────────── */
     lv_obj_set_style_bg_color(s_roller,     UI_C_WHITE,                     LV_PART_MAIN);
@@ -269,15 +236,12 @@ static void build_roller(lv_obj_t *scr)
     lv_obj_set_style_text_font(s_roller,  &BarlowCondensed_BoldItalic_18,  LV_PART_SELECTED);
     lv_obj_set_style_text_color(s_roller, UI_C_DARK,                       LV_PART_SELECTED);
 
-    /* Vertically centred in the content area below the 15 % header. */
-    lv_obj_align(s_roller, LV_ALIGN_CENTER, SEND_COL_OFFSET_X, -30);
     lv_obj_add_event_cb(s_roller, roller_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* ── Confirmed bits label (observer-driven) ─────────────────────────── */
 
-    s_roller_lbl = lv_label_create(scr);
+    s_roller_lbl = lv_label_create(parent);
     lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
-    lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, SEND_COL_OFFSET_X, 35);
     lv_subject_add_observer_obj(&ui_tx_subj_debug_bits, confirmed_bits_observer_cb,
                                 s_roller_lbl, NULL);
 }
@@ -292,17 +256,22 @@ static void build_roller(lv_obj_t *scr)
  * @param y     Y position of the caption, from the top of the screen.
  * @param desc  The signal to show, e.g. &ui_sig_custom_1.
  */
-static void build_read_row(lv_obj_t *scr, int32_t y, const struct ui_signal_desc *desc)
+static void build_read_row(lv_obj_t *parent, const struct ui_signal_desc *desc)
 {
-    lv_obj_t *lbl_caption = lv_label_create(scr);
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_t *lbl_caption = lv_label_create(row);
     lv_obj_add_style(lbl_caption, &ui_style_label_subtitle, 0);
     lv_label_set_text(lbl_caption, desc->label);
-    lv_obj_align(lbl_caption, LV_ALIGN_TOP_LEFT, READ_COL_X, y);
 
-    lv_obj_t *lbl_value = lv_label_create(scr);
+    lv_obj_t *lbl_value = lv_label_create(row);
     lv_obj_add_style(lbl_value, &ui_style_label_title, 0);
     lv_label_bind_text(lbl_value, desc->subject, desc->fmt);
-    lv_obj_align_to(lbl_value, lbl_caption, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
 }
 
 /**
@@ -315,12 +284,18 @@ static void build_read_row(lv_obj_t *scr, int32_t y, const struct ui_signal_desc
  * The captions name the DBC signals; the subjects carry the app_names from
  * dbc/dcu_app.yaml, which map one to one onto them.
  *
- * @param scr  Screen object to build into.
+ * The rows stand one under the other from the top of the column, READ_ROW_GAP_U
+ * apart.
+ *
+ * @param col  Column to build into.
  */
-static void build_read_column(lv_obj_t *scr)
+static void build_read_column(lv_obj_t *col)
 {
-    build_read_row(scr, READ_ROW1_Y, &ui_sig_custom_1);
-    build_read_row(scr, READ_ROW1_Y + READ_ROW_SPACING, &ui_sig_custom_2);
+    lv_obj_set_style_pad_top(col, ui_layout_u(1), 0);
+    lv_obj_set_style_pad_row(col, ui_layout_u(READ_ROW_GAP_U), 0);
+
+    build_read_row(col, &ui_sig_custom_1);
+    build_read_row(col, &ui_sig_custom_2);
 }
 
 /**
@@ -328,17 +303,16 @@ static void build_read_column(lv_obj_t *scr)
  *
  * @param scr  Screen object to build into.
  */
-static void build_buttons(lv_obj_t *scr)
+static void build_buttons(lv_obj_t *parent)
 {
     /* ── OK button ─────────────────────────────────────────────────────── */
 
-    s_btn_ok = lv_button_create(scr);
+    s_btn_ok = lv_button_create(parent);
     lv_obj_remove_style_all(s_btn_ok);
     lv_obj_add_style(s_btn_ok, &ui_style_btn_default, 0);
     lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_PRESSED);
     lv_obj_add_style(s_btn_ok, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    lv_obj_set_size(s_btn_ok, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_align(s_btn_ok, LV_ALIGN_BOTTOM_MID, SEND_COL_OFFSET_X, -BTN_BOTTOM_MARGIN);
+    lv_obj_set_size(s_btn_ok, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
 
     lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
     lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
@@ -445,9 +419,24 @@ lv_obj_t *screen_debug_custom_create(lv_subject_t *status_subjects)
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
     ui_header_create(scr, "DBG CUSTOM", status_subjects);
-    build_read_column(scr);
-    build_roller(scr);
-    build_buttons(scr);
+
+    /*
+     * Two columns: what is received on the left, what is sent on the right.
+     * The right one spreads the roller, the confirmed value and the send button
+     * over its height and keeps an outline's width free above and below for the
+     * button.
+     */
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_t *left    = ui_layout_column_create(content, 50);
+    lv_obj_t *right   = ui_layout_column_create(content, 50);
+
+    lv_obj_set_flex_align(right, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_ver(right, UI_BTN_OUTLINE_W, 0);
+
+    build_read_column(left);
+    build_roller(right);
+    build_buttons(right);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 

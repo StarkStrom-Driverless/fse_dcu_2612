@@ -40,7 +40,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -51,6 +51,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -67,6 +69,7 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "app/app_state.h"
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
 #include "modules/ui/widgets/ui_hintbar.h"
@@ -112,33 +115,11 @@ static const char *const k_mission_names[] = {
 /** @brief Number of roller rows visible simultaneously (one above/below the selection). */
 #define ROLLER_VISIBLE_ROWS     3U
 
-/** @brief Width of the roller widget in pixels. */
-#define ROLLER_WIDTH            220
+/** @brief Width of the send button, in layout units (see ui_layout_u()). */
+#define BTN_W_U             10
 
-/** @brief Width of each action button in pixels. */
-#define BTN_WIDTH               100
-
-/** @brief Height of each action button in pixels. */
-#define BTN_HEIGHT              50
-
-/**
- * @brief Horizontal offset of the button from the screen centre, in pixels.
- *
- * The name is a leftover from the two-button layout this screen was copied
- * from, where it was half the centre-to-centre distance. With one button it is
- * simply how far right of centre that button sits — the second, negative
- * offset is used only by the commented-out counterpart below.
- */
-#define BTN_HALF_SPACING        55
-
-/**
- * @brief Bottom margin for the button row, in pixels.
- *
- * Measured from the top of the hint bar, not from the screen edge — the
- * bar owns the bottom UI_HINTBAR_H pixels, and anything anchored to
- * LV_ALIGN_BOTTOM_* without adding it lands underneath.
- */
-#define BTN_BOTTOM_MARGIN       (UI_HINTBAR_H + 20)
+/** @brief Height of the send button, in layout units. */
+#define BTN_H_U             5
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
@@ -188,8 +169,8 @@ static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static void build_roller(lv_obj_t *scr);
-static void build_buttons(lv_obj_t *scr);
+static void build_roller(lv_obj_t *parent);
+static void build_buttons(lv_obj_t *parent);
 static void btn_ok_event_cb(lv_event_t *e);
 // static void btn_esc_event_cb(lv_event_t *e);
 
@@ -230,15 +211,15 @@ static void confirmed_mission_observer_cb(lv_observer_t *observer, lv_subject_t 
  *
  * @param scr  Screen object to build into.
  */
-static void build_roller(lv_obj_t *scr)
+static void build_roller(lv_obj_t *parent)
 {
-    s_roller = lv_roller_create(scr);
+    s_roller = lv_roller_create(parent);
 
     lv_roller_set_options(s_roller, ROLLER_OPTIONS, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller, ROLLER_VISIBLE_ROWS);
     lv_roller_set_selected(s_roller, (uint16_t)lv_subject_get_int(&s_roller_sel), LV_ANIM_OFF);
 
-    lv_obj_set_width(s_roller, ROLLER_WIDTH);
+    lv_obj_set_width(s_roller, lv_pct(100));
 
     /* ── Main part: all items ──────────────────────────────────────────── */
     lv_obj_set_style_bg_color(s_roller,     UI_C_WHITE,                     LV_PART_MAIN);
@@ -255,15 +236,12 @@ static void build_roller(lv_obj_t *scr)
     lv_obj_set_style_text_font(s_roller,  &BarlowCondensed_BoldItalic_18,  LV_PART_SELECTED);
     lv_obj_set_style_text_color(s_roller, UI_C_DARK,                       LV_PART_SELECTED);
 
-    /* Vertically centred in the content area below the 15 % header. */
-    lv_obj_align(s_roller, LV_ALIGN_CENTER, 0, -30);
     lv_obj_add_event_cb(s_roller, roller_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* ── Confirmed mission label (observer-driven) ──────────────────────── */
 
-    s_roller_lbl = lv_label_create(scr);
+    s_roller_lbl = lv_label_create(parent);
     lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
-    lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, 0, 35);
     lv_subject_add_observer_obj(&ui_tx_subj_drive_mode, confirmed_mission_observer_cb,
                                 s_roller_lbl, NULL);
 }
@@ -273,16 +251,15 @@ static void build_roller(lv_obj_t *scr)
  *
  * @param scr  Screen object to build into.
  */
-static void build_buttons(lv_obj_t *scr)
+static void build_buttons(lv_obj_t *parent)
 {
     /* ── OK button ─────────────────────────────────────────────────────── */
 
-    s_btn_ok = lv_button_create(scr);
+    s_btn_ok = lv_button_create(parent);
     lv_obj_remove_style_all(s_btn_ok);
     lv_obj_add_style(s_btn_ok, &ui_style_btn_default, 0);
     lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_ok, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_align(s_btn_ok, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
+    lv_obj_set_size(s_btn_ok, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
 
     lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
     lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
@@ -355,8 +332,23 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
     ui_header_create(scr, "DV MISSION", status_subjects);
-    build_roller(scr);
-    build_buttons(scr);
+
+    /*
+     * One column, centred: the roller, under it what was last confirmed, under
+     * that the send button. The three are spread over the height, and the
+     * column keeps an outline's width free above and below for the button.
+     */
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
+
+    lv_obj_t *col = ui_layout_column_create(content, 50);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_ver(col, UI_BTN_OUTLINE_W, 0);
+
+    build_roller(col);
+    build_buttons(col);
 
     /* ── Input groups ────────────────────────────────────────────────────── */
 

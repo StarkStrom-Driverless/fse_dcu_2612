@@ -16,17 +16,22 @@
  *              ┌──────────────────────────────────────┐
  *              │ DBG CUSTOM                    ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
- *              │ DCU_Custom_Wert_1     ┌─────────┐    │
- *              │ 1234                  │    2    │    │ ← roller 0…7,
- *              │                       │▶   3   ◀│    │   right encoder
- *              │ DCU_Custom_Wert_2     │    4    │    │
- *              │ 5678                  └─────────┘    │
- *              │                  Current Debug Bits: 3
+ *              │ Custom Value 1        ┌───────────┐  │
+ *              │ 1234                  │ Skidpad   │  │ ← roller,
+ *              │                       │▶Trackdrive│  │   right encoder
+ *              │ Custom Value 2        │ Braketest │  │
+ *              │ 42                    └───────────┘  │
+ *              │                       Debug Bits: 3  │
  *              │                       ┌───────────┐  │
- *              │                       │ SET BITS  │  │ ← right button pad
+ *              │                       │ SEND BITS │  │ ← right button pad
  *              │                       └───────────┘  │
  *              └──────────────────────────────────────┘
  *              ```
+ *              (The confirmed-value label reads "Current Debug Bits: 3" in full.)
+ *
+ *              Two columns of equal width in the content area (ui_layout.h): what
+ *              is received on the left, the roller, the confirmed value and the
+ *              send button on the right. Nothing is placed by a coordinate.
  *
  *              ### Input assignment
  *
@@ -49,7 +54,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-09
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -60,6 +65,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-09  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 

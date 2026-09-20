@@ -13,18 +13,22 @@
  *              ┌──────────────────────────────────────┐
  *              │ DV MISSION                    ▪▪▪▪▪▪ │ ← shared header
  *              ├──────────────────────────────────────┤
- *              │         ┌─────────────────┐          │
- *              │         │  Acceleration   │          │ ← roller,
- *              │         │▶ Skidpad       ◀│          │   right encoder
- *              │         │  Trackdrive     │          │
- *              │         └─────────────────┘          │
- *              │      Current Mission: Skidpad        │ ← last confirmed
+ *              │         ┌──────────────────┐         │
+ *              │         │  Acceleration    │         │ ← roller,
+ *              │         │▶ Skidpad        ◀│         │   right encoder
+ *              │         │  Trackdrive      │         │
+ *              │         └──────────────────┘         │
+ *              │       Current Mission: Skidpad       │ ← last confirmed
  *              │                                      │
- *              │                   ┌───────────────┐  │
- *              │                   │  SET MISSION  │  │ ← right button pad
- *              │                   └───────────────┘  │
+ *              │            ┌──────────────┐          │
+ *              │            │ SEND MISSION │          │ ← right button pad
+ *              │            └──────────────┘          │
  *              └──────────────────────────────────────┘
  *              ```
+ *
+ *              One column, centred in the content area (ui_layout.h): the roller,
+ *              under it the label of what was last confirmed, under that the send
+ *              button, spread over the height. Nothing is placed by a coordinate.
  *
  *              ### Input assignment
  *
@@ -48,7 +52,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -59,6 +63,8 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   Layout without coordinates: columns and
+ *                                      layout units instead of pixel positions
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
