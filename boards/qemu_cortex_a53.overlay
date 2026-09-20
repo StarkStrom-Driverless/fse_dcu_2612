@@ -2,7 +2,7 @@
  * QEMU Cortex-A53 – emulator setup for UI work without hardware
  * SPDX-License-Identifier: Apache-2.0
  *
- * The application reaches into the devicetree in seven places, each through
+ * The application reaches into the devicetree in these places, each through
  * DEVICE_DT_GET at compile time:
  *
  *   chosen zephyr,display      ui.c        Backlight
@@ -13,6 +13,7 @@
  *   alias    keypad-left       ui.c        Left button pad
  *   alias    keypad-right      ui.c        Right button pad
  *   alias    keypad-rtd        ui.c        RTD button (PRE_RTD screen only)
+ *   alias    reserve-button    ui.c        Reserve button (raw device, every screen)
  *   alias    piezo             audio.c     Buzzer
  *   alias    led-strip         lighting.c  LED strip
  *
@@ -58,6 +59,7 @@
 		keypad-left      = &keypad_left;
 		keypad-right     = &keypad_right;
 		keypad-rtd       = &keypad_rtd;
+		reserve-button   = &buttons3;
 		piezo            = &piezo_gpio;
 		led-strip        = &led_strip0;
 	};
@@ -173,6 +175,19 @@
 		compatible = "gpio-keys";
 		rtd_button: button_3 {
 			gpios = <&gpio_emul0 8 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	/*
+	 * Reserve button. As on the real shield it has no keypad indev: ui.c
+	 * reads the gpio-keys device itself, so the alias points at the device
+	 * node, not at an LVGL input.
+	 */
+	buttons3: gpio_keys3 {
+		compatible = "gpio-keys";
+		reserve_button: button_4 {
+			gpios = <&gpio_emul0 9 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			zephyr,code = <INPUT_KEY_ENTER>;
 		};
 	};

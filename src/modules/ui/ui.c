@@ -40,6 +40,15 @@
  *              interactive content returns NULL, which detaches the device so
  *              LVGL ignores its events.
  *
+ *              ### Reserve button — straight to the bus
+ *              The fourth button has no display function and is live on every
+ *              screen, so it takes the same route as the left encoder: an
+ *              INPUT_CALLBACK_DEFINE on the gpio-keys device, publishing
+ *              UI_INPUT_RESERVE_PRESSED / _RELEASED. The App Layer records the
+ *              state and the CAN module puts it in DCU_RESERVE_BUTTON on its
+ *              next cycle. See reserve_button_cb() for why LVGL is the wrong
+ *              path for a button that must survive a screen change mid-press.
+ *
  *              ### Zbus — three channels, polled, never blocking
  *              ui_cmd_chan (screen switches, CAN snapshots), can_status_chan
  *              (CAN icon) and vehicle_status_chan are drained with K_NO_WAIT
@@ -125,7 +134,7 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * 100 pt fonts is what drives the requirement. This is also why the first
  * lv_timer_handler() call was moved out of ui_module_init() — see there.
  */
-#define UI_THREAD_STACK_SIZE    16384U
+#define UI_THREAD_STACK_SIZE    16384U // 8192U // 16384U
 
 /** @brief Scheduling priority for the LVGL task thread (lowest in the system). */
 #define UI_THREAD_PRIORITY      8
@@ -357,6 +366,68 @@ static void left_encoder_cb(struct input_event *evt, void *user_data)
  * encoder and the keypad devices go to LVGL and never reach this callback.
  */
 INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_ALIAS(qdec_input_left)), left_encoder_cb, NULL);
+
+/**
+ * @brief Forward the reserve button's raw state to the App Layer.
+ *
+ * The other three buttons reach the App Layer through LVGL: an indev feeds a
+ * group, the group feeds a widget on the active screen, and the widget's event
+ * callback publishes. That works because each of them acts on something the
+ * driver can see on the current screen.
+ *
+ * This one is different on both counts. It carries no display function at all —
+ * it is a wire from a GPIO to the DCU_RESERVE_BUTTON bit — and it is live on
+ * every screen, where LVGL only ever delivers to the screen that happens to be
+ * loaded. Going through LVGL would mean a hidden widget on every screen plus
+ * group wiring on every screen change, and it would still be wrong: a screen
+ * change while the button is held deletes the widget, the release event never
+ * arrives, and the bit stays stuck at 1 on the bus. Reading the device
+ * directly has none of that, and it is the same route the left encoder already
+ * takes for carousel navigation.
+ *
+ * Runs in the input subsystem's thread, so the publish must not block.
+ *
+ * ### The signal is sampled, not edge-triggered
+ * ui_input_chan has a plain zbus subscriber behind it, which is notified per
+ * publish but reads the channel's *current* value. A press and a release that
+ * land before the App thread drains its queue therefore both read as the
+ * release. That can only ever swallow a pulse, never leave the state wrong:
+ * whatever is read is the most recent published value, which is the true
+ * button state at that moment.
+ *
+ * Making the chain lossless would change nothing observable anyway, because
+ * the CAN module samples app_state once per DCU_2_mABX period — a tap shorter
+ * than those 100 ms may fall between two frames no matter how the event
+ * reaches the App Layer. DCU_RESERVE_BUTTON is a state signal; treat a tap
+ * that has to be seen as a hold.
+ *
+ * @param evt        Input event; only INPUT_EV_KEY / INPUT_KEY_ENTER is used.
+ * @param user_data  Unused.
+ */
+static void reserve_button_cb(struct input_event *evt, void *user_data)
+{
+    ARG_UNUSED(user_data);
+
+    if (evt->type != INPUT_EV_KEY || evt->code != INPUT_KEY_ENTER) {
+        return;
+    }
+
+    struct ui_input_event ui_evt = {
+        .type = (evt->value != 0) ? UI_INPUT_RESERVE_PRESSED
+                                  : UI_INPUT_RESERVE_RELEASED,
+    };
+
+    int rc = zbus_chan_pub(&ui_input_chan, &ui_evt, K_NO_WAIT);
+    if (rc != 0) {
+        /*
+         * A lost release would leave DCU_RESERVE_BUTTON stuck at 1 until the
+         * next press, so this is worth a warning rather than a debug line.
+         */
+        LOG_WRN("Reserve button publish failed (value=%d): %d", evt->value, rc);
+    }
+}
+
+INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_ALIAS(reserve_button)), reserve_button_cb, NULL);
 
 
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */

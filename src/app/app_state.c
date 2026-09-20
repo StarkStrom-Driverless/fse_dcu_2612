@@ -69,6 +69,7 @@ struct app_state {
     struct app_state_settings   settings;      /**< Reserved; see app_state.h.         */
     bool                        rtd_pressed;   /**< RTD button currently held.         */
     int64_t                     rtd_since_ms;  /**< Uptime of the press; while held.   */
+    bool                        reserve_pressed; /**< Reserve button currently held.   */
 };
 
 
@@ -110,6 +111,7 @@ static struct app_state s_state = {
     },
     .rtd_pressed       = false,
     .rtd_since_ms      = 0,
+    .reserve_pressed   = false,
 };
 
 
@@ -273,6 +275,22 @@ void app_state_set_rtd_button(bool pressed)
     }
     s_state.rtd_pressed = pressed;
     k_mutex_unlock(&s_mutex);
+}
+
+void app_state_set_reserve_button(bool pressed)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    s_state.reserve_pressed = pressed;
+    k_mutex_unlock(&s_mutex);
+}
+
+bool app_state_is_reserve_button_pressed(void)
+{
+    k_mutex_lock(&s_mutex, K_FOREVER);
+    bool pressed = s_state.reserve_pressed;
+    k_mutex_unlock(&s_mutex);
+
+    return pressed;
 }
 
 void app_state_set_mission(const struct app_state_mission *mission)

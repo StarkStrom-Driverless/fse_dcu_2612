@@ -208,11 +208,12 @@ enum ui_input_type {
     UI_INPUT_MISSION_SELECTED,     /**< Mission confirmed; payload: data.mission.  */
     UI_INPUT_RTD_PRESSED,          /**< RTD button went down on the PRE_RTD screen. */
     UI_INPUT_RTD_RELEASED,         /**< RTD button up, or its screen was torn down. */
+    UI_INPUT_RESERVE_PRESSED,      /**< Reserve button went down; any screen.      */
+    UI_INPUT_RESERVE_RELEASED,     /**< Reserve button came up; any screen.        */
     UI_INPUT_TORQUE_VECT_ON,       /**< Reserved: superseded by UI_INPUT_SETTING_SELECTED. */
     UI_INPUT_TORQUE_VECT_OFF,      /**< Reserved: superseded by UI_INPUT_SETTING_SELECTED. */
     UI_INPUT_DEBUG_BITS_SELECTED,  /**< Debug bits set; payload: data.debug_bits.  */
     UI_INPUT_SETTING_SELECTED,     /**< Persistent setting changed; payload: data.setting. */
-    UI_INPUT_TIMESTAMP,            /**< Reserved: log an event marker.             */
     UI_INPUT_SCREEN_CHANGED,       /**< Carousel moved; payload: data.screen.      */
 };
 

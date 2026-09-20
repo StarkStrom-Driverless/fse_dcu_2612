@@ -4,7 +4,7 @@
  *
  * Describes the controls of the DCU board:
  *   Backlight TIM1_CH4 on PA11
- *   Inputs    2 rotary encoders, 2 buttons
+ *   Inputs    2 rotary encoders, 4 buttons (left, right, RTD, reserve)
  *   Outputs   piezo, APA102 LED strip over SPI3
  *   Storage   SPI NOR flash AT25DF081A over SPI1
  *
@@ -35,7 +35,12 @@
 		keypad-left = &keypad_left;
 		keypad-right = &keypad_right;
 		keypad-rtd = &keypad_rtd;
-		keypad-ts = &keypad_ts;
+		/*
+		 * The reserve button is the one control that is not routed
+		 * through LVGL, so the alias points at the gpio-keys device
+		 * itself rather than at a keypad indev — see ui.c.
+		 */
+		reserve-button = &buttons3;
 		piezo = &piezo_gpio;
 		pwm-display-bright = &pwm_display_bright;
 		led-strip = &apa102;
@@ -111,9 +116,16 @@
 		};
 	};
 
+	/*
+	 * Reserve button — drives the DCU_RESERVE_BUTTON bit of DCU_2_mABX and
+	 * nothing on the display. It has no keypad indev below, because it is
+	 * read straight from the input subsystem: it has to work on every
+	 * screen, and an LVGL widget would lose the release event when its
+	 * screen is torn down while the button is held.
+	 */
 	buttons3: gpio_keys3 {
 		compatible = "gpio-keys";
-		ts_button: button_3 {
+		reserve_button: button_3 {
 			gpios = <&gpiob 12 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			zephyr,code = <INPUT_KEY_ENTER>;
 		};
@@ -140,12 +152,6 @@
 		lvgl-codes = <LV_KEY_ENTER>;
 	};
 
-	keypad_ts: keypad3 {
-		compatible = "zephyr,lvgl-keypad-input";
-		input = <&buttons3>;
-		input-codes = <INPUT_KEY_ENTER>;
-		lvgl-codes = <LV_KEY_ENTER>;
-	};
 };
 
 /*

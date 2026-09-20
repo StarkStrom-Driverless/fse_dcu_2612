@@ -216,6 +216,19 @@ bool                app_state_is_can_connected(void);
  */
 bool                app_state_is_rtd_request_active(void);
 
+/**
+ * @brief Return true while the reserve button is physically held.
+ *
+ * Straight through, with no hold time and nothing latched — unlike
+ * app_state_is_rtd_request_active(), which has to guard a safety-relevant
+ * request. DCU_RESERVE_BUTTON is a plain state signal: the mABX sees 1 for as
+ * long as the driver keeps the button down and 0 from the first frame after
+ * the release.
+ *
+ * The CAN module calls this once per DCU_2_mABX cycle.
+ */
+bool                app_state_is_reserve_button_pressed(void);
+
 /** @brief Return the current Debug_SETTING raw value (0–7).
  *  @note Reserved — always 0. The live value is settings_get(SETTING_DEBUG_BITS). */
 uint8_t             app_state_get_debug_bits(void);
@@ -288,6 +301,17 @@ void app_state_set_active_screen(enum screen_id screen);
  * @param pressed  True on press, false on release.
  */
 void app_state_set_rtd_button(bool pressed);
+
+/**
+ * @brief Record the physical state of the reserve button.
+ *
+ * Unlike the RTD button this one is live on every screen, so the press does
+ * not come from an LVGL widget but straight from the input subsystem — see the
+ * callback in modules/ui/ui.c for why.
+ *
+ * @param pressed  True on press, false on release.
+ */
+void app_state_set_reserve_button(bool pressed);
 
 /**
  * @brief Replace the mission sub-state atomically.

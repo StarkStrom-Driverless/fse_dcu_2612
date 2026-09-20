@@ -239,6 +239,11 @@ static void set_rtd_button(bool pressed)
  *   RTD_Button bit from it on every TX cycle; nothing is latched and the state
  *   machine is not involved.
  *
+ * UI_INPUT_RESERVE_PRESSED / UI_INPUT_RESERVE_RELEASED
+ *   The same shape, for DCU_RESERVE_BUTTON — but without the hold time, and
+ *   live on every screen.  These two do not come from a widget: the UI module
+ *   reads that button straight from the input subsystem, see ui.c.
+ *
  * UI_INPUT_BACK
  *   Navigates back to the boot screen.  The left-encoder carousel is handled
  *   inside ui.c; this handles the physical ESC button.
@@ -253,10 +258,6 @@ static void set_rtd_button(bool pressed)
  *   forwarded straight to settings_set().  The settings service clamps against
  *   the generated schema and persists; the CAN module transmits every persisted
  *   signal on its next TX cycle.
- *
- * UI_INPUT_TIMESTAMP
- *   Logs the current Zephyr uptime as an event marker.  Useful for
- *   synchronising external measurements with the firmware timeline.
  *
  * Everything else (confirm, encoder steps, torque-vectoring toggles) is
  * consumed by LVGL or by the screen itself and ignored here.
@@ -295,6 +296,16 @@ static void handle_ui_input(const struct ui_input_event *evt)
     case UI_INPUT_RTD_RELEASED:
         set_rtd_button(false);
         LOG_INF("RTD button released");
+        break;
+
+    case UI_INPUT_RESERVE_PRESSED:
+        app_state_set_reserve_button(true);
+        LOG_DBG("Reserve button pressed");
+        break;
+
+    case UI_INPUT_RESERVE_RELEASED:
+        app_state_set_reserve_button(false);
+        LOG_DBG("Reserve button released");
         break;
 
     case UI_INPUT_BACK:
@@ -341,10 +352,6 @@ static void handle_ui_input(const struct ui_input_event *evt)
         if (evt->data.screen != SCREEN_PRE_RTD) {
             app_state_set_rtd_button(false);
         }
-        break;
-
-    case UI_INPUT_TIMESTAMP:
-        LOG_INF("Timestamp: %lld ms", (long long)k_uptime_get());
         break;
 
     case UI_INPUT_TORQUE_VECT_ON:   /* Reserved — no producer since the EV   */

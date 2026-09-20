@@ -25,6 +25,7 @@
  *
  *                drive_mode = mission_to_drive_mode(app_state_get_selected_mission())
  *                rtd_active = app_state_is_rtd_request_active()
+ *                reserve    = app_state_is_reserve_button_pressed()
  *                settings   = settings_get_all()  — every persisted signal,
  *                             packed by can_tx_gen_dcu_2_m_abx_apply_settings()
  *
@@ -38,6 +39,12 @@
  *              After a successful can_send(), a change of the transmitted value
  *              is published on feedback_chan (FEEDBACK_CAN_RTD_TX). That report
  *              is what turns the RTD button green on the display.
+ *
+ *              ### DCU_RESERVE_BUTTON
+ *              The same idea without the hold time and without the feedback:
+ *              the bit mirrors the physical button, sampled once per frame.
+ *              A press shorter than the TX period can therefore fall between
+ *              two frames — it is a state signal, not an edge.
  *
  *              RX
  *              ──
@@ -112,7 +119,14 @@ LOG_MODULE_REGISTER(can_module, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Timeout for a single CAN TX attempt. */
 #define CAN_TX_TIMEOUT          K_MSEC(100)
 
-/** @brief Thread stack size for the CAN worker thread. */
+/**
+ * @brief Thread stack size for the CAN worker thread.
+ *
+ * Raised from 512 after the thread analyzer reported 344 of them in use — 168
+ * bytes of headroom, over three minutes in which no bus error path ever ran.
+ * The error branches log, and a log call with a handful of arguments costs
+ * more than what was left.
+ */
 #define CAN_THREAD_STACK_SIZE   2048U
 
 /** @brief Thread scheduling priority for the CAN worker (higher = more urgent). */
@@ -219,7 +233,7 @@ static struct can_data_snapshot s_rx_snapshot;
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
 static int  can_hw_init(void);
-static int  can_send_dcu2_mabx(uint8_t drive_mode, bool rtd,
+static int  can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, bool reserve,
                                const uint8_t settings[SETTING_COUNT]);
 static void can_report_rtd_tx(bool rtd);
 static bool can_drain_rx(void);
@@ -298,16 +312,16 @@ static int can_hw_init(void)
  *
  * Every persisted signal — debug bits, ASR, recuperation, torque vectoring and
  * power limit — is written by the generated helper, so a signal newly marked
- * `persist:` in dcu_app.yaml is transmitted without a change here. The two
- * volatile signals are passed in; DCU_RESERVE_BUTTON has no source yet and
- * stays 0 from the initialiser.
+ * `persist:` in dcu_app.yaml is transmitted without a change here. The three
+ * volatile signals are passed in.
  *
  * @param drive_mode  DV_Drive_Mode_SETTING raw value (0–7).
  * @param rtd         true → RTD_Button = 1 (Ready-to-Drive request).
+ * @param reserve     true → DCU_RESERVE_BUTTON = 1 (button held right now).
  * @param settings    Values from settings_get_all(), by enum setting_id.
  * @return 0 once the frame was transmitted, negative errno otherwise.
  */
-static int can_send_dcu2_mabx(uint8_t drive_mode, bool rtd,
+static int can_send_dcu2_mabx(uint8_t drive_mode, bool rtd, bool reserve,
                               const uint8_t settings[SETTING_COUNT])
 {
     struct can_frame frame = {
@@ -319,6 +333,7 @@ static int can_send_dcu2_mabx(uint8_t drive_mode, bool rtd,
     struct dcu_can_gen_dcu_2_m_abx_t msg = {
         .dv_drive_mode_setting = drive_mode,
         .rtd_button            = rtd ? 1U : 0U,
+        .dcu_reserve_button    = reserve ? 1U : 0U,
     };
 
     can_tx_gen_dcu_2_m_abx_apply_settings(&msg, settings);
@@ -480,8 +495,9 @@ static void can_thread_fn(void *p1, void *p2, void *p3)
 
             uint8_t drive_mode = mission_to_drive_mode(app_state_get_selected_mission());
             bool    rtd_active = app_state_is_rtd_request_active();
+            bool    reserve    = app_state_is_reserve_button_pressed();
 
-            if (can_send_dcu2_mabx(drive_mode, rtd_active, settings) == 0) {
+            if (can_send_dcu2_mabx(drive_mode, rtd_active, reserve, settings) == 0) {
                 can_report_rtd_tx(rtd_active);
             }
         }
