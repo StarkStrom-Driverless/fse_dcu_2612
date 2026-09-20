@@ -13,18 +13,20 @@ application YAML (message whitelist + UI intent) and generates:
                                     plus frame ID table for filter setup
   src/generated/ui_subjects_gen.[ch] LVGL subjects (observer pattern): one
                                     lv_subject_t per RX signal + init/update;
-                                    for signals with limits also a
-                                    ui_bind_level_<x>(lv_obj_t*) helper that
-                                    wires LV_STATE_USER_1/USER_2 state bindings
-                                    directly against the value subject using
-                                    lv_obj_bind_state_if_lt/gt.
+                                    plus, for every numeric signal that
+                                    declares a label, unit, range or limits,
+                                    a struct ui_signal_desc that carries all
+                                    of it (caption, unit, decimals, bar range,
+                                    warning and critical limits).
 
 Pipeline:
-  1. Validate YAML against DBC (names, app_name uniqueness, limit monotonicity)
+  1. Validate YAML against DBC (names, app_name uniqueness, limit monotonicity,
+     limits inside the range, ui block)
   2. Filter DBC to the YAML whitelist → temporary filtered DBC
   3. Run cantools generate_c_source on the filtered DBC
   4. Emit snapshot struct + RX dispatch from the app_name mappings
-  5. Emit LVGL subjects + level-binding helpers from the app_name/limits mappings
+  5. Emit LVGL subjects + presentation descriptors from the app_name / ui /
+     limits / range mappings
 
 Usage (from project root with west venv active):
   python3 tools/codegen/gen_can.py
@@ -36,6 +38,7 @@ Copyright (c) 2026 Mario Wegmann
 from __future__ import annotations
 
 import argparse
+import math
 import hashlib
 import subprocess
 import sys
@@ -62,6 +65,28 @@ LIMIT_DEFINE_SUFFIX = {
 }
 
 RANGE_KEYS = ("min", "max")
+
+# Keys allowed inside a signal's `ui:` block.
+UI_KEYS = ("label", "short_label", "unit", "precision")
+
+# Decimals a readout may show. More than this is beyond what any signal resolves.
+UI_PRECISION_MAX = 4
+
+# Bit assigned to each optional field of struct ui_signal_desc (see the header
+# emitted by emit_subjects_header — the two must stay in step).
+UI_FLAG_RANGE = "UI_SIG_RANGE"
+UI_LIMIT_FLAGS = {
+    "critical_low":  "UI_SIG_CRIT_LOW",
+    "warning_low":   "UI_SIG_WARN_LOW",
+    "warning_high":  "UI_SIG_WARN_HIGH",
+    "critical_high": "UI_SIG_CRIT_HIGH",
+}
+UI_LIMIT_FIELDS = {
+    "critical_low":  "crit_low",
+    "warning_low":   "warn_low",
+    "warning_high":  "warn_high",
+    "critical_high": "crit_high",
+}
 
 # Keys allowed inside a signal's `persist:` block and the top-level `settings:`.
 PERSIST_KEYS = ("default", "min", "max")
@@ -218,6 +243,10 @@ def validate(db: Database, cfg: dict) -> list[str]:
                         f"{origin}: range min ({range_['min']}) must be less than max ({range_['max']})"
                     )
 
+            errors.extend(
+                validate_ui(sig_cfg, origin, dbc_signals[sig_name], app_name)
+            )
+
             persist = sig_cfg.get("persist")
             if persist is not None:
                 errors.extend(
@@ -226,6 +255,79 @@ def validate(db: Database, cfg: dict) -> list[str]:
                 )
 
     errors.extend(validate_settings_section(cfg, seen_setting_names))
+
+    return errors
+
+
+def validate_ui(sig_cfg: dict, origin: str, sig, app_name: str | None) -> list[str]:
+    """
+    Validate a signal's presentation data: the `ui:` block, and how its `limits`
+    and `range` relate to each other.
+
+    A limit outside the range is the error this exists to catch. The bar then
+    ends before the limit does, so the readout can turn gold or red at a value
+    the bar cannot show — or never turn at all on the bar.
+    """
+    errors: list[str] = []
+
+    ui = sig_cfg.get("ui")
+    if ui is not None:
+        if not isinstance(ui, dict):
+            errors.append(f"{origin}: ui must be a mapping")
+        else:
+            if not app_name:
+                errors.append(f"{origin}: ui requires an app_name")
+
+            unknown = set(ui) - set(UI_KEYS)
+            if unknown:
+                errors.append(
+                    f"{origin}: unknown ui keys {sorted(unknown)} (allowed: {list(UI_KEYS)})"
+                )
+
+            for key in ("label", "short_label", "unit"):
+                if key in ui and not isinstance(ui[key], str):
+                    errors.append(f"{origin}: ui.{key} must be a string (got: {ui[key]!r})")
+
+            if "precision" in ui:
+                prec = ui["precision"]
+                if isinstance(prec, bool) or not isinstance(prec, int) \
+                        or not 0 <= prec <= UI_PRECISION_MAX:
+                    errors.append(
+                        f"{origin}: ui.precision must be an integer 0..{UI_PRECISION_MAX} "
+                        f"(got: {prec!r})"
+                    )
+                elif prec > 0 and snapshot_c_type(sig) != "float":
+                    errors.append(
+                        f"{origin}: ui.precision {prec} on an integer signal — only a signal "
+                        f"with a factor or offset in the DBC carries decimals"
+                    )
+
+    # A DBC unit that is not plain ASCII is what a wrongly decoded '°C' looks
+    # like; it would end up on the display as it is. Only matters when the unit
+    # is actually going to be used. (A malformed ui block was reported above.)
+    ui_map = ui if isinstance(ui, dict) else {}
+    presented = bool(sig_cfg.get("limits") or sig_cfg.get("range") or ui_map.get("label"))
+    if presented and "unit" not in ui_map and sig.unit and not sig.unit.isascii():
+        errors.append(
+            f"{origin}: the DBC unit {sig.unit!r} is not plain ASCII — "
+            f"set ui.unit explicitly"
+        )
+
+    limits = sig_cfg.get("limits")
+    range_ = sig_cfg.get("range")
+    if isinstance(limits, dict) and isinstance(range_, dict) \
+            and all(isinstance(v, (int, float)) for v in list(limits.values()) + list(range_.values())):
+        lo = range_.get("min")
+        hi = range_.get("max")
+        for key in LIMIT_KEYS:
+            if key not in limits:
+                continue
+            value = limits[key]
+            if (lo is not None and value < lo) or (hi is not None and value > hi):
+                bound = f"[{lo if lo is not None else '-inf'}, {hi if hi is not None else '+inf'}]"
+                errors.append(
+                    f"{origin}: limit {key} ({value}) lies outside range {bound}"
+                )
 
     return errors
 
@@ -424,7 +526,8 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
 
     Returns a list of dicts:
       { "msg": cantools message, "snake": c_name,
-        "signals": [(dbc_signal, app_name, c_type, limits, range_), ...] }
+        "signals": [(dbc_signal, app_name, c_type, limits, range_), ...],
+        "ui": {app_name: <the signal's `ui:` block>, ...} }
     Only signals with an app_name are included (selection at signal level).
     """
     dbc_messages = {m.name: m for m in db.messages}
@@ -438,6 +541,7 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
         dbc_msg = dbc_messages[msg_name]
         dbc_signals = {s.name: s for s in dbc_msg.signals}
         mapped = []
+        ui_blocks: dict[str, dict] = {}
         for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
             sig_cfg = sig_cfg or {}
             app_name = sig_cfg.get("app_name")
@@ -445,12 +549,14 @@ def collect_rx_messages(db: Database, cfg: dict) -> list[dict]:
                 sig = dbc_signals[sig_name]
                 mapped.append((sig, app_name, snapshot_c_type(sig),
                                sig_cfg.get("limits"), sig_cfg.get("range")))
+                ui_blocks[app_name] = sig_cfg.get("ui") or {}
 
         if mapped:
             result.append({
                 "msg": dbc_msg,
                 "snake": camel_to_snake_case(msg_name),
                 "signals": mapped,
+                "ui": ui_blocks,
             })
 
     return result
@@ -496,8 +602,8 @@ def emit_tx_subjects_header(tx_signals: list[tuple]) -> str:
  *
  * Threading: subjects belong to the LVGL thread.  The CAN TX thread must NOT
  * read them — it takes persistent values from the Settings service and volatile
- * ones from app_state, both of which are mutex-protected.  See
- * docs/settings_module.md §2.
+ * ones from app_state, both of which are mutex-protected.  See the ownership
+ * model in services/settings/settings.h.
  *
  * ui_tx_subjects_gen_init() must be called from the LVGL thread before any
  * screen that binds to these subjects is created.
@@ -596,7 +702,7 @@ def settings_schema_hash(settings: list[dict]) -> int:
     changed since the blob was written, so the blob is discarded and defaults
     apply.  This is what makes inserting a setting in the middle safe: without
     it, every setting after the insertion point would silently inherit its
-    neighbour's value.
+    neighbor's value.
     """
     canonical = ";".join(
         f"{s['name']}:{s['default']}:{s['min']}:{s['max']}:{int(s['can_tx'])}"
@@ -612,7 +718,7 @@ def emit_settings_schema_header(settings: list[dict], schema_hash: int) -> str:
     lines.append("#include <stdbool.h>\n#include <stdint.h>\n")
     lines.append("""\
 /*
- * Schema for values persisted across reboots (see docs/settings_module.md).
+ * Schema for values persisted across reboots (see services/settings/settings.h).
  *
  * Sources, in this order:
  *   1. TX signals with a `persist:` block in dcu_app.yaml (can_tx = true)
@@ -668,10 +774,15 @@ def emit_settings_schema_source(settings: list[dict]) -> str:
 
 def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
     """
-    Collect all direction==tx messages with their period_ms.
+    Collect all direction==tx messages with their period_ms and settings.
+
+    "settings" lists the signals of the message that carry a `persist:` block,
+    as (struct field, enum setting_id) pairs — the mapping emit_tx_header()
+    turns into the apply-settings helper, so can.c never spells it out.
 
     Returns a list of dicts:
-      { "msg": cantools message, "snake": c_name, "period_ms": int }
+      { "msg": cantools message, "snake": c_name, "period_ms": int,
+        "settings": list[tuple[str, str]] }
     """
     dbc_messages = {m.name: m for m in db.messages}
     result = []
@@ -681,10 +792,18 @@ def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
         if msg_cfg.get("direction") != "tx":
             continue
 
+        settings = []
+        for sig_name, sig_cfg in (msg_cfg.get("signals") or {}).items():
+            sig_cfg = sig_cfg or {}
+            if sig_cfg.get("persist"):
+                settings.append((camel_to_snake_case(sig_name),
+                                 f"SETTING_{sig_cfg['app_name'].upper()}"))
+
         result.append({
             "msg":       dbc_messages[msg_name],
             "snake":     camel_to_snake_case(msg_name),
             "period_ms": msg_cfg["period_ms"],
+            "settings":  settings,
         })
 
     return result
@@ -692,15 +811,24 @@ def collect_tx_messages(db: Database, cfg: dict) -> list[dict]:
 
 def emit_tx_header(tx_messages: list[dict]) -> str:
     """
-    Emit can_tx_gen.h: one PERIOD_MS #define per TX message.
+    Emit can_tx_gen.h: per TX message a PERIOD_MS #define and, if it carries
+    persisted signals, an apply-settings helper, plus the period LCM the
+    scheduling tick wraps at.
 
     Usage in can.c (CAN_TX_PERIOD_MS is the thread base tick):
       if (s_tx_tick % (CAN_TX_GEN_<MSG>_PERIOD_MS / CAN_TX_PERIOD_MS) == 0) { ... }
       s_tx_tick++;
     Both values are compile-time constants, so the division folds away.
+
+    The helper writes every `persist:` signal of the message from the Settings
+    service's value array. Generating it is what keeps a newly persisted signal
+    from being transmitted as a silent zero: adding it to the YAML is enough,
+    no edit in can.c required.
     """
     lines = [GENERATED_BANNER]
     lines.append("#ifndef GENERATED_CAN_TX_GEN_H\n#define GENERATED_CAN_TX_GEN_H\n")
+    lines.append(f'#include "{DATABASE_NAME}.h"')
+    lines.append('#include "settings_schema_gen.h"\n')
     lines.append("""\
 /*
  * TX message period constants (physical milliseconds from dcu_app.yaml).
@@ -724,6 +852,44 @@ def emit_tx_header(tx_messages: list[dict]) -> str:
         define_name = f"CAN_TX_GEN_{snake.upper()}_PERIOD_MS"
         lines.append(f"/** @brief {msg.name} (0x{msg.frame_id:03X}) TX period. */")
         lines.append(f"#define {define_name:<44} {ms}U\n")
+
+    period_lcm = math.lcm(*(e["period_ms"] for e in tx_messages)) if tx_messages else 1
+    lines.append(f"""\
+/**
+ * @brief Least common multiple of all TX periods, in milliseconds.
+ *
+ * The schedule above repeats itself every {period_lcm} ms, so a tick counter
+ * wrapped at this value keeps every message's phase for good. Letting the
+ * counter run to its own integer limit instead would shift the phase on
+ * overflow, because the limit is not a multiple of the periods.
+ */
+#define CAN_TX_GEN_PERIOD_LCM_MS                     {period_lcm}U
+""")
+
+    for entry in tx_messages:
+        if not entry["settings"]:
+            continue
+        msg   = entry["msg"]
+        snake = entry["snake"]
+        struct = f"struct {DATABASE_NAME}_{snake}_t"
+        lines.append(f"""\
+/**
+ * @brief Copy every persisted {msg.name} signal into the frame struct.
+ *
+ * Generated from the `persist:` blocks in dcu_app.yaml. Signals without one
+ * are left untouched — the caller owns those.
+ *
+ * @param msg       Frame struct to fill.
+ * @param settings  Values from settings_get_all(), indexed by enum setting_id.
+ */
+static inline void can_tx_gen_{snake}_apply_settings(
+    {struct} *msg, const uint8_t settings[SETTING_COUNT])
+{{""")
+        width = max(len(field) for field, _ in entry["settings"])
+        for field, setting in entry["settings"]:
+            lines.append(f"    msg->{field:<{width}} = settings[{setting}];")
+        lines.append("}\n")
+
     lines.append("#endif /* GENERATED_CAN_TX_GEN_H */")
     return "\n".join(lines) + "\n"
 
@@ -855,30 +1021,116 @@ def c_float(value: float | int) -> str:
     return f"{float(value)}f"
 
 
+def c_str(text: str) -> str:
+    """A C string literal. Non-ASCII stays as UTF-8 — the sources are UTF-8."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def collect_ui_descriptors(rx_messages: list[dict]) -> list[dict]:
+    """
+    Build the presentation descriptor of every RX signal that declares one.
+
+    A signal is presented when it is a number (not a flag) and says anything
+    about how: a label, a unit, a range or limits. Everything else — the status
+    LEDs, the shutdown-circuit contacts, raw state values — gets a subject only.
+
+    The unit comes from `ui.unit`, else from the DBC; the YAML never has to
+    repeat what the DBC already says. `short_label` falls back to `label`.
+    """
+    descs: list[dict] = []
+
+    for entry in rx_messages:
+        for sig, app_name, c_type, limits, range_ in entry["signals"]:
+            if c_type == "bool":
+                continue
+
+            ui = entry["ui"].get(app_name) or {}
+            label = ui.get("label") or ""
+            short = ui.get("short_label") or label
+            unit = ui["unit"] if "unit" in ui else (sig.unit or "")
+
+            if not (label or short or unit or limits or range_):
+                continue
+
+            precision = ui.get("precision", 0)
+            is_float = subject_kind(c_type) == "float"
+
+            descs.append({
+                "app_name":  app_name,
+                "signal":    sig.name,
+                "label":     label,
+                "short":     short,
+                "unit":      unit,
+                "fmt":       f"%.{precision}f" if is_float else "%d",
+                "precision": precision,
+                "limits":    limits or {},
+                "range":     range_ or {},
+            })
+
+    return descs
+
+
 def emit_subjects_header(rx_messages: list[dict]) -> str:
     lines = [GENERATED_BANNER]
     lines.append("#ifndef GENERATED_UI_SUBJECTS_GEN_H\n#define GENERATED_UI_SUBJECTS_GEN_H\n")
+    lines.append("#include <stdint.h>\n")
     lines.append("#include <lvgl.h>\n")
     lines.append('#include "can_data_gen.h"\n')
     lines.append("""\
 /*
  * One value subject ui_subj_<x> per RX signal (app_name from dcu_app.yaml).
  *
- * For signals with limits, threshold #defines are generated so screens can
- * wire lv_obj_bind_state_if_lt/gt directly, choosing UI_STATE_WARN /
- * UI_STATE_CRIT (defined in ui_styles.h) and the appropriate LV_PART_*.
+ * Numeric signals that say how they are presented — a label, a unit, a range
+ * or limits — also get a descriptor ui_sig_<x>, defined at the end of this
+ * header. It carries everything a screen needs to show the value, so that no
+ * screen has to repeat a caption, a unit, a number of decimals, a bar range or
+ * a limit of its own. The YAML is the only place those live.
  *
- * Example — label text colour:
- *   lv_obj_add_style(lbl, &ui_style_level_warn, UI_STATE_WARN);
- *   lv_obj_add_style(lbl, &ui_style_level_crit, UI_STATE_CRIT);
- *   lv_obj_bind_state_if_lt(lbl, &ui_subj_voltage_accu_hv,
- *                            UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
- *   lv_obj_bind_state_if_lt(lbl, &ui_subj_voltage_accu_hv,
- *                            UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+ * The UI_<X>_WARN_* / _CRIT_* / _RANGE_* defines carry the same numbers as
+ * plain constants. A screen uses the descriptor. The defines are for code that
+ * has no business with LVGL subjects — the lighting module, which runs in its
+ * own thread and must not touch them, reads its thresholds from here.
  *
  * Threading: ui_subjects_gen_init() and ui_subjects_gen_update() must ONLY
  * be called from the LVGL thread.
  */
+
+/** @brief Which optional fields of a struct ui_signal_desc are meaningful. */
+enum ui_signal_flag {
+    UI_SIG_RANGE     = 1U << 0, /**< range_min / range_max are set. */
+    UI_SIG_CRIT_LOW  = 1U << 1, /**< crit_low is set.               */
+    UI_SIG_WARN_LOW  = 1U << 2, /**< warn_low is set.               */
+    UI_SIG_WARN_HIGH = 1U << 3, /**< warn_high is set.              */
+    UI_SIG_CRIT_HIGH = 1U << 4, /**< crit_high is set.              */
+};
+
+/**
+ * @brief How one signal is presented, as declared in dcu_app.yaml.
+ *
+ * Values are physical (after the DBC factor and offset), the same units the
+ * signal's subject carries.
+ *
+ * The limits follow the YAML semantics, all of them optional:
+ *   value < crit_low   → critical      value > warn_high → warning
+ *   value < warn_low   → warning       value > crit_high → critical
+ * A limit whose flag is not set must not be read.
+ */
+struct ui_signal_desc {
+    lv_subject_t *subject;      /**< The signal's value subject.                 */
+    const char   *label;        /**< Full caption, e.g. "HV Accu Voltage".       */
+    const char   *short_label;  /**< Compact caption; equals label if not given. */
+    const char   *unit;         /**< Unit suffix, "" if none. UTF-8.             */
+    const char   *fmt;          /**< printf format for the value: "%d" for an
+                                     integer subject, "%.Nf" for a float one.    */
+    uint8_t       precision;    /**< Decimals in fmt; 0 for an integer subject.  */
+    uint8_t       flags;        /**< enum ui_signal_flag bits.                   */
+    float         range_min;    /**< Display range, lower end.                   */
+    float         range_max;    /**< Display range, upper end.                   */
+    float         crit_low;     /**< Critical below this.                        */
+    float         warn_low;     /**< Warning below this.                         */
+    float         warn_high;    /**< Warning above this.                         */
+    float         crit_high;    /**< Critical above this.                        */
+};
 """)
     for entry in rx_messages:
         msg = entry["msg"]
@@ -898,6 +1150,12 @@ def emit_subjects_header(rx_messages: list[dict]) -> str:
                 if "max" in range_:
                     lines.append(f"#define {prefix + '_RANGE_MAX':<44} {c_float(range_['max'])}")
         lines.append("")
+
+    descs = collect_ui_descriptors(rx_messages)
+    lines.append("/* ── Presentation descriptors ── */\n")
+    for d in descs:
+        lines.append(f"extern const struct ui_signal_desc ui_sig_{d['app_name']};")
+    lines.append("")
     lines.append("""\
 /**
  * @brief Initializes all subjects to 0.
@@ -915,6 +1173,39 @@ void ui_subjects_gen_init(void);
 void ui_subjects_gen_update(const struct can_data_snapshot *snap);""")
     lines.append("\n#endif /* GENERATED_UI_SUBJECTS_GEN_H */")
     return "\n".join(lines) + "\n"
+
+
+def emit_ui_descriptor_defs(descs: list[dict]) -> list[str]:
+    """One `const struct ui_signal_desc` definition per descriptor."""
+    lines: list[str] = []
+
+    for d in descs:
+        flags: list[str] = []
+        fields: dict[str, str] = {}
+
+        if d["range"]:
+            flags.append(UI_FLAG_RANGE)
+            fields["range_min"] = c_float(d["range"].get("min", 0))
+            fields["range_max"] = c_float(d["range"].get("max", 0))
+        for key in LIMIT_KEYS:
+            if key in d["limits"]:
+                flags.append(UI_LIMIT_FLAGS[key])
+                fields[UI_LIMIT_FIELDS[key]] = c_float(d["limits"][key])
+
+        lines.append(f"/* {d['signal']} */")
+        lines.append(f"const struct ui_signal_desc ui_sig_{d['app_name']} = {{")
+        lines.append(f"    .subject     = &ui_subj_{d['app_name']},")
+        lines.append(f"    .label       = {c_str(d['label'])},")
+        lines.append(f"    .short_label = {c_str(d['short'])},")
+        lines.append(f"    .unit        = {c_str(d['unit'])},")
+        lines.append(f"    .fmt         = {c_str(d['fmt'])},")
+        lines.append(f"    .precision   = {d['precision']}U,")
+        lines.append(f"    .flags       = {' | '.join(flags) if flags else '0U'},")
+        for name, value in fields.items():
+            lines.append(f"    .{name:<11} = {value},")
+        lines.append("};\n")
+
+    return lines
 
 
 def emit_subjects_source(rx_messages: list[dict]) -> str:
@@ -944,7 +1235,10 @@ def emit_subjects_source(rx_messages: list[dict]) -> str:
             lines.append(f"    lv_subject_set_float(&ui_subj_{app_name}, snap->{app_name});")
         else:
             lines.append(f"    lv_subject_set_int(&ui_subj_{app_name}, (int32_t)snap->{app_name});")
-    lines.append("}")
+    lines.append("}\n")
+
+    for d in emit_ui_descriptor_defs(collect_ui_descriptors(rx_messages)):
+        lines.append(d)
 
     return "\n".join(lines) + "\n"
 
@@ -1021,6 +1315,8 @@ def main() -> None:
     print(f"OK: {len(selected)} messages ({len(db.messages)} in DBC), "
           f"{total_signals} signals mapped, {limited_count} with level bindings, "
           f"{range_count} with range defines, {len(tx_messages)} TX period(s)")
+    ui_desc_count = len(collect_ui_descriptors(rx_messages))
+    print(f"    UI signals:  {ui_desc_count} with a presentation descriptor")
     print(f"    RX dispatch: {len(rx_messages)} messages, "
           f"{rx_signal_count} snapshot fields")
     print(f"    TX subjects: {len(tx_signals)} signals")

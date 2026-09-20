@@ -1,9 +1,9 @@
 
 if SHIELD_FSE_DISPLAY_3_5
 
-# DMA-Transfers für SPI2 (STM32F405RG).
-# Entlastet die CPU komplett vom Pixel-Transfer – größter Einzelgewinn
-# bei Full-Refresh-Geschwindigkeit.
+# DMA transfers for SPI2 (STM32F405RG).
+# Takes the pixel transfer off the CPU entirely – the single biggest gain in
+# full-refresh speed.
 config SPI_STM32_DMA
 	default y
 
@@ -18,16 +18,17 @@ choice LV_COLOR_DEPTH
 	default LV_COLOR_DEPTH_16
 endchoice
 
-# RGB565 über 8-Bit-SPI: LVGL muss Bytes vorab tauschen (Big-Endian für Display).
+# RGB565 over 8-bit SPI: LVGL has to swap the bytes beforehand (the display
+# expects big endian).
 config LV_COLOR_16_SWAP
 	default y
 
-# Zeichenpuffergröße als Prozentsatz der Displayfläche (320×480 = 307.200 Byte).
-# Größerer Puffer → weniger SPI-Transaktionen pro Frame → schnelleres Rendering.
-#   10 % ≈  30 KB  (Zephyr-Default, Minimum)
-#   20 % ≈  60 KB  (guter Kompromiss für STM32F4 mit ≥128 KB RAM)
-#   50 % ≈ 150 KB  (empfohlen wenn RAM vorhanden, z. B. STM32H7)
-#  100 % ≈ 300 KB  (vollständiger Framebuffer, kein Tearing möglich)
+# Draw buffer size as a percentage of the display area (320x480 = 307,200 bytes).
+# A larger buffer means fewer SPI transactions per frame and faster rendering.
+#   10 % ~  30 KB  (Zephyr default, the minimum)
+#   20 % ~  60 KB  (a good compromise for an STM32F4 with >= 128 KB RAM)
+#   50 % ~ 150 KB  (recommended where the RAM exists, e.g. STM32H7)
+#  100 % ~ 300 KB  (full framebuffer, tearing impossible)
 config LV_Z_VDB_SIZE
 	default 20
 

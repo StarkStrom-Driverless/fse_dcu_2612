@@ -18,14 +18,64 @@ config DCU_SETTINGS_PERSIST
 	help
 	  Store the settings blob in NVS so it survives a power cycle.
 
-	  Disabled until the external SPI NOR flash is populated on the board.
-	  With it off the settings service keeps its complete API — screens and
-	  the CAN layer are unaffected — but holds values in RAM only, so every
-	  boot starts from the schema defaults generated out of dbc/dcu_app.yaml.
+	  On the DCU board this lands in the settings_partition on the external
+	  SPI NOR flash (AT25DF081A, 4 KB sectors), which the shield overlay
+	  points the chosen zephyr,settings-partition at.
 
-	  Enabling this requires a storage_partition in the devicetree. On the
-	  internal STM32F405 flash that costs 256 KB of application space,
-	  because NVS needs two 128 KB erase sectors. See docs/settings_module.md.
+	  Turn it off for a target without that flash, the emulator among them.
+	  The settings service then keeps its complete API — screens and the CAN
+	  layer are unaffected — but holds values in RAM only, so every boot
+	  starts from the schema defaults generated out of dbc/dcu_app.yaml.
+
+	  Putting the partition on the internal STM32F405 flash instead would
+	  cost 256 KB of application space, because NVS needs two of its 128 KB
+	  erase sectors.
+
+config DCU_BENCHMARK_BOOT_PATCH
+	bool "Optical latency patch on the boot screen"
+	default n
+	help
+	  Add a solid rectangle to the boot screen whose color follows the
+	  AS_state CAN signal, for measuring end-to-end latency with a
+	  photodiode on the panel.
+
+	  Black, yellow and white give three optically distinct levels, so a
+	  scope trace shows when a received CAN frame reaches the glass.
+
+	  Scaffolding, not a feature. AS_state is borrowed because it already
+	  arrives over the bus — the patch has nothing to do with the
+	  autonomous system state, and the signal keeps its normal meaning
+	  everywhere else. Keep this off in anything that goes on the car.
+
+config DCU_DEMO_MODE
+	bool "Demo mode: tour through every screen on fake CAN data"
+	default n
+	# Not an option on real hardware, and the dependency is the point: the
+	# demo publishes an invented snapshot on can_data_chan, which is the
+	# channel the App Layer and every screen believe. On a car that would
+	# paint a healthy vehicle over whatever the bus actually says.
+	depends on QEMU_TARGET
+	help
+	  Feed the application a fixed, plausible CAN snapshot and load the
+	  next screen every DCU_DEMO_SCREEN_PERIOD_MS, endlessly, so that the
+	  emulator can be left running while screenshots are taken.
+
+	  The snapshot goes into can_data_chan, the same channel and the same
+	  struct the CAN thread publishes on, so header icons, bars, colors
+	  and the shutdown-circuit screen all react exactly as they would to
+	  bus traffic. Nothing is faked below that line: the CAN driver, its
+	  decoder and the timeouts are not exercised.
+
+	  Enabled through demo.conf, see there for the build command.
+
+config DCU_DEMO_SCREEN_PERIOD_MS
+	int "Time each screen stays up in demo mode, in milliseconds"
+	default 5000
+	range 1000 60000
+	depends on DCU_DEMO_MODE
+	help
+	  The tour visits twelve screens, so the default of 5 s makes one lap
+	  a minute.
 
 endmenu
 

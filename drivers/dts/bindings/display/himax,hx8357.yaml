@@ -4,7 +4,7 @@
 title: Himax HX8357 display controller
 
 description: |
-  The Himax HX8357-D is a 16.7M colour TFT-LCD single-chip controller with a
+  The Himax HX8357-D is a 16.7M color TFT-LCD single-chip controller with a
   maximum 320RGBx480 resolution. It communicates via a 4-wire SPI (MIPI DBI
   Type C) interface.
 
@@ -69,14 +69,14 @@ properties:
     description: |
       VCOM voltage control (SETCOM, 0xB6).
       A single byte; 0x25 corresponds to approximately −1.52 V.
-      Increase to reduce ghosting; decrease if colours appear washed out.
+      Increase to reduce ghosting; decrease if colors appear washed out.
 
   setpanel:
     type: uint8-array
     default: [0x05]
     description: |
       Panel characteristics (SETPANEL, 0xCC).
-      Controls the gate-scan direction and BGR/RGB colour order of the
+      Controls the gate-scan direction and BGR/RGB color order of the
       physical panel connection.
       0x05 = BGR panel, gate top-to-bottom, source S1→S960 (common default).
       0x09 = RGB panel, gate top-to-bottom, source S1→S960.

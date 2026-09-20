@@ -1,28 +1,35 @@
 /**
- * @file        settings.c
+ * @file
  * @brief       Persistent settings service — NVS-backed, schema-generated
  *
- * @details     Implementation notes; the API contract is documented in
- *              settings.h and the design rationale in docs/settings_module.md.
+ * @ingroup     dcu_settings
  *
- *              Storage format
- *              ──────────────
+ * @details     Implementation notes; the API contract is documented in
+ *              settings.h, which also carries the design rationale.
+ *
+ *              ### Compile-time split
+ *              Everything below CONFIG_DCU_SETTINGS_PERSIST — the blob type,
+ *              the storage handler, the delayed-write work item — disappears
+ *              when the option is off, as it is for the emulator.  What
+ *              remains is the RAM cache and the clamping, which is why the
+ *              public functions need no @c \#ifdef of their own:
+ *              settings_schedule_flush() degrades to a no-op macro.
+ *
+ *              ### Storage format
  *              All settings live in a single NVS record under "dcu/v" rather
  *              than one record per key.  At SETTING_COUNT + 4 bytes there is
  *              nothing to gain from individual records, while a single blob
  *              gives atomic all-or-nothing saves and one write instead of N.
  *
- *              Schema drift
- *              ────────────
+ *              ### Schema drift
  *              The blob carries SETTINGS_SCHEMA_HASH, generated from the
  *              schema's names, order, bounds and defaults.  On mismatch the
  *              blob is discarded and defaults apply.  This is what makes
  *              inserting a setting in the middle of the enum safe — without
  *              it, every setting after the insertion point would silently
- *              inherit its neighbour's value.
+ *              inherit its neighbor's value.
  *
- *              Locking
- *              ───────
+ *              ### Locking
  *              s_lock guards s_values only.  It is never held across a call
  *              into the settings subsystem: the flush handler copies the blob
  *              under the lock, releases it, and only then writes to flash.
@@ -30,20 +37,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-07
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-08-07  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
@@ -136,16 +131,28 @@ static int     blob_set(const char *key, size_t len,
 /** @brief Deferred flash write; see SETTINGS_FLUSH_DELAY. */
 static K_WORK_DELAYABLE_DEFINE(s_flush_work, flush_work_fn);
 
-/** @brief Schedule the deferred write. No-op when persistence is compiled out. */
+/**
+ * @brief Schedule the deferred flash write.
+ *
+ * A macro, not a function, so the whole write-behind mechanism can vanish with
+ * the storage backend and the callers still compile unchanged.
+ *
+ * @param delay  k_timeout_t; K_NO_WAIT writes as soon as the workqueue runs.
+ */
 #define settings_schedule_flush(delay) k_work_reschedule(&s_flush_work, (delay))
 #else
+/** @brief No-op counterpart used when persistence is compiled out. */
 #define settings_schedule_flush(delay) ((void)0)
 #endif
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
-/** @brief Load every setting with its schema default. Caller holds s_lock. */
+/**
+ * @brief Load every setting with its schema default.
+ *
+ * @pre The caller holds s_lock.
+ */
 static void apply_defaults(void)
 {
     for (size_t i = 0U; i < SETTING_COUNT; i++) {
@@ -153,7 +160,13 @@ static void apply_defaults(void)
     }
 }
 
-/** @brief Clamp @p value into the schema range of @p id. */
+/**
+ * @brief Clamp @p value into the schema range of @p id.
+ *
+ * @param id     Setting identifier; must already be range-checked.
+ * @param value  Desired value.
+ * @return       @p value, or the nearest schema bound.
+ */
 static uint8_t clamp_to_schema(enum setting_id id, uint8_t value)
 {
     const setting_desc_t *desc = &settings_schema[id];
@@ -167,7 +180,15 @@ static uint8_t clamp_to_schema(enum setting_id id, uint8_t value)
     return value;
 }
 
-/** @brief Publish a lifecycle event on settings_chan. */
+/**
+ * @brief Publish a lifecycle event on settings_chan.
+ *
+ * A failed publish is a warning, not an error: the value is already applied in
+ * the cache, so a lost notification costs a subscriber's refresh, not the
+ * setting itself.
+ *
+ * @param type  Lifecycle event to announce.
+ */
 static void publish(enum settings_event_type type)
 {
     struct settings_event evt = { .type = type };
@@ -185,6 +206,8 @@ static void publish(enum settings_event_type type)
  *
  * Runs on the system workqueue.  The mutex is released before the flash
  * access so a slow erase never blocks a reader.
+ *
+ * @param work  Unused; the work item carries no context.
  */
 static void flush_work_fn(struct k_work *work)
 {
@@ -199,17 +222,27 @@ static void flush_work_fn(struct k_work *work)
     int rc = settings_save_one(SETTINGS_BLOB_KEY, &blob, sizeof(blob));
     if (rc != 0) {
         LOG_ERR("Persisting settings failed: %d", rc);
-    } else {
-        LOG_DBG("Settings persisted (%zu bytes)", sizeof(blob));
+        return;
     }
+
+    LOG_DBG("Settings persisted (%zu bytes)", sizeof(blob));
+    publish(SETTINGS_EVT_SAVED);
 }
 
 /**
  * @brief Settings subsystem load callback for the "dcu" subtree.
  *
  * Returning 0 without touching s_values leaves the defaults in place, which
- * is the intended behaviour for every recoverable inconsistency — a missing,
+ * is the intended behavior for every recoverable inconsistency — a missing,
  * truncated or schema-stale record must not prevent the system from booting.
+ * Only an unknown key is rejected outright.
+ *
+ * @param key      Key relative to the subtree, as handed over by the subsystem.
+ * @param len      Size of the stored value in bytes.
+ * @param read_cb  Callback that reads the stored value.
+ * @param cb_arg   Opaque argument for @p read_cb.
+ * @retval 0        Handled — values loaded, or defaults deliberately kept.
+ * @retval -ENOENT  Key does not belong to this handler.
  */
 static int blob_set(const char *key, size_t len,
                     settings_read_cb read_cb, void *cb_arg)
@@ -280,9 +313,9 @@ void settings_service_init(void)
     }
 #else
     /*
-     * No non-volatile storage on the board yet.  The service keeps its full
-     * API and the values stay authoritative for the runtime — they just start
-     * from the schema defaults on every boot.
+     * No non-volatile storage on this target.  The service keeps its full API
+     * and the values stay authoritative for the runtime — they just start from
+     * the schema defaults on every boot.
      */
     LOG_WRN("Persistence disabled (CONFIG_DCU_SETTINGS_PERSIST=n) — "
             "settings reset to defaults on every boot");

@@ -1,71 +1,101 @@
 /**
- * @file        screen_checklist.h
- * @brief       Pre-RTD cheklist screen factory
+ * @file
+ * @brief       EV checklist screen factory (SCREEN_PRE_RTD) — readouts and the Ready-to-Drive button
  *
- * @details     Provides a factory function and a group accessor for the pre-RTD checklist screen.
+ * @ingroup     dcu_ui_screens
  *
- *              Screen layout (480 × 320)
- *              ─────────────────────────
+ * @details     Registered for SCREEN_PRE_RTD; the header reads "EV CHECKLIST".
+ *              The screen carries the RTD button and six live readouts of the
+ *              values a driver looks at before requesting Ready-to-Drive.
  *
- *                ┌──────────────────────────────────────┐
- *                │  MISSION                 ← gradient header (15 %)
- *                ├──────────────────────────────────────┤
- *                │                                      │
- *                │         ┌─────────────────┐          │
- *                │         │  Acceleration   │          │ ← Roller
- *                │         │▶ Skidpad       ◀│          │   right encoder
- *                │         │  Autocross      │          │
- *                │         └─────────────────┘          │
- *                │                                      │
- *                │    ┌───────────┐  ┌───────────┐      │
- *                │    │    OK     │  │    RTD    │      │
- *                │    └───────────┘  └───────────┘      │
- *                └──────────────────────────────────────┘
+ *              This is the only screen from which Ready-to-Drive can be
+ *              requested.
  *
- *              Encoder / button assignment
- *              ────────────────────────────
- *              Left  encoder  →  screen carousel (managed by ui.c, not this screen)
- *              Right encoder  →  assigned to this screen's LVGL group by ui.c
- *                                Tab order:  [Roller] → [OK] → [RTD]
+ *              The name still promises more than there is: the readouts are
+ *              displayed, not evaluated. Nothing on this screen checks them
+ *              against a precondition or holds the RTD button back — whether
+ *              the vehicle may enter R2D is decided by the mABX.
  *
- *              Physical buttons on this screen:
- *                ESC  →  ui.c handles navigation back to boot screen
- *                OK   →  LV_KEY_ENTER → click focused widget (toggle roller
- *                         edit-mode or confirm OK / RTD button)
- *                RTD  →  publishes UI_INPUT_RTD_REQUEST directly (input module)
- *                TS   →  not used on this screen
+ *              ### Screen layout (480 × 320)
+ *              ```
+ *              ┌──────────────────────────────────────┐
+ *              │ EV CHECKLIST                  ▪▪▪▪▪▪ │ ← shared header
+ *              ├──────────────────────────────────────┤
+ *              │ Brake Front       Brake Rear         │
+ *              │ ▓▓▓▓░░░  8.2 Bar  ▓▓▓░░░░  7.9 Bar   │
+ *              │ Air Front         Air Rear           │
+ *              │ ▓▓▓▓▓░░  8.4 Bar  ▓▓▓▓▓░░  8.2 Bar   │
+ *              │ HV Accu           LV Accu            │
+ *              │ ▓▓▓▓▓▓▓  496 V    ▓▓▓▓▓░░  24.3 V    │
+ *              │                                      │
+ *              │                   ┌───────────┐      │
+ *              │                   │ SEND RTD  │      │ ← dedicated RTD pad
+ *              │                   └───────────┘      │
+ *              └──────────────────────────────────────┘
+ *              ```
+ *              Captions are abbreviated here; the screen spells them out.
  *
- *              Two distinct user actions
- *              ──────────────────────────
- *              OK  button widget  →  publishes UI_INPUT_MISSION_SELECTED
- *                                    carrying the roller's current selection.
- *                                    App Layer updates mission state and sends
- *                                    CAN_TX_CMD_SEND_MISSION.
+ *              The RTD button stands at the foot of the right column: a spacer
+ *              that takes the free height pushes it to the bottom of the
+ *              content area, so it keeps its place whatever the rows above it
+ *              measure.
  *
- *              RTD button widget  →  publishes UI_INPUT_RTD_REQUEST (no payload).
- *                                    App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                                    with the last-known drive mode.
+ *              ### Readouts
+ *              Two columns of three, each a bar with its value to the right.
+ *              They are bound to the generated RX subjects, so they follow the
+ *              bus without any code of their own here.
  *
- *              Rolling the roller does NOT trigger any CAN transmission; only
- *              pressing OK or RTD does.
+ *              | Column | Row | Descriptor                   |
+ *              |--------|-----|------------------------------|
+ *              | Left   | 1   | ui_sig_brake_pressure_front  |
+ *              | Left   | 2   | ui_sig_air_pressure_front    |
+ *              | Left   | 3   | ui_sig_voltage_accu_hv       |
+ *              | Right  | 1   | ui_sig_brake_pressure_rear   |
+ *              | Right  | 2   | ui_sig_air_pressure_rear     |
+ *              | Right  | 3   | ui_sig_lv_accu_voltage       |
+ *
+ *              Each row takes its caption, unit, decimals, bar range and limits
+ *              from the signal descriptor (ui_sig_*, generated from
+ *              dbc/dcu_app.yaml); the screen writes none of them. The value is
+ *              colored through ui_quantity_bind_signal(): gold past the warning
+ *              limit, red past the critical one. Air pressure and the two
+ *              voltages have limits on both sides.
+ *
+ *              ### Input assignment
+ *
+ *              | Input         | Drives                                      |
+ *              |---------------|---------------------------------------------|
+ *              | Left encoder  | Screen carousel — handled in ui.c, not here |
+ *              | Right encoder | Empty group; nothing to focus yet           |
+ *              | Middle button | The RTD button (dedicated keypad_rtd pad)    |
+ *              | Left / right buttons | Nothing; the accessors return NULL   |
+ *
+ *              ### Hold to request RTD
+ *              Nothing latches. The screen reports press and release of the
+ *              dedicated RTD button (UI_INPUT_RTD_PRESSED / _RELEASED), and the
+ *              CAN module sends RTD_Button = 1 on its 100 ms frames only while
+ *              the button is held and has been held for APP_RTD_HOLD_MS
+ *              (500 ms). The button shows where that stands:
+ *
+ *              | Color | Meaning                                          |
+ *              |--------|--------------------------------------------------|
+ *              | White  | Not pressed                                      |
+ *              | Gold   | Held, but RTD_Button = 1 is not on the bus yet   |
+ *              | Green  | Held, and a frame with RTD_Button = 1 was sent   |
+ *
+ *              The driver keeps holding until green. When the MABX then reports
+ *              RTD_State = 1, the state machine switches to EV DRIVING, which
+ *              replaces this screen and thereby releases the request.
+ *
+ *              The button works on this screen only: ui.c binds the RTD pad to
+ *              no group anywhere else, and a press that started on another
+ *              screen is not picked up here — LVGL sees no new press.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-08
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-06-08  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef MODULES_UI_SCREENS_SCREEN_CHECKLIST_H
@@ -79,34 +109,59 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the mission selection screen.
+ * @brief Create the EV checklist screen (SCREEN_PRE_RTD).
  *
- * Builds the header, roller, OK button, RTD button, and the LVGL input group.
- * Must be called after ui_styles_init().
+ * Builds the header, the six readouts, the RTD button and the input groups.
+ * Must be called after ui_styles_init() and ui_subjects_gen_init(), since the
+ * readouts bind to the generated subjects while they are being built.
  *
- * @return  Pointer to the top-level screen object.  Never NULL.
+ * @param status_subjects  Device-status subjects for the header widget.
+ * @return                 Pointer to the top-level screen object. Never NULL.
  */
 lv_obj_t *screen_checklist_create(lv_subject_t *status_subjects);
 
 /**
  * @brief Return the LVGL input group for the right encoder.
  *
- * Tab order: roller → OK button → RTD button.
- * ui.c assigns this group to the RIGHT encoder input device whenever this
- * screen becomes active, and removes it when navigating away:
+ * Created but empty — the screen has nothing to focus yet. Returning an empty
+ * group rather than NULL keeps the encoder attached, so widgets added here
+ * later become reachable without touching ui.c.
  *
- * @code
- *   // on screen enter:
- *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group());
- *   // on screen leave:
- *   lv_indev_set_group(right_encoder_indev, NULL);
- * @endcode
- *
- * @return  Pointer to the lv_group_t.  Valid after screen_mission_select_create().
+ * @return  The group. Valid only after screen_checklist_create().
  */
-
 lv_group_t *screen_checklist_get_right_encoder_group(void);
+
+/**
+ * @brief Return the LVGL input group for the left button pad.
+ * @return Always NULL — this screen has nothing on the left pad.
+ */
 lv_group_t *screen_checklist_get_left_button_group(void);
+
+/**
+ * @brief Return the LVGL input group for the right button pad.
+ * @return Always NULL — the RTD button is on the dedicated RTD pad instead.
+ */
 lv_group_t *screen_checklist_get_right_button_group(void);
+
+/**
+ * @brief Return the LVGL input group for the dedicated RTD button pad.
+ *
+ * Contains the RTD button, in edit mode. ui.c binds this to the keypad_rtd
+ * device for the PRE_RTD screen only.
+ *
+ * @return  The group. Valid only after screen_checklist_create().
+ */
+lv_group_t *screen_checklist_get_rtd_button_group(void);
+
+/**
+ * @brief Show whether RTD_Button = 1 is currently on the bus.
+ *
+ * Called by ui.c on UI_CMD_RTD_TX_STATE while this screen is active. Turns the
+ * button green only while it is also held; a report that arrives after the
+ * release leaves it white.
+ *
+ * @param on_bus  True if the last transmitted frame carried RTD_Button = 1.
+ */
+void screen_checklist_set_rtd_tx(bool on_bus);
 
 #endif /* MODULES_UI_SCREENS_SCREEN_CHECKLIST_H */
