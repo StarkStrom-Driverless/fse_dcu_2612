@@ -240,14 +240,25 @@ static void blink_tick_cb(lv_timer_t *timer)
 /**
  * @brief LV_EVENT_DELETE handler — release a blinking container's timer share.
  *
- * Registered only on containers that are blinking, so a screen change while an
- * icon blinks cannot leak the timer.
+ * Registered once on every slot container, when the slot is built. It does
+ * something only if the container is blinking at that moment, which its user
+ * data says: blink_stop() clears it, so a container that already gave its
+ * share back does not give it back a second time. Registering it on every
+ * blink_start() instead added another copy each time and counted a share down
+ * once per copy.
  *
- * @param e  Unused.
+ * A screen change while an icon blinks therefore cannot leak the timer, and
+ * cannot stop it under the icons that still blink.
+ *
+ * @param e  LV_EVENT_DELETE from the slot container.
  */
 static void blink_delete_event_cb(lv_event_t *e)
 {
-    (void)e;
+    lv_obj_t *cont = lv_event_get_target_obj(e);
+
+    if (lv_obj_get_user_data(cont) == NULL) {
+        return;   /* not blinking, nothing to release */
+    }
     /*
      * lv_subject_add_observer_obj already registered its own LV_EVENT_DELETE
      * callback that calls lv_observer_remove() and frees the observer before
@@ -283,7 +294,6 @@ static void blink_start(lv_obj_t *cont)
                                                       blink_phase_cb,
                                                       cont, NULL);
     lv_obj_set_user_data(cont, obs);
-    lv_obj_add_event_cb(cont, blink_delete_event_cb, LV_EVENT_DELETE, NULL);
 }
 
 /**
@@ -605,6 +615,7 @@ lv_obj_t *ui_header_create(lv_obj_t    *parent,
         lv_obj_remove_style_all(cont);
         lv_obj_set_size(cont, 24U, 24U);
         lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_event_cb(cont, blink_delete_event_cb, LV_EVENT_DELETE, NULL);
 
         /* Device icon — child[0] of cont */
         lv_obj_t *img = lv_label_create(cont);
