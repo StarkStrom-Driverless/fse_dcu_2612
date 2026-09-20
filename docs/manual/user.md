@@ -14,12 +14,19 @@ encoders are available for input.
 | Button | Left | Context-dependent, varies by screen |
 | Button | Right | Confirm selection |
 | Button | Ready to Drive (RTD) | Request RTD — hold, PRE RTD screen only |
-| Button | Timestamp (TS) | Place a time marker in the log |
+| Button | Reserve | Sets `DCU_RESERVE_BUTTON` on the bus while held — any screen |
 | Rotary encoder | Left | Page through screens |
 | Rotary encoder | Right | Select values within a screen |
 
 The **EV DRIVING** screen has its own operating concept, designed explicitly
 for use while driving — see @ref manual-user-ev.
+
+The **reserve button** is the one control that does not depend on the screen.
+It has no effect on the display at all: while it is held, the DCU sends
+`DCU_RESERVE_BUTTON = 1` to the mABX, and from the first message after the
+release it sends 0 again. Nothing is latched, and paging to another screen
+while holding it changes nothing. What the mABX does with the bit is decided
+there, not here.
 
 ### Output elements
 
@@ -104,8 +111,9 @@ The carousel does not wrap around: at either end the display simply stops.
 when the mABX reports that the vehicle is ready to drive, after RTD was
 requested on the PRE RTD screen (see @ref manual-user-pre-rtd); DV DRIVING
 appears when the autonomous system enters the *AS driving* state. Neither can
-be paged away from: EV DRIVING closes by itself once the vehicle leaves the
-ready-to-drive state, DV DRIVING stays until the DCU is powered off.
+be paged away from. Each closes by itself when its state ends: EV DRIVING once
+the vehicle leaves the ready-to-drive state, DV DRIVING once the autonomous
+system leaves *AS driving*. The display then returns to the screen shown before.
 
 
 <!-- ## Operating modes
@@ -282,9 +290,10 @@ Shown automatically once the vehicle reports the autonomous system in the
 **AS driving** state. For now it displays only the DV mission selected on the
 DV MISSION screen.
 
-Like EV DRIVING it is not on the carousel and cannot be left — the only way
-back is to power-cycle the DCU. It stays up even after the autonomous system
-moves on to *AS finished* or *AS emergency*.
+Like EV DRIVING it is not on the carousel and cannot be paged away from. It
+closes on its own as soon as the autonomous system leaves *AS driving* — for
+*AS finished* and *AS emergency* just as for any other state — and the display
+returns to the screen shown before.
 
 ## Other screens
 

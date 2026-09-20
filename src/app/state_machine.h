@@ -33,9 +33,11 @@
  *
  *              Six states: AS off, manual driving, AS ready, AS driving, AS
  *              finished, AS emergency. All transitions are allowed; the state
- *              follows whatever `AS_state` reports. Only *AS driving* has an
- *              action so far — it loads `DV_DRIVING`, which then stays up until
- *              power-off like the EV screen.
+ *              follows whatever `AS_state` reports. Only *AS driving* has
+ *              actions so far — on entry it remembers the current screen and
+ *              loads `DV_DRIVING`, on exit, towards any of the other five
+ *              states, it restores the remembered screen and the DV screen is
+ *              destroyed with the switch. Same idea as the EV screen above.
  *
  *              state_machine_notify_as_state() is called only when the raw
  *              value changed (app.c does the edge check), and the machine only

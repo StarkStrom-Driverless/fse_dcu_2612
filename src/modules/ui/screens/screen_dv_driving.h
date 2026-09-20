@@ -22,10 +22,13 @@
  *              ```
  *
  *              ### How it is reached and left
- *              Loaded by the state machine when @c AS_state reaches AS driving.
- *              It is not on the carousel and nothing navigates away from it, so
- *              once shown it stays until the DCU is powered off — the same
- *              contract as the EV driving screen.
+ *              Loaded by the state machine when @c AS_state reaches AS driving,
+ *              and left again by the state machine when it ends. It is not on
+ *              the carousel and the driver cannot navigate away from it, but as
+ *              soon as @c AS_state moves on — to finished or emergency as much
+ *              as to any other state — the screen the driver was on before is
+ *              restored and this one is destroyed. The same contract as the EV
+ *              driving screen has with RTD_State.
  *
  *              ### Input assignment
  *              None. The screen is display-only; all three group accessors

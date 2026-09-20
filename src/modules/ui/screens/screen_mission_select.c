@@ -24,8 +24,13 @@
  *              ### State across visits
  *              The screen is destroyed on leaving, so the roller position is
  *              kept in the file-scope subject s_roller_sel and restored when
- *              the screen is rebuilt.  The confirmed mission needs no such
- *              handling — it lives in the generated TX subject.
+ *              the screen is rebuilt.  The confirmed mission lives in the
+ *              generated TX subject, which is only the UI's mirror: app_state
+ *              owns the mission, so both the subject and, on the very first
+ *              visit, the roller are seeded from
+ *              app_state_get_selected_mission() on every build. A mission
+ *              selected before the screen was ever shown therefore appears
+ *              here and on DV DRIVING instead of "None".
  *
  *              ### Encoder mode
  *              The encoder group is created with editing enabled and never
@@ -325,10 +330,22 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
+    /*
+     * The mission is owned by app_state, which the App Layer writes when a
+     * mission is confirmed. The TX subject below is only the UI's mirror of it
+     * and starts at 0, so without this a mission that was selected before this
+     * screen was first built — or by anything other than this screen — shows
+     * as "None" on this screen and on DV DRIVING.
+     */
+    int32_t selected = (int32_t)app_state_get_selected_mission();
+
+    /* First visit: highlight what is selected. Later visits keep the scroll. */
     if (!s_subjects_init) {
-        lv_subject_init_int(&s_roller_sel, 0);
+        lv_subject_init_int(&s_roller_sel, selected);
         s_subjects_init = true;
     }
+
+    lv_subject_set_int(&ui_tx_subj_drive_mode, selected);
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_remove_style_all(scr);

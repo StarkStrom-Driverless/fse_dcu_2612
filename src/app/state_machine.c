@@ -13,11 +13,19 @@
  *              | driverless| CAN `AS_state`       | DV screen                  |
  *
  *              ### Why SMF
- *              The manual context is a single one-way transition today and a
+ *              The manual context is a single transition pair today and a
  *              plain @c if would do. It is an SMF machine for consistency with
  *              the driverless context, which genuinely mirrors the vehicle's
  *              autonomous-system state and will grow per-state actions
  *              (emergency, finished) later.
+ *
+ *              ### Both contexts bring the driver back
+ *              A driving screen is entered on its own state change, and left
+ *              again when that state ends. Each context remembers the screen the
+ *              driver was on when it took over and restores it afterwards. The
+ *              manual one does so on entering IDLE, the only state R2D can end
+ *              in; the driverless one in the exit action of AS_DRIVING, because
+ *              that state can be left for any of the other five.
  *
  *              ### Not running every CAN cycle
  *              `AS_state` arrives on the bus continuously. app.c only calls
@@ -242,9 +250,10 @@ enum dv_state_id {
 };
 
 struct dv_sm {
-    struct smf_ctx    ctx;          /**< SMF bookkeeping.                     */
-    enum dv_state_id  target;       /**< State the last notify mapped to.     */
-    bool              target_valid; /**< True only for the duration of one post. */
+    struct smf_ctx    ctx;           /**< SMF bookkeeping.                     */
+    enum dv_state_id  target;        /**< State the last notify mapped to.     */
+    bool              target_valid;  /**< True only for the duration of one post. */
+    enum screen_id    return_screen; /**< Screen to restore when AS_DRIVING ends. */
 };
 
 static struct dv_sm s_dv;
@@ -276,20 +285,55 @@ static enum dv_state_id as_state_from_raw(uint8_t raw)
 }
 
 /**
- * @brief Enter AS_DRIVING — show the DV driving screen.
+ * @brief Enter AS_DRIVING — remember the current screen, show the DV driving one.
  *
- * The only DV state with an action so far. The screen is not on the carousel
- * and nothing switches away from it, so once shown it stays until power-off,
- * even if AS_state later moves on to FINISHED or EMERGENCY.
+ * The screen the driver is leaving is remembered so that dv_as_driving_exit()
+ * can put them back there, the same way manual_rtd_entry() does for R2D. Three
+ * values are not worth returning to and fall back to the boot screen:
+ * SCREEN_NONE, when the vehicle was already in AS driving before the UI built
+ * anything, and the two driving screens. Both are reached only through this
+ * kind of state change, and returning to one whose state has ended would strand
+ * the driver on it — the EV screen would be restored after the manual machine
+ * had already left R2D.
  *
- * @param obj  Unused.
+ * @param obj  The dv_sm.
  */
 static void dv_as_driving_entry(void *obj)
 {
-    ARG_UNUSED(obj);
+    struct dv_sm *o = obj;
+
+    enum screen_id from = app_state_get_active_screen();
+
+    o->return_screen = (from == SCREEN_NONE       ||
+                        from == SCREEN_DV_DRIVING ||
+                        from == SCREEN_EV_DRIVING)
+                       ? SCREEN_BOOT
+                       : from;
 
     request_screen(SCREEN_DV_DRIVING);
-    LOG_INF("SM dv: AS_DRIVING — DV driving screen");
+    LOG_INF("SM dv: AS_DRIVING — DV driving screen (return to %d)",
+            (int)o->return_screen);
+}
+
+/**
+ * @brief Leave AS_DRIVING — restore the screen the driver came from.
+ *
+ * An exit action rather than a part of the entry of whatever state follows:
+ * AS_DRIVING can be left for any of the other five, and this way the screen
+ * comes back for all of them, in one place. The UI deletes the DV screen as
+ * part of the switch.
+ *
+ * @param obj  The dv_sm.
+ */
+static void dv_as_driving_exit(void *obj)
+{
+    struct dv_sm *o = obj;
+
+    if (o->return_screen != SCREEN_NONE) {
+        request_screen(o->return_screen);
+        LOG_INF("SM dv: leaving AS_DRIVING — back to screen %d", (int)o->return_screen);
+        o->return_screen = SCREEN_NONE;
+    }
 }
 
 /**
@@ -331,7 +375,7 @@ static const struct smf_state dv_states[] = {
     [DV_STATE_AS_READY] =
         SMF_CREATE_STATE(dv_state_log_entry, dv_run, NULL, NULL, NULL),
     [DV_STATE_AS_DRIVING] =
-        SMF_CREATE_STATE(dv_as_driving_entry, dv_run, NULL, NULL, NULL),
+        SMF_CREATE_STATE(dv_as_driving_entry, dv_run, dv_as_driving_exit, NULL, NULL),
     [DV_STATE_AS_FINISHED] =
         SMF_CREATE_STATE(dv_state_log_entry, dv_run, NULL, NULL, NULL),
     [DV_STATE_AS_EMERGENCY] =
