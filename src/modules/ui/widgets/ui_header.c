@@ -61,13 +61,19 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "modules/ui/ui.h"
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "services/event_bus/events.h"
 
 /* ── Layout constants ────────────────────────────────────────────────────── */
 
-/** @brief Header height as a percentage of the screen height. */
-#define HEADER_HEIGHT_PCT   15
+/**
+ * @brief Header height as a percentage of the screen height.
+ *
+ * Defined in ui_layout.h: the content area of every screen starts where the
+ * header ends.
+ */
+#define HEADER_HEIGHT_PCT   UI_LAYOUT_HEADER_PCT
 
 /** @brief Right margin of the icon row, in pixels. */
 #define ICON_ROW_MARGIN_R   4
@@ -78,8 +84,13 @@
 /** @brief Half period of the blink cycle — one full cycle is twice this. */
 #define BLINK_HALF_MS       400U
 
-/** @brief Height of the page-indicator bar, in pixels. */
-#define PAGE_BAR_H          10
+/**
+ * @brief Height of the page-indicator bar, in pixels.
+ *
+ * Defined in ui_layout.h: the bar takes the space under the header on every
+ * screen, so the content area has to keep clear of it.
+ */
+#define PAGE_BAR_H          UI_LAYOUT_PAGEBAR_H
 
 /**
  * @brief Height of a single segment, in pixels.

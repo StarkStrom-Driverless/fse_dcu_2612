@@ -31,11 +31,15 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
- *              Each numeric readout turns gold past its warning threshold and
- *              red past its critical one, driven by ui_quantity_bind_level()
- *              against the limits generated from dbc/dcu_app.yaml. The
- *              tractive-system voltage is the exception: HV_VOLT_TS declares no
- *              limits there, so that readout stays uncolored.
+ *              Every bar row takes what it shows from its signal descriptor
+ *              (ui_sig_*, generated from dbc/dcu_app.yaml): the caption, the
+ *              unit, the decimals, the bar range and the limits. Nothing of
+ *              that is written into this screen. A readout turns gold past its
+ *              warning limit and red past its critical one, through
+ *              ui_quantity_bind_signal().
+ *              A signal that declares no limits stays uncolored: the
+ *              tractive-system voltage (dead while the system is off) and the
+ *              three pedal positions (commands, not health values).
  *
  *              Reachable through the screen carousel only.  All three group
  *              accessors return NULL, so the right encoder and both button

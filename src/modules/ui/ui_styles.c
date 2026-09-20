@@ -266,7 +266,7 @@ static void init_slider_styles(void)
     lv_style_set_bg_opa(&ui_style_slider_main,        LV_OPA_COVER);
     lv_style_set_bg_color(&ui_style_slider_main,      UI_C_WHITE);
     lv_style_set_outline_color(&ui_style_slider_main, UI_C_DARK);
-    lv_style_set_outline_width(&ui_style_slider_main, 2);
+    lv_style_set_outline_width(&ui_style_slider_main, UI_SLIDER_OUTLINE_W);
     lv_style_set_radius(&ui_style_slider_main,        0);
 
     /* Fill (LV_PART_INDICATOR) — solid green */

@@ -140,7 +140,7 @@ LOG_MODULE_REGISTER(ui_module, CONFIG_LOG_DEFAULT_LEVEL);
  * 100 pt fonts is what drives the requirement. This is also why the first
  * lv_timer_handler() call was moved out of ui_module_init() — see there.
  */
-#define UI_THREAD_STACK_SIZE    8192U
+#define UI_THREAD_STACK_SIZE    16384U //8192U
 
 /** @brief Scheduling priority for the LVGL task thread (lowest in the system). */
 #define UI_THREAD_PRIORITY      8

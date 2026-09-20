@@ -261,7 +261,7 @@ lv_obj_t *screen_boot_create(lv_subject_t *status_subjects)
     lv_image_set_src(img_inner_gear, &inner_gear_a8);
     lv_obj_set_style_image_recolor(img_inner_gear, lv_color_hex(0xcd1a17), LV_PART_MAIN);
     lv_obj_set_style_image_recolor_opa(img_inner_gear, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_align(img_inner_gear, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_align(img_inner_gear, LV_ALIGN_CENTER, 0, -29);
 
 #ifdef CONFIG_DCU_BENCHMARK_BOOT_PATCH
     /* Built last so it sits on top of everything else. */

@@ -40,19 +40,21 @@
  *              They are bound to the generated RX subjects, so they follow the
  *              bus without any code of their own here.
  *
- *              | Column | Row | Readout               | Subject                       | Bar range |
- *              |--------|-----|-----------------------|-------------------------------|-----------|
- *              | Left   | 1   | Brake Pressure Front  | ui_subj_brake_pressure_front  | 0…20 Bar  |
- *              | Left   | 2   | Air Pressure Front    | ui_subj_air_pressure_front    | 0…10 Bar  |
- *              | Left   | 3   | HV Accu Voltage       | ui_subj_voltage_accu_hv       | 0…500 V   |
- *              | Right  | 1   | Brake Pressure Rear   | ui_subj_brake_pressure_rear   | 0…20 Bar  |
- *              | Right  | 2   | Air Pressure Rear     | ui_subj_air_pressure_rear     | 0…10 Bar  |
- *              | Right  | 3   | LV Accu Voltage       | ui_subj_lv_accu_voltage       | 0…36 V    |
+ *              | Column | Row | Descriptor                   |
+ *              |--------|-----|------------------------------|
+ *              | Left   | 1   | ui_sig_brake_pressure_front  |
+ *              | Left   | 2   | ui_sig_air_pressure_front    |
+ *              | Left   | 3   | ui_sig_voltage_accu_hv       |
+ *              | Right  | 1   | ui_sig_brake_pressure_rear   |
+ *              | Right  | 2   | ui_sig_air_pressure_rear     |
+ *              | Right  | 3   | ui_sig_lv_accu_voltage       |
  *
- *              Each value is colored by its generated limits, through
- *              ui_quantity_bind_level(): gold past the warning limit, red past
- *              the critical one. The pressures are out of range above their
- *              limits, the two voltages below them.
+ *              Each row takes its caption, unit, decimals, bar range and limits
+ *              from the signal descriptor (ui_sig_*, generated from
+ *              dbc/dcu_app.yaml); the screen writes none of them. The value is
+ *              colored through ui_quantity_bind_signal(): gold past the warning
+ *              limit, red past the critical one. Air pressure and the two
+ *              voltages have limits on both sides.
  *
  *              ### Input assignment
  *

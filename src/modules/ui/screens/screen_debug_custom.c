@@ -285,22 +285,23 @@ static void build_roller(lv_obj_t *scr)
 /**
  * @brief Build one read row: a caption with the live value underneath.
  *
- * @param scr      Screen object to build into.
- * @param y        Y position of the caption, from the top of the screen.
- * @param caption  Static text naming the signal.
- * @param subject  Generated RX subject holding the value.
+ * The caption and the number format come from the signal's descriptor; only the
+ * position is decided here.
+ *
+ * @param scr   Screen object to build into.
+ * @param y     Y position of the caption, from the top of the screen.
+ * @param desc  The signal to show, e.g. &ui_sig_custom_1.
  */
-static void build_read_row(lv_obj_t *scr, int32_t y,
-                           const char *caption, lv_subject_t *subject)
+static void build_read_row(lv_obj_t *scr, int32_t y, const struct ui_signal_desc *desc)
 {
     lv_obj_t *lbl_caption = lv_label_create(scr);
     lv_obj_add_style(lbl_caption, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_caption, caption);
+    lv_label_set_text(lbl_caption, desc->label);
     lv_obj_align(lbl_caption, LV_ALIGN_TOP_LEFT, READ_COL_X, y);
 
     lv_obj_t *lbl_value = lv_label_create(scr);
     lv_obj_add_style(lbl_value, &ui_style_label_title, 0);
-    lv_label_bind_text(lbl_value, subject, "%d");
+    lv_label_bind_text(lbl_value, desc->subject, desc->fmt);
     lv_obj_align_to(lbl_value, lbl_caption, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
 }
 
@@ -318,10 +319,8 @@ static void build_read_row(lv_obj_t *scr, int32_t y,
  */
 static void build_read_column(lv_obj_t *scr)
 {
-    build_read_row(scr, READ_ROW1_Y,
-                   "Custom Value 1", &ui_subj_custom_1);
-    build_read_row(scr, READ_ROW1_Y + READ_ROW_SPACING,
-                   "Custom Value 2", &ui_subj_custom_2);
+    build_read_row(scr, READ_ROW1_Y, &ui_sig_custom_1);
+    build_read_row(scr, READ_ROW1_Y + READ_ROW_SPACING, &ui_sig_custom_2);
 }
 
 /**

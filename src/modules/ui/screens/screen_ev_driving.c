@@ -297,30 +297,30 @@ static void build_sliders(lv_obj_t *scr)
      * ui_style_slider_main paints the track, ui_style_slider_indicator the
      * fill. The names are about the visual role, not the widget type.
      */
+    const struct ui_signal_desc *hv = &ui_sig_voltage_accu_hv;
+
     s_bar_middle = lv_bar_create(scr);
     lv_obj_remove_style_all(s_bar_middle);
     lv_obj_add_style(s_bar_middle, &ui_style_slider_main, LV_PART_MAIN);
     lv_obj_add_style(s_bar_middle, &ui_style_slider_indicator, LV_PART_INDICATOR);
     lv_obj_set_size(s_bar_middle, 300, 20);
-    lv_bar_set_range(s_bar_middle, 0, 500);
-    lv_bar_bind_value(s_bar_middle, &ui_subj_voltage_accu_hv);
+    if (hv->flags & UI_SIG_RANGE) {
+        lv_bar_set_range(s_bar_middle, (int32_t)hv->range_min, (int32_t)hv->range_max);
+    }
+    lv_bar_bind_value(s_bar_middle, hv->subject);
     /* Clears both the hint bar and the button row that moved up with it. */
     lv_obj_align(s_bar_middle, LV_ALIGN_BOTTOM_MID, 0, -(UI_HINTBAR_H + 60));
 
     lv_obj_t *lbl_bar_middle_title = lv_label_create(scr);
     lv_obj_add_style(lbl_bar_middle_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_middle_title, "HV Accu Voltage");
+    lv_label_set_text(lbl_bar_middle_title, hv->label);
     lv_obj_align_to(lbl_bar_middle_title, s_bar_middle, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
 
     lv_obj_t *lbl_bar_middle_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, "V");
-    lv_obj_add_style(lbl_bar_middle_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_middle_value, &ui_style_level_crit, UI_STATE_CRIT);
-    ui_quantity_bind_level(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, UI_QUANTITY_LEVEL_BELOW,
-                           UI_VOLTAGE_ACCU_HV_WARN_LOW, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
+                                      &BarlowCondensed_Italic_20, hv->unit);
     lv_obj_set_size(lbl_bar_middle_value, 60, 30);
-    ui_quantity_bind_value(lbl_bar_middle_value, &ui_subj_voltage_accu_hv, "%d");
+    ui_quantity_bind_signal(lbl_bar_middle_value, hv);
     lv_obj_align_to(lbl_bar_middle_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
     
 }
@@ -340,57 +340,39 @@ static void build_labels(lv_obj_t *scr)
     /* ── Label HV Accu Temp ─────────────────────────────────────────────── */
     lv_obj_t *lbl_temp_hv_accu_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_80,
-                                      &BarlowCondensed_Italic_44, "°C");
-    lv_obj_add_style(lbl_temp_hv_accu_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_temp_hv_accu_value, &ui_style_level_crit, UI_STATE_CRIT);
-    // lv_obj_bind_state_if_lt(lbl_temp_hv_accu_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    // lv_obj_bind_state_if_lt(lbl_temp_hv_accu_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_temp_hv_accu_value, 60, 30);
-    ui_quantity_bind_value(lbl_temp_hv_accu_value, &ui_subj_temperature_accu_hv, "%d");
-    // lv_obj_align_to(lbl_temp_hv_accu_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
+                                      &BarlowCondensed_Italic_44, ui_sig_temperature_accu_hv.unit);
+    ui_quantity_bind_signal(lbl_temp_hv_accu_value, &ui_sig_temperature_accu_hv);
     lv_obj_set_pos(lbl_temp_hv_accu_value, 85, 100);
 
     lv_obj_t *lbl_temp_hv_accu_title = lv_label_create(scr);
     lv_obj_add_style(lbl_temp_hv_accu_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_temp_hv_accu_title, "HV Accu Temp");
+    lv_label_set_text(lbl_temp_hv_accu_title, ui_sig_temperature_accu_hv.short_label);
     lv_obj_align_to(lbl_temp_hv_accu_title, lbl_temp_hv_accu_value, LV_ALIGN_OUT_TOP_MID, 0, 0);
     
     /* ── Label Inverter Temp ────────────────────────────────────────────── */
 
     lv_obj_t *lbl_temp_inverter_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_80,
-                                      &BarlowCondensed_Italic_44, "°C");
-    lv_obj_add_style(lbl_temp_inverter_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_temp_inverter_value, &ui_style_level_crit, UI_STATE_CRIT);
-    // lv_obj_bind_state_if_lt(lbl_temp_inverter_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    // lv_obj_bind_state_if_lt(lbl_temp_inverter_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_temp_inverter_value, 60, 30);
-    ui_quantity_bind_value(lbl_temp_inverter_value, &ui_subj_temperature_inverter, "%d");
-    // lv_obj_align_to(lbl_temp_inverter_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
+                                      &BarlowCondensed_Italic_44, ui_sig_temperature_inverter.unit);
+    ui_quantity_bind_signal(lbl_temp_inverter_value, &ui_sig_temperature_inverter);
     lv_obj_set_pos(lbl_temp_inverter_value, 205, 100);
 
     lv_obj_t *lbl_temp_inverter_title = lv_label_create(scr);
     lv_obj_add_style(lbl_temp_inverter_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_temp_inverter_title, "Inverter Temp");
+    lv_label_set_text(lbl_temp_inverter_title, ui_sig_temperature_inverter.short_label);
     lv_obj_align_to(lbl_temp_inverter_title, lbl_temp_inverter_value, LV_ALIGN_OUT_TOP_MID, 0, 0); 
     
     /* ── Label Motor Temp ───────────────────────────────────────────────── */
 
     lv_obj_t *lbl_temp_motor_value = ui_quantity_create(scr,
                                       &BarlowCondensed_BoldItalic_80,
-                                      &BarlowCondensed_Italic_44, "°C");
-    lv_obj_add_style(lbl_temp_motor_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_temp_motor_value, &ui_style_level_crit, UI_STATE_CRIT);
-    // lv_obj_bind_state_if_lt(lbl_temp_motor_value, &ui_subj_voltage_accu_hv, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    // lv_obj_bind_state_if_lt(lbl_temp_motor_value, &ui_subj_voltage_accu_hv, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_temp_motor_value, 60, 30);
-    ui_quantity_bind_value(lbl_temp_motor_value, &ui_subj_temperature_motor, "%d");
-    // lv_obj_align_to(lbl_temp_motor_value, s_bar_middle, LV_ALIGN_OUT_TOP_RIGHT, 0, 0);
+                                      &BarlowCondensed_Italic_44, ui_sig_temperature_motor.unit);
+    ui_quantity_bind_signal(lbl_temp_motor_value, &ui_sig_temperature_motor);
     lv_obj_set_pos(lbl_temp_motor_value, 325, 100);
 
     lv_obj_t *lbl_temp_motor_title = lv_label_create(scr);
     lv_obj_add_style(lbl_temp_motor_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_temp_motor_title, "Motor Temp");
+    lv_label_set_text(lbl_temp_motor_title, ui_sig_temperature_motor.short_label);
     lv_obj_align_to(lbl_temp_motor_title, lbl_temp_motor_value, LV_ALIGN_OUT_TOP_MID, 0, 0);  
 
     // lv_obj_t *lbl_mean_power = lv_label_create(scr);

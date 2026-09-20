@@ -19,43 +19,41 @@
  *
  *              Both spans inherit text_color from the parent spangroup object,
  *              so UI_STATE_WARN / UI_STATE_CRIT level styles applied to the
- *              spangroup affect both spans automatically.  Combined with the
- *              threshold defines from ui_subjects_gen.h, a value colors
- *              itself out of range without a line of per-frame code — see the
- *              example below.
+ *              spangroup affect both spans automatically.
+ *
+ *              ### Presentation comes from the signal descriptor
+ *              A quantity is not told how to look — its caption, unit, decimals
+ *              and limits are declared once per signal in dbc/dcu_app.yaml and
+ *              arrive as a struct ui_signal_desc (ui_subjects_gen.h).
+ *              ui_quantity_bind_signal() takes that descriptor and does the
+ *              rest: the value text in the right format, and the coloring by
+ *              the signal's limits. A screen writes no unit, format or limit of
+ *              its own.
  *
  *              Usage:
  *              @code
+ *                const struct ui_signal_desc *d = &ui_sig_power_average;
+ *
  *                lv_obj_t *w = ui_quantity_create(scr,
  *                                  &BarlowCondensed_BoldItalic_32,
- *                                  &BarlowCondensed_Italic_20, "W");
- *                lv_obj_set_size(w, 80, 40);
+ *                                  &BarlowCondensed_Italic_20, d->unit);
  *                lv_obj_align(w, LV_ALIGN_CENTER, 0, 0);
  *
- *                ui_quantity_bind_value(w, &ui_subj_power_average, "%.0f");
- *
- *                // Optional level coloring:
- *                lv_obj_add_style(w, &ui_style_level_warn, UI_STATE_WARN);
- *                lv_obj_add_style(w, &ui_style_level_crit, UI_STATE_CRIT);
- *                ui_quantity_bind_level(w, &ui_subj_power_average,
- *                                       UI_QUANTITY_LEVEL_ABOVE,
- *                                       UI_POWER_AVERAGE_WARN_HIGH,
- *                                       UI_POWER_AVERAGE_CRIT_HIGH);
+ *                ui_quantity_bind_signal(w, d);
  *              @endcode
  *
  *              @note Do not reach for LVGL's own lv_obj_bind_state_if_gt/_lt
- *                    here. Those take an int32_t reference value and refuse any
- *                    subject that is not LV_SUBJECT_TYPE_INT — a float subject
- *                    only produces "bind_to_bitfield: Incompatible subject
- *                    type" at runtime and is then left uncolored. The generated
- *                    thresholds are floats and some of the generated subjects
- *                    are too, so ui_quantity_bind_level() is the safe choice
- *                    for either kind.
+ *                    for the coloring. Those take an int32_t reference value
+ *                    and refuse any subject that is not LV_SUBJECT_TYPE_INT — a
+ *                    float subject only produces "bind_to_bitfield:
+ *                    Incompatible subject type" at runtime and is then left
+ *                    uncolored. The generated limits are floats and some of the
+ *                    subjects are too.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-16
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -67,6 +65,9 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-16  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   ui_quantity_bind_signal() replaces
+ *                                      ui_quantity_bind_level(); limits from the
+ *                                      signal descriptor
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -74,6 +75,8 @@
 #define MODULES_UI_WIDGETS_UI_QUANTITY_H
 
 #include <lvgl.h>
+
+#include "generated/ui_subjects_gen.h"
 
 
 /**
@@ -117,55 +120,36 @@ lv_obj_t *ui_quantity_create(lv_obj_t *parent,
 void ui_quantity_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fmt);
 
 /**
- * @brief Which side of a threshold counts as out of range.
+ * @brief Show a signal: bind its value and color it by its limits.
  *
- * A quantity is either bounded from above (temperature, pressure, power) or
- * from below (a voltage that must not sag). Both thresholds of one binding
- * always point the same way — a band with limits on both sides would need two
- * bindings, and nothing on the DCU needs one.
+ * Does two things for the signal @p desc describes:
+ *
+ * 1. Binds the value span to desc->subject, formatted with desc->fmt — "%d" for
+ *    an integer signal, "%.Nf" with the YAML's precision for a float one.
+ *
+ * 2. If the signal declares any limit, adds the two level styles for
+ *    UI_STATE_WARN and UI_STATE_CRIT and installs one observer that keeps both
+ *    states in step with the value. Both are evaluated on every update, so a
+ *    value that comes back into range clears them again; UI_STATE_CRIT wins
+ *    over UI_STATE_WARN through the style priority (see ui_styles.h), so a
+ *    value past the critical limit carrying both is correct, not a conflict.
+ *    The limits follow the YAML semantics, all of them optional:
+ *    @code
+ *      value < crit_low   → critical        value > warn_high → warning
+ *      value < warn_low   → warning         value > crit_high → critical
+ *    @endcode
+ *    A signal without limits is not colored, and no styles are added.
+ *
+ * The value is read according to the subject's own type (int or float) and
+ * compared as a float.
+ *
+ * @p desc must outlive the widget — the generated descriptors are constants in
+ * flash, so it always does. The widget keeps a pointer, not a copy. The binding
+ * dies with @p obj; there is no unbind.
+ *
+ * @param obj   Spangroup returned by ui_quantity_create().
+ * @param desc  Descriptor from ui_subjects_gen.h, e.g. &ui_sig_power_average.
  */
-enum ui_quantity_level_cmp {
-    UI_QUANTITY_LEVEL_ABOVE = 0, /**< Out of range above the threshold. */
-    UI_QUANTITY_LEVEL_BELOW,     /**< Out of range below the threshold. */
-};
-
-/**
- * @brief Color a quantity by its warning and critical thresholds.
- *
- * Installs one observer that keeps UI_STATE_WARN and UI_STATE_CRIT on @p obj in
- * step with @p subject. Pair it with the two level styles, which decide what
- * those states look like:
- *
- * @code
- *   lv_obj_add_style(w, &ui_style_level_warn, UI_STATE_WARN);
- *   lv_obj_add_style(w, &ui_style_level_crit, UI_STATE_CRIT);
- *   ui_quantity_bind_level(w, &ui_subj_lv_accu_voltage, UI_QUANTITY_LEVEL_BELOW,
- *                          UI_LV_ACCU_VOLTAGE_WARN_LOW,
- *                          UI_LV_ACCU_VOLTAGE_CRIT_LOW);
- * @endcode
- *
- * Both states are evaluated on every update, so a value that comes back into
- * range clears them again. UI_STATE_CRIT wins over UI_STATE_WARN through the
- * style priority (see ui_styles.h), so setting both past the critical threshold
- * is correct rather than a conflict.
- *
- * Int and float subjects are both accepted; the value is read according to the
- * subject's own type and compared as a float. This is the whole reason the
- * helper exists — see the note in the file header.
- *
- * The binding dies with @p obj: the observer is removed and the descriptor
- * freed when the object is deleted. There is no unbind.
- *
- * @param obj    Object to carry the states. Usually a quantity widget, but any
- *               object works.
- * @param subject  lv_subject_t to observe (int or float).
- * @param cmp    Which side of the thresholds is out of range.
- * @param warn   Threshold for UI_STATE_WARN, from ui_subjects_gen.h.
- * @param crit   Threshold for UI_STATE_CRIT, past @p warn in the @p cmp
- *               direction.
- */
-void ui_quantity_bind_level(lv_obj_t *obj, lv_subject_t *subject,
-                            enum ui_quantity_level_cmp cmp,
-                            float warn, float crit);
+void ui_quantity_bind_signal(lv_obj_t *obj, const struct ui_signal_desc *desc);
 
 #endif /* MODULES_UI_WIDGETS_UI_QUANTITY_H */

@@ -373,7 +373,7 @@ gets tight, that is where the leverage is. -->
        signals:
          Neues_Signal:
            app_name: neues_signal
-           ui: { label: "Neues Signal", precision: 1 }
+           ui: { label: "New Signal", short_label: "New", unit: "bar", precision: 1 }
            limits: { critical_low: 5, warning_low: 15, warning_high: 60, critical_high: 75 }
            range: { min: 0, max: 100 }
    ```
@@ -381,19 +381,52 @@ gets tight, that is where the leverage is. -->
    | Key | Effect |
    |---|---|
    | `app_name` | Field name in the snapshot and name of the LVGL subject |
-   | `ui.label` | Caption for the UI |
-   | `ui.precision` | Number of decimal places |
-   | `limits` | Generates threshold defines for warning and critical bounds |
-   | `range` | Generates `UI_<NAME>_RANGE_MIN` / `_MAX`, e.g. for `lv_bar_set_range()` |
+   | `ui.label` | Full caption, as on a debug screen |
+   | `ui.short_label` | Compact caption for tight layouts; falls back to `label` |
+   | `ui.unit` | Unit suffix. Falls back to the unit in the DBC, so give it only where the DBC has none |
+   | `ui.precision` | Decimal places, 0 to 4; above 0 only for a signal with a factor or offset in the DBC |
+   | `limits` | Warning and critical bounds, in physical units; any subset of the four |
+   | `range` | The span a bar shows, in physical units |
    | `persist` | TX only: makes the signal persistent (see below) |
+
+   The generator checks the presentation data and stops with a message when it
+   does not hold together: every limit has to lie inside the `range`, the limits
+   have to be ordered, and a unit taken from the DBC has to be plain ASCII. The
+   first of those catches the typical mistake of a bar that ends before the
+   limit that is supposed to color it.
 
 2. **Run the generator** — `python3 tools/codegen/gen_can.py`
 
-3. **Adapt the UI** — bind the `ui_subj_neues_signal` subject to a widget:
+   Besides the subject `ui_subj_neues_signal` it emits a descriptor
+   `ui_sig_neues_signal` (`struct ui_signal_desc` in `ui_subjects_gen.h`) for
+   every numeric signal that declares a label, a unit, a range or limits. It
+   carries the subject together with the caption, unit, printf format, range and
+   limits, and is the one source for how the value is shown.
+
+3. **Adapt the UI** — bind the subject to a widget, and take everything about
+   its presentation from the descriptor rather than writing it into the screen.
+   A caption, a unit, a number of decimals, a bar range or a limit typed into a
+   screen is a second copy that silently drifts from the YAML:
 
    ```c
-   lv_bar_bind_value(bar_new_signal, &ui_subj_new_signal);
+   const struct ui_signal_desc *d = &ui_sig_neues_signal;
+
+   lv_bar_set_range(bar, (int32_t)d->range_min, (int32_t)d->range_max);
+   lv_bar_bind_value(bar, d->subject);
+
+   lv_label_set_text(title, d->label);
+
+   lv_obj_t *qty = ui_quantity_create(scr, &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, d->unit);
+   ui_quantity_bind_signal(qty, d);   /* value, format and limit coloring */
    ```
+
+   `ui_quantity_bind_signal()` binds the value with the descriptor's format and,
+   if the signal declares limits, colors it gold past the warning limit and red
+   past the critical one. A signal without limits is left uncolored.
+
+   An `lv_bar` is integral, so the range is cut to whole numbers and a float
+   signal moves the bar in whole steps of its unit.
 
 4. **Build and flash**
 
@@ -428,6 +461,30 @@ The service, its ownership model and the write-behind are documented in
 3. Register the factory in `k_screen_factories[]` in `ui.c` and, if needed, add
    the screen to `k_carousel[]`
 4. Create the header via `ui_header_create(scr, "TITLE", status_subjects)`
+5. Build the content into the area the frame leaves free (next section)
+
+#### Laying out a screen
+
+Every screen has the same frame — header, page bar, hint bar — and
+`ui_layout.h` says where what is left lies. A screen builds into containers and
+lets them place the widgets; it does not name a coordinate:
+
+```c
+lv_obj_t *content = ui_layout_content_create(scr);       // between the frame
+lv_obj_t *left    = ui_layout_column_create(content, 50); // half of the width
+lv_obj_t *right   = ui_layout_column_create(content, 50);
+// create widgets with `left` or `right` as their parent
+```
+
+Where a size has to be a number — a gap, the height of a bar — it is given in
+*units* with `ui_layout_u()`. A unit is 1/32 of the shorter side of the display,
+10 px on the 480 × 320 panel, so a layout keeps its proportions on another panel
+instead of its pixels. Widths and heights that are a share of the space use
+`lv_pct()`.
+
+The fonts are the one thing that does not scale: they are compiled at fixed
+sizes. A layout can give a large number the room it needs, but it cannot make
+the number smaller.
 
 Screens are created lazily and released when left. State that has to outlive
 that does not belong in the screen, but in a module-wide subject, in

@@ -13,7 +13,7 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-16
  *
- * @version     0.1.0
+ * @version     0.2.0
  *
  * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
@@ -24,6 +24,9 @@
  * Revision History
  * Version  Date        Author          Description
  * 0.1.0    2026-06-16  Mario Wegmann   Initial creation
+ * 0.2.0    2026-09-20  Mario Wegmann   ui_quantity_bind_signal() replaces
+ *                                      ui_quantity_bind_level(); limits from the
+ *                                      signal descriptor
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
@@ -41,20 +44,8 @@
 /** @brief Index of the value span inside the spangroup. */
 #define VALUE_SPAN_IDX  0
 
-
-/* ── Private Types ───────────────────────────────────────────────────────────────────────────── */
-
-/**
- * @brief Thresholds of one level binding, carried as the observer's user data.
- *
- * Heap-allocated per binding because the observer callback is shared and the
- * values differ per widget. Freed by level_delete_cb() when the object goes.
- */
-struct level_dsc {
-    float                      warn; /**< UI_STATE_WARN threshold.        */
-    float                      crit; /**< UI_STATE_CRIT threshold.        */
-    enum ui_quantity_level_cmp cmp;  /**< Which side is out of range.     */
-};
+/** @brief Every limit flag of a struct ui_signal_desc. */
+#define LIMIT_FLAGS (UI_SIG_CRIT_LOW | UI_SIG_WARN_LOW | UI_SIG_WARN_HIGH | UI_SIG_CRIT_HIGH)
 
 
 /* ── Private Function Implementations ────────────────────────────────────────────────────────── */
@@ -77,7 +68,7 @@ static float level_value(lv_subject_t *subject)
     case LV_SUBJECT_TYPE_INT:
         return (float)lv_subject_get_int(subject);
     default:
-        LV_LOG_WARN("ui_quantity_bind_level: subject type %d holds no number",
+        LV_LOG_WARN("ui_quantity: subject type %d holds no number",
                     (int)subject->type);
         return 0.0f;
     }
@@ -86,43 +77,25 @@ static float level_value(lv_subject_t *subject)
 /**
  * @brief Observer callback — apply both level states to the bound object.
  *
+ * The user data is the signal descriptor itself: a constant in flash that
+ * outlives every widget, so there is nothing to allocate and nothing to free.
+ *
  * @param observer  Observer whose target object carries the states.
  * @param subject   The observed quantity.
  */
 static void level_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
-    lv_obj_t               *obj = lv_observer_get_target_obj(observer);
-    const struct level_dsc *dsc = lv_observer_get_user_data(observer);
-    float                   val = level_value(subject);
+    lv_obj_t                    *obj = lv_observer_get_target_obj(observer);
+    const struct ui_signal_desc *d   = lv_observer_get_user_data(observer);
+    float                        val = level_value(subject);
 
-    bool warn;
-    bool crit;
-
-    if (dsc->cmp == UI_QUANTITY_LEVEL_BELOW) {
-        warn = val < dsc->warn;
-        crit = val < dsc->crit;
-    } else {
-        warn = val > dsc->warn;
-        crit = val > dsc->crit;
-    }
+    bool warn = ((d->flags & UI_SIG_WARN_LOW)  && val < d->warn_low) ||
+                ((d->flags & UI_SIG_WARN_HIGH) && val > d->warn_high);
+    bool crit = ((d->flags & UI_SIG_CRIT_LOW)  && val < d->crit_low) ||
+                ((d->flags & UI_SIG_CRIT_HIGH) && val > d->crit_high);
 
     lv_obj_set_state(obj, UI_STATE_WARN, warn);
     lv_obj_set_state(obj, UI_STATE_CRIT, crit);
-}
-
-/**
- * @brief LV_EVENT_DELETE handler — free the descriptor with the object.
- *
- * LVGL removes the observer itself when the object is deleted, but it does not
- * know about the descriptor behind user_data. Registering this first means it
- * runs before LVGL's own unsubscribe handler, and the callback cannot fire
- * during deletion, so the order is safe either way.
- *
- * @param e  LV_EVENT_DELETE; its user data is the descriptor.
- */
-static void level_delete_cb(lv_event_t *e)
-{
-    lv_free(lv_event_get_user_data(e));
 }
 
 
@@ -156,23 +129,22 @@ void ui_quantity_bind_value(lv_obj_t *obj, lv_subject_t *subject, const char *fm
     lv_spangroup_bind_span_text(obj, lv_spangroup_get_child(obj, VALUE_SPAN_IDX), subject, fmt);
 }
 
-void ui_quantity_bind_level(lv_obj_t *obj, lv_subject_t *subject,
-                            enum ui_quantity_level_cmp cmp,
-                            float warn, float crit)
+void ui_quantity_bind_signal(lv_obj_t *obj, const struct ui_signal_desc *desc)
 {
-    struct level_dsc *dsc = lv_malloc(sizeof(*dsc));
+    ui_quantity_bind_value(obj, desc->subject, desc->fmt);
 
-    if (dsc == NULL) {
-        LV_LOG_WARN("ui_quantity_bind_level: out of memory");
-        return;
+    if ((desc->flags & LIMIT_FLAGS) == 0U) {
+        return;   /* no limits declared: nothing to color by */
     }
 
-    dsc->warn = warn;
-    dsc->crit = crit;
-    dsc->cmp  = cmp;
+    lv_obj_add_style(obj, &ui_style_level_warn, UI_STATE_WARN);
+    lv_obj_add_style(obj, &ui_style_level_crit, UI_STATE_CRIT);
 
-    lv_obj_add_event_cb(obj, level_delete_cb, LV_EVENT_DELETE, dsc);
-
-    /* Fires once on subscription, so the initial state needs no separate call. */
-    lv_subject_add_observer_obj(subject, level_observer_cb, obj, dsc);
+    /*
+     * Fires once on subscription, so the initial state needs no separate call.
+     * The descriptor is const, the observer's user data is not — the callback
+     * only reads it.
+     */
+    lv_subject_add_observer_obj(desc->subject, level_observer_cb, obj,
+                                (void *)desc);
 }

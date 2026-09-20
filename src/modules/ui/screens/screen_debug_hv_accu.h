@@ -8,8 +8,8 @@
  *              no interactive widgets, no events published.
  *
  *              Two values, each as a bar with its numeric readout:
- *              accumulator voltage (0…500 V) and accumulator temperature
- *              (0…100 °C).
+ *              accumulator voltage and accumulator temperature. Their ranges
+ *              and units are declared in dbc/dcu_app.yaml, not here.
  *
  *              ### Screen layout (480 × 320)
  *
@@ -24,10 +24,14 @@
  *              └──────────────────────────────────────┘
  *              ```
  *
- *              Each numeric readout turns gold past its warning threshold and
- *              red past its critical one, driven by ui_quantity_bind_level()
- *              against the limits generated from dbc/dcu_app.yaml — the voltage
- *              from below, the temperature from above.
+ *              Every bar row takes what it shows from its signal descriptor
+ *              (ui_sig_*, generated from dbc/dcu_app.yaml): the caption, the
+ *              unit, the decimals, the bar range and the limits. Nothing of
+ *              that is written into this screen. A readout turns gold past its
+ *              warning limit and red past its critical one, through
+ *              ui_quantity_bind_signal().
+ *              The voltage has limits on both sides, the temperature only an
+ *              upper one.
  *
  *              Reachable through the screen carousel only.  All three group
  *              accessors return NULL, so the right encoder and both button

@@ -257,6 +257,16 @@ extern lv_style_t ui_style_btn_pending;
 /* --- Progress bar (slider) -------------------------------------------------------- */
 
 /**
+ * @brief Width of the outline around a progress-bar track, in pixels.
+ *
+ * The outline is drawn *outside* the object's box, and a parent clips what is
+ * drawn outside its own edge. A bar that sits flush against its container loses
+ * its outline on that side, so whatever holds a bar has to leave this much room
+ * around it — see the bar rows in the debug screens.
+ */
+#define UI_SLIDER_OUTLINE_W     2
+
+/**
  * @brief Progress-bar track (LV_PART_MAIN).
  *
  * White background with a 2 px DARK outline and no radius.
