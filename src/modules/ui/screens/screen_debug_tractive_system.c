@@ -1,26 +1,23 @@
 /**
- * @file        screen_debug_tractive_system.c
- * @brief       Debug screen for tractive system
+ * @file
+ * @brief       Debug screen for the tractive system
  *
- * @details     
+ * @ingroup     dcu_ui_screens
+ *
+ * @details     Implementation; the contract is in screen_debug_tractive_system.h.
+ *
+ *              Builds six bar-plus-readout pairs in two columns: tractive-system
+ *              voltage, highest motor temperature and inverter temperature on
+ *              the left; both accelerator pedal position sensors and the brake
+ *              pedal position on the right. Each is bound to its generated
+ *              subject, so the screen keeps no state.
+ *
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-24
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-06-24  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
@@ -36,9 +33,11 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "app/app_state.h"
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
-#include "modules/ui/widgets/ui_unit_label.h"
+#include "modules/ui/widgets/ui_hintbar.h"
+#include "modules/ui/widgets/ui_quantity.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "generated/ui_subjects_gen.h"
@@ -53,174 +52,147 @@ LOG_MODULE_REGISTER(screen_debug_tractive_system, CONFIG_LOG_DEFAULT_LEVEL);
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
 
+/**
+ * @brief What each control does on this screen; see @ref ui_hint_input.
+ *
+ * Static storage: ui_hintbar_create() keeps the pointers rather than copying
+ * the strings. Controls left out here are dimmed in the bar.
+ */
+static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
+    [UI_HINT_ENC_LEFT] = "Switch Screen",
+};
+
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
+static void build_bar_row(lv_obj_t *parent, const struct ui_signal_desc *desc,
+                          const char *caption);
 static void build_bars(lv_obj_t *scr);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/** @brief Height of every bar, in layout units (see ui_layout_u()). */
+#define BAR_H_U             2
+
+/** @brief Space between the bar and the value beside it, in layout units. */
+#define BAR_VALUE_GAP_U     1
+
+/**
+ * @brief Least width the value gets, in layout units.
+ *
+ * The value grows with its digits. Without a floor the bar next to it would
+ * shrink and grow with them, on every change of digit count.
+ */
+#define VALUE_MIN_W_U       8
+
+/**
+ * @brief Build one bar row: the caption on top, under it the bar with the value.
+ *
+ * Everything about the signal — unit, decimals, bar range and limits — comes
+ * from its descriptor, which the YAML declares. The row places itself: it is as
+ * wide as its parent, the bar takes whatever the value leaves, and nothing here
+ * names a coordinate.
+ *
+ * Bar and value sit in one line and are centered on the same axis, so the value
+ * stands level with the bar and not with the caption above it.
+ *
+ * @param parent   Column to build into.
+ * @param desc     The signal to show.
+ * @param caption  Text over the bar; the descriptor's label or short_label.
+ */
+static void build_bar_row(lv_obj_t *parent, const struct ui_signal_desc *desc,
+                          const char *caption)
+{
+    /* Row: the caption, and under it the line with bar and value. */
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_t *lbl_title = lv_label_create(row);
+    lv_obj_add_style(lbl_title, &ui_style_label_subtitle, 0);
+    lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(lbl_title, lv_pct(100));
+    lv_label_set_text(lbl_title, caption);
+
+    /*
+     * Line: [ bar ][ value ] on one axis.
+     *
+     * The bar's outline is drawn outside its box, and a container clips what
+     * lies outside itself, so the line has to keep room for it: on the left
+     * through padding, above and below through a minimum height that is the
+     * bar plus an outline on each side. On the right the gap to the value is
+     * room enough. The value is usually the taller of the two and the minimum
+     * then costs nothing.
+     */
+    lv_obj_t *line = lv_obj_create(row);
+    lv_obj_remove_style_all(line);
+    lv_obj_set_size(line, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(line, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(line, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(line, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(line, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(line, ui_layout_u(BAR_VALUE_GAP_U), 0);
+    lv_obj_set_style_pad_left(line, UI_SLIDER_OUTLINE_W, 0);
+    lv_obj_set_style_min_height(line,
+                                ui_layout_u(BAR_H_U) + 2 * UI_SLIDER_OUTLINE_W, 0);
+
+    /*
+     * The line is as tall as its tallest child, which is the value, and the bar
+     * is centered in it — so it would hang below the caption by the difference.
+     * Pull the line up by the space above the bar, and the bar sits directly
+     * under the caption; the value rises into the free space beside it.
+     */
+    int32_t bar_h  = ui_layout_u(BAR_H_U);
+    int32_t line_h = LV_MAX(lv_font_get_line_height(&BarlowCondensed_BoldItalic_32),
+                            bar_h + 2 * UI_SLIDER_OUTLINE_W);
+    lv_obj_set_style_margin_top(line, -((line_h - bar_h) / 2), 0);
+
+    /* Bar: takes what the value leaves. */
+    lv_obj_t *bar = lv_bar_create(line);
+    lv_obj_remove_style_all(bar);
+    lv_obj_add_style(bar, &ui_style_slider_main, LV_PART_MAIN);
+    lv_obj_add_style(bar, &ui_style_slider_indicator, LV_PART_INDICATOR);
+    if (desc->flags & UI_SIG_RANGE) {
+        lv_bar_set_range(bar, (int32_t)desc->range_min, (int32_t)desc->range_max);
+    }
+    lv_bar_bind_value(bar, desc->subject);
+    lv_obj_set_size(bar, 0, bar_h);
+    lv_obj_set_flex_grow(bar, 1);
+
+    /* Value: as wide as its digits, but never narrower than VALUE_MIN_W_U. */
+    lv_obj_t *qty = ui_quantity_create(line,
+                                       &BarlowCondensed_BoldItalic_32,
+                                       &BarlowCondensed_Italic_20, desc->unit);
+    lv_obj_set_style_min_width(qty, ui_layout_u(VALUE_MIN_W_U), 0);
+    ui_quantity_bind_signal(qty, desc);
+}
+
+/**
+ * @brief Build every bar row into the screen's content area.
+ *
+ * Two columns of three. Left: tractive-system voltage, motor and inverter
+ * temperature. Right: both accelerator pedal positions and the brake pedal.
+ * The captions are the short ones — a column is too narrow for the full
+ * labels. The pedal positions carry no limits in the YAML, so they are not
+ * colored.
+ *
+ * @param scr  Screen object to build into.
+ */
 static void build_bars(lv_obj_t *scr)
 {
-    /* ── Tractive System Voltage ────────────────────────────────────────── */
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_t *left    = ui_layout_column_create(content, 50);
+    lv_obj_t *right   = ui_layout_column_create(content, 50);
 
-    lv_obj_t * bar_ts_voltage = lv_bar_create(scr);
-    lv_obj_remove_style_all(bar_ts_voltage);
-    lv_obj_add_style(bar_ts_voltage, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(bar_ts_voltage, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_bar_set_range(bar_ts_voltage, 0, 500);
-    lv_bar_bind_value(bar_ts_voltage, &ui_subj_voltage_tractive_system);
-    lv_obj_set_size(bar_ts_voltage, 140, 20);
-    lv_obj_align(bar_ts_voltage, LV_ALIGN_TOP_MID, -150, 80);
+    build_bar_row(left, &ui_sig_voltage_tractive_system, ui_sig_voltage_tractive_system.label);
+    build_bar_row(left, &ui_sig_temperature_motor, ui_sig_temperature_motor.label);
+    build_bar_row(left, &ui_sig_temperature_inverter, ui_sig_temperature_inverter.label);
 
-    lv_obj_t *lbl_bar_ts_voltage_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_bar_ts_voltage_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_ts_voltage_title, "Tractive System Voltage");
-    lv_obj_align_to(lbl_bar_ts_voltage_title, bar_ts_voltage, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
-
-    lv_obj_t *lbl_bar_ts_voltage_value = ui_unit_label_create(scr,
-                                      &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, "V");
-    lv_obj_add_style(lbl_bar_ts_voltage_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_ts_voltage_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_ts_voltage_value, &ui_subj_voltage_tractive_system, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_ts_voltage_value, &ui_subj_voltage_tractive_system, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_bar_ts_voltage_value, 60, 30);
-    ui_unit_label_bind_value(lbl_bar_ts_voltage_value, &ui_subj_voltage_tractive_system, "%d");
-    lv_obj_align_to(lbl_bar_ts_voltage_value, bar_ts_voltage, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
-
-    /* ── MAX Motor Temperature ──────────────────────────────────────────── */
-
-    lv_obj_t * bar_temp_motor_max = lv_bar_create(scr);
-    lv_obj_remove_style_all(bar_temp_motor_max);
-    lv_obj_add_style(bar_temp_motor_max, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(bar_temp_motor_max, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_bar_set_range(bar_temp_motor_max, 0, 80);
-    lv_bar_bind_value(bar_temp_motor_max, &ui_subj_temperature_motor);
-    lv_obj_set_size(bar_temp_motor_max, 140, 20);
-    lv_obj_align(bar_temp_motor_max, LV_ALIGN_TOP_MID, -150, 130);
-
-    lv_obj_t *lbl_bar_temp_motor_max_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_bar_temp_motor_max_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_temp_motor_max_title, "Highest Motor Temperature");
-    lv_obj_align_to(lbl_bar_temp_motor_max_title, bar_temp_motor_max, LV_ALIGN_OUT_TOP_LEFT, 00, 0);
-
-    lv_obj_t *lbl_bar_temp_motor_max_value = ui_unit_label_create(scr,
-                                      &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, "°C");
-    lv_obj_add_style(lbl_bar_temp_motor_max_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_temp_motor_max_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_motor_max_value, &ui_subj_temperature_motor, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_motor_max_value, &ui_subj_temperature_motor, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_bar_temp_motor_max_value, 60, 30);
-    ui_unit_label_bind_value(lbl_bar_temp_motor_max_value, &ui_subj_temperature_motor, "%d");
-    lv_obj_align_to(lbl_bar_temp_motor_max_value, bar_temp_motor_max, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
-
-    /* ── MAX Inverter Temperature ───────────────────────────────────────── */
-
-    lv_obj_t * bar_temp_inv_max = lv_bar_create(scr);
-    lv_obj_remove_style_all(bar_temp_inv_max);
-    lv_obj_add_style(bar_temp_inv_max, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(bar_temp_inv_max, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_bar_set_range(bar_temp_inv_max, 0, 80);
-    lv_bar_bind_value(bar_temp_inv_max, &ui_subj_temperature_inverter);
-    lv_obj_set_size(bar_temp_inv_max, 140, 20);
-    lv_obj_align(bar_temp_inv_max, LV_ALIGN_TOP_MID, -150, 180);
-
-    lv_obj_t *lbl_bar_temp_inv_max_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_bar_temp_inv_max_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_temp_inv_max_title, "Inverter Temperature");
-    lv_obj_align_to(lbl_bar_temp_inv_max_title, bar_temp_inv_max, LV_ALIGN_OUT_TOP_LEFT, 0, 0);
-
-    lv_obj_t *lbl_bar_temp_inv_max_value = ui_unit_label_create(scr,
-                                      &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, "°C");
-    lv_obj_add_style(lbl_bar_temp_inv_max_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_temp_inv_max_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_inv_max_value, &ui_subj_temperature_inverter, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_temp_inv_max_value, &ui_subj_temperature_inverter, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_bar_temp_inv_max_value, 60, 30);
-    ui_unit_label_bind_value(lbl_bar_temp_inv_max_value, &ui_subj_temperature_inverter, "%d");
-    lv_obj_align_to(lbl_bar_temp_inv_max_value, bar_temp_inv_max, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
-
-    /* ── APPS Left Position ─────────────────────────────────────────────── */
-
-    lv_obj_t * bar_apps_l_pos = lv_bar_create(scr);
-    lv_obj_remove_style_all(bar_apps_l_pos);
-    lv_obj_add_style(bar_apps_l_pos, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(bar_apps_l_pos, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_bar_set_range(bar_apps_l_pos, 0, 15000);
-    lv_bar_bind_value(bar_apps_l_pos, &ui_subj_apps_left_position);
-    lv_obj_set_size(bar_apps_l_pos, 140, 20);
-    lv_obj_align(bar_apps_l_pos, LV_ALIGN_TOP_MID, 80, 80);
-
-    lv_obj_t *lbl_bar_apps_l_pos_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_bar_apps_l_pos_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_apps_l_pos_title, "Left Accelerator Pedal Position");
-    lv_obj_align_to(lbl_bar_apps_l_pos_title, bar_apps_l_pos, LV_ALIGN_OUT_TOP_LEFT, 00, 0);
-
-    lv_obj_t *lbl_bar_apps_l_pos_value = ui_unit_label_create(scr,
-                                      &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, "");
-    lv_obj_add_style(lbl_bar_apps_l_pos_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_apps_l_pos_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_l_pos_value, &ui_subj_apps_left_position, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_l_pos_value, &ui_subj_apps_left_position, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_bar_apps_l_pos_value, 60, 30);
-    ui_unit_label_bind_value(lbl_bar_apps_l_pos_value, &ui_subj_apps_left_position, "%d");
-    lv_obj_align_to(lbl_bar_apps_l_pos_value, bar_apps_l_pos, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
-
-    /* ── APPS Right Position ────────────────────────────────────────────── */
-
-    lv_obj_t * bar_apps_r_pos = lv_bar_create(scr);
-    lv_obj_remove_style_all(bar_apps_r_pos);
-    lv_obj_add_style(bar_apps_r_pos, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(bar_apps_r_pos, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_bar_set_range(bar_apps_r_pos, 0, 15000);
-    lv_bar_bind_value(bar_apps_r_pos, &ui_subj_apps_right_position);
-    lv_obj_set_size(bar_apps_r_pos, 140, 20);
-    lv_obj_align(bar_apps_r_pos, LV_ALIGN_TOP_MID, 80, 130);
-
-    lv_obj_t *lbl_bar_apps_r_pos_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_bar_apps_r_pos_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_apps_r_pos_title, "Right Accelerator Pedal Position");
-    lv_obj_align_to(lbl_bar_apps_r_pos_title, bar_apps_r_pos, LV_ALIGN_OUT_TOP_LEFT, 00, 0);
-
-    lv_obj_t *lbl_bar_apps_r_pos_value = ui_unit_label_create(scr,
-                                      &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, "");
-    lv_obj_add_style(lbl_bar_apps_r_pos_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_apps_r_pos_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_r_pos_value, &ui_subj_apps_right_position, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_apps_r_pos_value, &ui_subj_apps_right_position, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_bar_apps_r_pos_value, 60, 30);
-    ui_unit_label_bind_value(lbl_bar_apps_r_pos_value, &ui_subj_apps_right_position, "%d");
-    lv_obj_align_to(lbl_bar_apps_r_pos_value, bar_apps_r_pos, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
-
-    /* ── BPPS Position ──────────────────────────────────────────────────── */
-
-    lv_obj_t * bar_bpps_pos = lv_bar_create(scr);
-    lv_obj_remove_style_all(bar_bpps_pos);
-    lv_obj_add_style(bar_bpps_pos, &ui_style_slider_main, LV_PART_MAIN);
-    lv_obj_add_style(bar_bpps_pos, &ui_style_slider_indicator, LV_PART_INDICATOR);
-    lv_bar_set_range(bar_bpps_pos, 0, 100);
-    lv_bar_bind_value(bar_bpps_pos, &ui_subj_bpps_position);
-    lv_obj_set_size(bar_bpps_pos, 140, 20);
-    lv_obj_align(bar_bpps_pos, LV_ALIGN_TOP_MID, 80, 180);
-
-    lv_obj_t *lbl_bar_bpps_pos_title = lv_label_create(scr);
-    lv_obj_add_style(lbl_bar_bpps_pos_title, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_bar_bpps_pos_title, "Brake Pedal Position");
-    lv_obj_align_to(lbl_bar_bpps_pos_title, bar_bpps_pos, LV_ALIGN_OUT_TOP_LEFT, 00, 0);
-
-    lv_obj_t *lbl_bar_bpps_pos_value = ui_unit_label_create(scr,
-                                      &BarlowCondensed_BoldItalic_32,
-                                      &BarlowCondensed_Italic_20, "");
-    lv_obj_add_style(lbl_bar_bpps_pos_value, &ui_style_level_warn, UI_STATE_WARN);
-    lv_obj_add_style(lbl_bar_bpps_pos_value, &ui_style_level_crit, UI_STATE_CRIT);
-    lv_obj_bind_state_if_lt(lbl_bar_bpps_pos_value, &ui_subj_bpps_position, UI_STATE_WARN, UI_VOLTAGE_ACCU_HV_WARN_LOW);
-    lv_obj_bind_state_if_lt(lbl_bar_bpps_pos_value, &ui_subj_bpps_position, UI_STATE_CRIT, UI_VOLTAGE_ACCU_HV_CRIT_LOW);
-    // lv_obj_set_size(lbl_bar_bpps_pos_value, 60, 30);
-    ui_unit_label_bind_value(lbl_bar_bpps_pos_value, &ui_subj_bpps_position, "%d");
-    lv_obj_align_to(lbl_bar_bpps_pos_value, bar_bpps_pos, LV_ALIGN_OUT_RIGHT_MID, 20, 0);
+    build_bar_row(right, &ui_sig_apps_left_position, ui_sig_apps_left_position.label);
+    build_bar_row(right, &ui_sig_apps_right_position, ui_sig_apps_right_position.label);
+    build_bar_row(right, &ui_sig_bpps_position, ui_sig_bpps_position.label);
 }
 
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
@@ -238,6 +210,8 @@ lv_obj_t *screen_debug_tractive_system_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "DBG TS", status_subjects);
     build_bars(scr);
+
+    ui_hintbar_create(scr, k_hints);
 
     return scr;
 }

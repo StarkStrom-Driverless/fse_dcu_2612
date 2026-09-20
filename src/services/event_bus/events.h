@@ -1,6 +1,8 @@
 /**
- * @file        events.h
+ * @file
  * @brief       Zbus event and command payload type definitions
+ *
+ * @ingroup     dcu_event_bus
  *
  * @details     Central header for all Zbus channel message types used in the
  *              FSE DCU 2612 firmware. Includes both upward event structs
@@ -11,23 +13,18 @@
  *              Zbus channel. For the channel objects themselves, include
  *              "services/event_bus/event_bus.h".
  *
+ *              ### Scope note
+ *              The type set is deliberately wider than the firmware currently
+ *              exercises: it describes the intended protocol, and several
+ *              enumerators have no producer yet. Each such case is marked
+ *              @c Reserved on the enumerator itself, so a reader can tell an
+ *              agreed message apart from a planned one without grepping.
+ *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef SERVICES_EVENT_BUS_EVENTS_H
@@ -38,48 +35,71 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
+
+/*
+ * enum setting_id and the schema bounds, generated from the `persist:` blocks
+ * and the `settings:` section of dcu_app.yaml.  Pulled in here because
+ * UI_INPUT_SETTING_SELECTED carries a setting_id.  The header depends on
+ * nothing but stdint / stdbool, so this stays within the "no Zephyr, no LVGL"
+ * rule for events.h.
+ */
+#include "generated/settings_schema_gen.h"
+
 
 /* ── Common Enumerations ─────────────────────────────────────────────────────────────────────── */
 
 /**
  * @brief Formula Student mission disciplines.
  *
- * Sent to the vehicle via CAN when the driver selects a mission.
+ * The numeric value is the DV_Drive_Mode_SETTING raw value on the bus: the CAN
+ * module casts the enum straight through (see mission_to_drive_mode() in
+ * can.c), so the order here is a wire format, not a free choice.
  * MISSION_NONE is the initial / unselected state.
+ *
  */
 enum mission_id {
     MISSION_NONE           = 0,
     MISSION_ACCELERATION,
     MISSION_SKIDPAD,
-    MISSION_AUTOCROSS,
-    MISSION_ENDURANCE,
+    MISSION_TRACKDRIVE,
+    MISSION_BRAKETEST,
     MISSION_INSPECTION,
+    MISSION_AUTOCROSS,
     MISSION_MANUAL_DRIVING,
 };
 
 /**
- * @brief UI screen identifiers used by the App Layer to navigate the display.
+ * @brief UI screen identifiers.
  *
- * SCREEN_NONE is the initial state before the first screen is created.
+ * Used both as the payload of ui_nav_chan and as the index into the
+ * screen-factory table in ui.c. SCREEN_NONE is the initial state before the
+ * first screen is loaded.
  *
- * Carousel order (left encoder, left → right):
- *   [SCREEN_MISSION_SELECT] ←← [SCREEN_BOOT] ··· (future screens)
+ * The order of this enum does not define the carousel; k_carousel[] in ui.c
+ * does, and it lists a subset. Two entries here have no factory
+ * (SCREEN_RTD, SCREEN_POST_RTD, SCREEN_ERROR): navigating to them logs
+ * "screen not implemented" and stays put.
+ *
+ * @note SCREEN_ERROR must stay last — ui.c sizes its screen array from it.
  */
 enum screen_id {
     SCREEN_NONE          = 0,
-    SCREEN_DEBUG_HV_ACCU,     /**< Show debug values for High Voltage Accu         */
-    SCREEN_DEBUG_LV_ACCU,     /**< Show debug values for Low Voltage Accu          */
-    SCREEN_DEBUG_PRESSURE,    /**< Show debug values of air and brake pressure     */
-    SCREEN_DEBUG_TS,          /**< Show debug values for tractive system           */
-    SCREEN_DEBUG_WRITE,       /**< Send generic debug Bits.                        */
-    SCREEN_BOOT,              /**< Initial splash; starting position in carousel.  */
-    SCREEN_MISSION_SELECT,    /**< Mission roller + OK + RTD buttons.              */
-    SCREEN_SDC,               /**< Shutdown circuits.                              */
-    SCREEN_PRE_RTD,           /**< Pre-drive checklist.                            */
-    SCREEN_RTD,               /**< Live telemetry during mission.                  */
-    SCREEN_EV_DRIVING,        /**< Show telemetry and adjust vehicle in EV driving */
-    SCREEN_POST_RTD,          /**< Return-to-idle confirmation (future).           */
-    SCREEN_ERROR,             /**< Safety fault overlay (future).                  */
+    SCREEN_DEBUG_HV_ACCU,     /**< Debug values of the high-voltage accumulator.   */
+    SCREEN_DEBUG_LV_ACCU,     /**< Debug values of the low-voltage accumulator.    */
+    SCREEN_DEBUG_PRESSURE,    /**< Debug values of air and brake pressure.         */
+    SCREEN_DEBUG_TS,          /**< Debug values of the tractive system.            */
+    SCREEN_DEBUG_CUSTOM,      /**< Read and write generic, unassigned values.      */
+    SCREEN_SETTINGS,          /**< Editor for every persistent setting.            */
+    SCREEN_BOOT,              /**< Splash screen; carousel starting position.      */
+    SCREEN_MISSION_SELECT,    /**< Mission roller + SEND MISSION button.            */
+    SCREEN_SDC,               /**< Shutdown-circuit node overview.                 */
+    SCREEN_PRE_RTD,           /**< Pre-drive screen; carries the RTD button.       */
+    SCREEN_RTD,               /**< Reserved: live telemetry during mission.        */
+    SCREEN_EV_DRIVING,        /**< Telemetry plus torque-vectoring / power limit.  */
+    SCREEN_DV_DRIVING,        /**< Driverless mission running; shows the mission.  */
+    SCREEN_POST_RTD,          /**< Reserved: return-to-idle confirmation.          */
+    SCREEN_ERROR,             /**< Reserved: safety-fault overlay. Keep last.      */
 };
 
 
@@ -87,12 +107,19 @@ enum screen_id {
 
 /* ---- can_status_chan ------------------------------------------------------------------ */
 
-/** @brief CAN connectivity and bus error event types. */
+/**
+ * @brief CAN connectivity and bus error event types.
+ *
+ * Only CAN_STATUS_CONNECTED is published today — once after a successful
+ * controller start, and again on every bus-state change, with the detail in
+ * can_status_event::state. The other three are the initial channel value and
+ * reserved for the RX watchdog that is not implemented yet.
+ */
 enum can_status_type {
-    CAN_STATUS_DISCONNECTED = 0, /**< Default / initial state.                          */
-    CAN_STATUS_CONNECTED,        /**< CAN bus communication established.                */
-    CAN_STATUS_TIMEOUT,          /**< A message has not been received within its window.*/
-    CAN_STATUS_BUS_OFF,          /**< CAN controller entered bus-off state.             */
+    CAN_STATUS_DISCONNECTED = 0, /**< Default / initial channel value.                  */
+    CAN_STATUS_CONNECTED,        /**< Controller started; see @c state for detail.      */
+    CAN_STATUS_TIMEOUT,          /**< Reserved: message missed its receive window.      */
+    CAN_STATUS_BUS_OFF,          /**< Reserved: reported via @c state instead.          */
 };
 
 /**
@@ -109,9 +136,15 @@ enum can_bus_state {
     CAN_BUS_STATE_STOPPED       = 4, /**< Controller stopped (not started).          */
 };
 
-/** @brief Payload for can_status_chan. */
+/**
+ * @brief Payload for can_status_chan.
+ *
+ * Two consumers, reading different fields: the App Layer switches on @c type to
+ * maintain the connectivity flags, the UI module maps @c state onto the CAN
+ * status icon in the header bar.
+ */
 struct can_status_event {
-    enum can_status_type type;
+    enum can_status_type type;       /**< What happened.                            */
     uint32_t             msg_id;     /**< Non-zero only for CAN_STATUS_TIMEOUT.     */
     enum can_bus_state   state;      /**< Current CAN controller bus state.         */
 };
@@ -120,8 +153,13 @@ struct can_status_event {
 
 /*
  * struct can_data_snapshot is generated from dbc/dcu_app.yaml — the field
- * list follows the app_name mappings there.  Published by the CAN module
- * at ~100 ms; forwarded to the UI module via ui_cmd_chan by the App Layer.
+ * list follows the app_name mappings there.  The CAN module publishes it
+ * whenever its 10 ms cycle drained at least one frame, so the rate follows the
+ * bus, not a fixed period.  The App Layer stores it in app_state and forwards
+ * it to the UI module via ui_cmd_chan.
+ *
+ * It is an accumulator, not a per-frame message: fields keep their previous
+ * value until their own frame arrives.
  *
  * To add a signal: edit dbc/dcu_app.yaml, then run
  *   python3 tools/codegen/gen_can.py
@@ -133,37 +171,56 @@ struct can_status_event {
 /**
  * @brief Semantic driver input event types produced by the UI module.
  *
- * Physical button mapping
- * ───────────────────────
- *  ESC button       →  UI_INPUT_BACK
- *  OK  button       →  UI_INPUT_CONFIRM  (or triggers focused LVGL widget)
- *  RTD button       →  UI_INPUT_RTD_REQUEST
- *  Timestamp button →  UI_INPUT_TIMESTAMP
+ * These are intents, not key presses. Raw button and encoder events are
+ * consumed by LVGL through the input devices and never reach this channel;
+ * a screen publishes here only when a widget interaction means something to
+ * the vehicle.
  *
- * Encoder mapping
- * ───────────────
- *  Left  encoder    →  screen carousel navigation (handled inside ui.c,
- *                       not published to this channel)
- *  Right encoder    →  in-screen widget navigation via LVGL group
+ * ### Input routing (see ui.c)
+ *  Left  encoder  →  screen carousel, handled entirely inside ui.c
+ *  Right encoder  →  focused widget of the active screen's LVGL group
+ *  Button pads    →  LVGL keypad indevs bound to per-screen groups
+ *
+ * ### Who publishes what
+ *  UI_INPUT_MISSION_SELECTED     screen_mission_select.c (SEND MISSION button)
+ *  UI_INPUT_RTD_PRESSED/_RELEASED screen_checklist.c      (RTD button, press / release)
+ *  UI_INPUT_DEBUG_BITS_SELECTED  screen_debug_custom.c    (SEND BITS button)
+ *  UI_INPUT_SETTING_SELECTED     screen_settings.c        (− / + on a setting)
+ *                                screen_ev_driving.c      (PWR Limit, TQ Vect)
+ *  UI_INPUT_SCREEN_CHANGED       ui.c                     (every screen load)
  */
 enum ui_input_type {
-    UI_INPUT_CONFIRM          = 0, /**< OK button: confirm focused widget.         */
-    UI_INPUT_BACK,                 /**< ESC button: cancel / go back.              */
-    UI_INPUT_ENCODER_UP,           /**< Right encoder: clockwise (spare/fallback). */
-    UI_INPUT_ENCODER_DOWN,         /**< Right encoder: CCW (spare/fallback).       */
-    UI_INPUT_ENCODER_CLICK,        /**< Right encoder button press.                */
-    UI_INPUT_MISSION_SELECTED,     /**< Driver confirmed a mission via OK button.  */
-    UI_INPUT_RTD_REQUEST,          /**< RTD button pressed: activate RTD signal.   */
-    UI_INPUT_RTD_RELEASE,          /**< RTD button released: deactivate RTD signal.*/
-    UI_INPUT_TORQUE_VECT_ON,       /**< Driver activated Torque Vectoring          */
-    UI_INPUT_TORQUE_VECT_OFF,      /**< Driver disabled Torque Vectoring          */
-    UI_INPUT_DEBUG_BITS_SELECTED,  /**< Engineer set debug bits via OK button.     */
-    UI_INPUT_TIMESTAMP,            /**< Timestamp button pressed: log event marker.*/
+    UI_INPUT_CONFIRM          = 0, /**< Reserved. Also the channel's initial value.*/
+    UI_INPUT_BACK,                 /**< Reserved: cancel / return to boot screen.  */
+    UI_INPUT_ENCODER_UP,           /**< Reserved: spare encoder step.              */
+    UI_INPUT_ENCODER_DOWN,         /**< Reserved: spare encoder step.              */
+    UI_INPUT_ENCODER_CLICK,        /**< Reserved: encoder button press.            */
+    UI_INPUT_MISSION_SELECTED,     /**< Mission confirmed; payload: data.mission.  */
+    UI_INPUT_RTD_PRESSED,          /**< RTD button went down on the PRE_RTD screen. */
+    UI_INPUT_RTD_RELEASED,         /**< RTD button up, or its screen was torn down. */
+    UI_INPUT_RESERVE_PRESSED,      /**< Reserve button went down; any screen.      */
+    UI_INPUT_RESERVE_RELEASED,     /**< Reserve button came up; any screen.        */
+    UI_INPUT_TORQUE_VECT_ON,       /**< Reserved: superseded by UI_INPUT_SETTING_SELECTED. */
+    UI_INPUT_TORQUE_VECT_OFF,      /**< Reserved: superseded by UI_INPUT_SETTING_SELECTED. */
+    UI_INPUT_DEBUG_BITS_SELECTED,  /**< Debug bits set; payload: data.debug_bits.  */
+    UI_INPUT_SETTING_SELECTED,     /**< Persistent setting changed; payload: data.setting. */
+    UI_INPUT_SCREEN_CHANGED,       /**< Carousel moved; payload: data.screen.      */
 };
 
-/** @brief Payload for ui_input_chan. */
+/**
+ * @brief Payload for ui_input_chan.
+ *
+ * The union member is selected by @c type; event types not listed below carry
+ * no payload and leave @c data unread.
+ *
+ * @note Publisher and subscriber must name the same member. Writing one and
+ *       reading another happens to work for small values on a little-endian
+ *       target, but it is type punning through a union and breaks silently as
+ *       soon as either assumption changes.
+ */
 struct ui_input_event {
-    enum ui_input_type type;
+    enum ui_input_type type; /**< Which intent; selects the union member. */
+    /** Event payload; the active member follows @c type. */
     union {
         /** Valid when type == UI_INPUT_MISSION_SELECTED. */
         enum mission_id mission;
@@ -172,34 +229,73 @@ struct ui_input_event {
          * Raw 3-bit value (0–7) for the Debug_SETTING CAN signal.
          */
         uint8_t debug_bits;
+        /** Valid when type == UI_INPUT_SCREEN_CHANGED. The screen now loaded. */
+        enum screen_id screen;
+        /**
+         * Valid when type == UI_INPUT_SETTING_SELECTED.
+         * The setting screen has already clamped @c val against the schema;
+         * the settings service clamps it again and owns the stored value.
+         */
+        struct {
+            enum setting_id id;  /**< Which persistent setting.        */
+            uint8_t         val; /**< Desired value (clamped downstream).*/
+        } setting;
     } data;
 };
 
 /* ---- settings_chan -------------------------------------------------------------------- */
 
-/** @brief Settings lifecycle event types. */
+/**
+ * @brief Settings lifecycle event types.
+ *
+ * All four are published by the settings service.
+ *
+ * SETTINGS_EVT_UPDATED means the value changed in RAM; SETTINGS_EVT_SAVED
+ * means it reached the flash, which happens once the write-behind delay has
+ * elapsed. The settings screen shows the difference, because that delay is
+ * long enough for a driver to switch the car off in between.
+ */
 enum settings_event_type {
-    SETTINGS_EVT_LOADED        = 0, /**< Initial NVM load completed on boot. */
-    SETTINGS_EVT_UPDATED,           /**< A setting was changed and persisted. */
-    SETTINGS_EVT_FACTORY_RESET,     /**< All settings cleared to defaults.   */
+    SETTINGS_EVT_LOADED        = 0, /**< Boot-time load finished — values are usable. */
+    SETTINGS_EVT_UPDATED,           /**< A setting changed value in RAM.              */
+    SETTINGS_EVT_SAVED,             /**< The blob reached non-volatile storage.       */
+    SETTINGS_EVT_FACTORY_RESET,     /**< Reserved: all settings reset to defaults.    */
 };
 
-/** @brief Payload for settings_chan. */
+/**
+ * @brief Payload for settings_chan.
+ *
+ * Carries no value: subscribers read the new state through settings_get(),
+ * which keeps this service the single source of truth.
+ */
 struct settings_event {
-    enum settings_event_type type;
+    enum settings_event_type type; /**< What happened to the settings. */
 };
 
 /* ---- feedback_chan -------------------------------------------------------------------- */
 
-/** @brief Effect completion signals from Lighting and Audio modules. */
+/**
+ * @brief Confirmation from an output module that something took effect.
+ *
+ * FEEDBACK_CAN_RTD_TX is the only one in use. The CAN module publishes it when
+ * the RTD_Button value it actually transmitted changes — the first frame that
+ * carries 1, and the first frame that carries 0 again — and only after
+ * can_send() succeeded. It is what turns the RTD button green: the driver sees
+ * that the request is on the bus, not merely that it was asked for.
+ *
+ * The lighting and audio values are reserved; neither module reports
+ * completion yet.
+ */
 enum feedback_type {
-    FEEDBACK_LIGHTING_DONE = 0, /**< Transient lighting effect finished. */
-    FEEDBACK_AUDIO_DONE,        /**< Transient audio effect finished.    */
+    FEEDBACK_LIGHTING_DONE = 0, /**< Reserved: transient lighting effect finished. */
+    FEEDBACK_AUDIO_DONE,        /**< Reserved: transient audio effect finished.    */
+    FEEDBACK_CAN_RTD_TX,        /**< Transmitted RTD_Button changed; see @c rtd_button. */
 };
 
 /** @brief Payload for feedback_chan. */
 struct feedback_event {
-    enum feedback_type type;
+    enum feedback_type type;       /**< What took effect.                             */
+    bool               rtd_button; /**< FEEDBACK_CAN_RTD_TX: value now on the bus.    */
 };
 
 
@@ -210,8 +306,18 @@ struct feedback_event {
 /**
  * @brief Header status bar device slot identifiers.
  *
- * Order matches the visual left-to-right icon order in the header.
- * UI_DEVICE_SLOT_COUNT is used as array size — keep it last.
+ * Order matches the visual left-to-right icon order in the header; the icon
+ * per slot is chosen by k_slot_cfg[] in ui_header.c.
+ *
+ * Each slot has one LVGL subject in ui.c. Five of them are derived from the
+ * CAN snapshot (update_device_status()), UI_DEVICE_CAN from the controller
+ * bus state; UI_DEVICE_MABX has no source yet and therefore stays red.
+ *
+ * Every slot starts at UI_DEVICE_STATUS_FAULT: until a frame has arrived,
+ * nothing is known about the device, and unknown is shown as bad rather than
+ * good. See the initialization in ui_module_init().
+ *
+ * @note UI_DEVICE_SLOT_COUNT is used as an array size — keep it last.
  */
 enum ui_device_slot {
     UI_DEVICE_LOGGER = 0,     /**< Data logger                */
@@ -227,40 +333,80 @@ enum ui_device_slot {
 /**
  * @brief Visual status of a single device slot.
  *
- * OK      → green,  solid
- * WARN    → gold,   solid
- * FAULT   → red,    blinking
- * OFFLINE → red,    blinking + X overlay
+ * Rendered by the header widget (ui_header.c):
+ *
+ *   OK     → green icon, solid
+ *   WARN   → gold icon,  solid
+ *   FAULT  → red icon,   solid
+ *   ACTIVE → red icon,   blinking at 400 ms half-period
+ *
+ * ACTIVE means "demands attention", not "healthy": it marks the data logger
+ * while recording and the CAN controller while bus-off or stopped.
  */
 enum ui_device_status {
     UI_DEVICE_STATUS_OK      = 0,
     UI_DEVICE_STATUS_WARN    = 1,
     UI_DEVICE_STATUS_FAULT   = 2,
-    UI_DEVICE_STATUS_ACTIVE = 3,
+    UI_DEVICE_STATUS_ACTIVE  = 3,
 };
 
-/** @brief Payload for vehicle_status_chan. */
+/**
+ * @brief Payload for vehicle_status_chan — the full slot array at once.
+ *
+ * @note Reserved. The UI module subscribes and would apply it, but no module
+ *       publishes on this channel; the status subjects are fed directly inside
+ *       ui.c instead.
+ */
 struct vehicle_status {
+    /** State of every header slot, indexed by @ref ui_device_slot. */
     enum ui_device_status slots[UI_DEVICE_SLOT_COUNT];
 };
 
 
 /* ── Downward Channels: App → Module ────────────────────────────────────────────────────────── */
 
+/* ---- ui_nav_chan ---------------------------------------------------------------------- */
+
+/**
+ * @brief Payload for ui_nav_chan — the screen the UI should load.
+ *
+ * Navigation has a channel of its own, apart from ui_cmd_chan, and that
+ * separation is load-bearing. A zbus subscriber is notified per publish but
+ * reads the channel's *current* message when it gets around to it. ui_cmd_chan
+ * carries a CAN snapshot at bus rate, so a screen command sharing that channel
+ * is overwritten by the next snapshot before the UI thread reads it — which is
+ * exactly what happens while the App thread drains a burst of CAN data, for
+ * instance right after boot.
+ *
+ * Here the worst case is two screen commands collapsing into one, and the
+ * surviving one is the newer, i.e. the screen the vehicle wants to be on.
+ */
+struct ui_nav_cmd {
+    enum screen_id screen; /**< Screen to load; SCREEN_NONE is the initial value. */
+};
+
 /* ---- ui_cmd_chan ---------------------------------------------------------------------- */
 
 /** @brief Command types for the UI module. */
 enum ui_cmd_type {
-    UI_CMD_SET_SCREEN   = 0, /**< Navigate to a named screen.                */
-    UI_CMD_UPDATE_DATA,      /**< Push a new CAN data snapshot for rendering. */
+    UI_CMD_UPDATE_DATA  = 0, /**< Push a new CAN data snapshot for rendering. */
+    UI_CMD_RTD_TX_STATE,     /**< RTD_Button on the bus; payload: rtd_button. */
+    UI_CMD_SETTINGS_SAVED,   /**< Settings blob written to flash; no payload. */
 };
 
-/** @brief Payload for ui_cmd_chan. */
+/**
+ * @brief Payload for ui_cmd_chan.
+ *
+ * The snapshot is carried by value, which makes this the largest message on
+ * the bus — sized so the UI thread never dereferences memory owned by another
+ * thread.
+ */
 struct ui_cmd {
-    enum ui_cmd_type type;
+    enum ui_cmd_type type; /**< Which command; selects the union member. */
+    /** Command payload; the active member follows @c type. */
     union {
-        enum screen_id           screen;   /**< UI_CMD_SET_SCREEN  */
-        struct can_data_snapshot snapshot; /**< UI_CMD_UPDATE_DATA */
+        struct can_data_snapshot snapshot;   /**< UI_CMD_UPDATE_DATA  */
+        bool                     rtd_button; /**< UI_CMD_RTD_TX_STATE */
     } data;
 };
 
@@ -269,12 +415,19 @@ struct ui_cmd {
 /**
  * @brief Physical LED zone identifiers.
  *
- * The APA102 strip is divided into three semantic zones. LIGHTING_ZONE_ALL
+ * The digital strip is divided into three semantic zones. LIGHTING_ZONE_ALL
  * broadcasts a command to all zones simultaneously.
  *
- *  LEDs  0 ..  9  →  ZONE_LEFT   (HV Temperature progress bar)
- *  LEDs 10 .. 12  →  ZONE_CENTER (TS Off / AMS / IMD status indicators)
- *  LEDs 13 .. 22  →  ZONE_RIGHT  (HV SoC progress bar)
+ *  ZONE_LEFT    HV accumulator voltage, as a bar
+ *  ZONE_CENTER  the ten status signals
+ *  ZONE_RIGHT   the temperature closest to its own critical limit, as a bar
+ *
+ * @note Reserved, together with the rest of the lighting command protocol
+ *       below. The lighting module does not subscribe to lighting_cmd_chan
+ *       yet: it renders the zones itself from app_state and knows nothing
+ *       about layers, states or effects. The zone contents above match what
+ *       modules/lighting/lighting.c draws; their LED boundaries follow the
+ *       strip length from the devicetree and are not fixed here.
  */
 enum lighting_zone_id {
     LIGHTING_ZONE_LEFT   = 0,
@@ -331,9 +484,10 @@ enum lighting_cmd_type {
 
 /** @brief Payload for lighting_cmd_chan. */
 struct lighting_cmd {
-    enum lighting_cmd_type  type;
+    enum lighting_cmd_type  type;  /**< Which command; selects the union member. */
     enum lighting_zone_id   zone;  /**< Target zone, or LIGHTING_ZONE_ALL. */
-    enum lighting_layer     layer;
+    enum lighting_layer     layer; /**< Render layer the command applies to.  */
+    /** Command payload; the active member follows @c type. */
     union {
         /** Used for LIGHTING_CMD_SET_STATE. */
         struct {
@@ -350,7 +504,14 @@ struct lighting_cmd {
 
 /* ---- audio_cmd_chan ------------------------------------------------------------------- */
 
-/** @brief Named audio effects for the piezo buzzer. */
+/**
+ * @brief Named audio effects for the piezo buzzer.
+ *
+ * @note The audio module does not distinguish them: the piezo is driven by a
+ *       plain GPIO, so any AUDIO_CMD_PLAY_EFFECT switches it on and
+ *       AUDIO_CMD_STOP switches it off. The descriptions below are the
+ *       intended sounds once tone generation exists.
+ */
 enum audio_effect_id {
     AUDIO_EFFECT_NONE          = 0,
     AUDIO_EFFECT_CONFIRM,       /**< Single short beep.             */
@@ -361,19 +522,31 @@ enum audio_effect_id {
 
 /** @brief Command types for the Audio module. */
 enum audio_cmd_type {
-    AUDIO_CMD_PLAY_EFFECT = 0, /**< Play a named sound effect.           */
-    AUDIO_CMD_STOP,            /**< Stop any active effect immediately.  */
+    AUDIO_CMD_PLAY_EFFECT = 0, /**< Sound on.                            */
+    AUDIO_CMD_STOP,            /**< Sound off. Also the initial value.   */
 };
 
-/** @brief Payload for audio_cmd_chan. */
+/**
+ * @brief Payload for audio_cmd_chan.
+ *
+ * Published by the App Layer on every change of the rtd_sound CAN signal.
+ */
 struct audio_cmd {
-    enum audio_cmd_type  type;
+    enum audio_cmd_type  type;   /**< Sound on or off. */
     enum audio_effect_id effect; /**< Valid for AUDIO_CMD_PLAY_EFFECT only. */
 };
 
 /* ---- can_tx_cmd_chan ------------------------------------------------------------------ */
 
-/** @brief CAN transmit command types. */
+/**
+ * @brief CAN transmit command types.
+ *
+ * @note Reserved. The design moved away from event-driven transmission: the
+ *       CAN module sends DCU_2_mABX on a fixed 100 ms schedule and pulls
+ *       mission and mode out of app_state itself, so nothing publishes on
+ *       can_tx_cmd_chan and the CAN module does not subscribe to it. Kept for
+ *       a future aperiodic frame that genuinely needs to be requested.
+ */
 enum can_tx_cmd_type {
     CAN_TX_CMD_SEND_MISSION     = 0, /**< Transmit mission selection frame.  */
     CAN_TX_CMD_SEND_RTD_REQUEST,     /**< Transmit RTD request frame.        */
@@ -381,7 +554,8 @@ enum can_tx_cmd_type {
 
 /** @brief Payload for can_tx_cmd_chan. */
 struct can_tx_cmd {
-    enum can_tx_cmd_type type;
+    enum can_tx_cmd_type type; /**< Which frame to transmit. */
+    /** Command payload; the active member follows @c type. */
     union {
         enum mission_id mission; /**< Valid for CAN_TX_CMD_SEND_MISSION. */
     } data;

@@ -1,26 +1,36 @@
 /**
- * @file        screen_sdc.c
- * @brief       
+ * @file
+ * @brief       Shutdown-circuit screen implementation
  *
- * @details     
+ * @ingroup     dcu_ui_screens
+ *
+ * @details     Renders the twelve shutdown-circuit nodes as LEDs on a top-down
+ *              car image and as a name table; the contract is in screen_sdc.h.
+ *
+ *              ### One table drives everything
+ *              k_sdc_nodes[] pairs each node's label, its LVGL subject and its
+ *              position on the image.  Both views and all observer wiring are
+ *              derived from it by index, so adding or moving a node is a
+ *              single-line change.
+ *
+ *              ### Two update mechanisms
+ *              The overlay LEDs each have their own observer and recolor
+ *              themselves.  The table cannot: an lv_table has no per-cell
+ *              color property.  Its text color is applied in a draw-task
+ *              callback that reads the subjects at paint time, and a second
+ *              set of observers only invalidates the table so that callback
+ *              runs again.  That is why the table observers ignore their
+ *              subject argument entirely.
+ *
+ *              The draw callback derives the node index from the cell
+ *              coordinates as row × 2 + column, which is the inverse of how
+ *              build_table() fills the table — the two must stay in step.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-08-05
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-08-05  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
@@ -35,8 +45,10 @@
 
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
+#include "modules/ui/widgets/ui_hintbar.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "generated/ui_subjects_gen.h"
@@ -54,27 +66,37 @@ LOG_MODULE_REGISTER(screen_sdc, CONFIG_LOG_DEFAULT_LEVEL);
 /** @brief Width of each table column in pixels. */
 #define SDC_COL_WIDTH           75
 
+/**
+ * @brief Number of shutdown-circuit nodes.
+ *
+ * Must match the length of k_sdc_nodes[] and stay even — the table lays the
+ * nodes out in two columns.
+ */
 #define SDC_NODE_COUNT          12
 
 /**
- * @brief Per-node descriptor: checklist label, Zbus subject, and the
+ * @brief Per-node descriptor: table label, LVGL subject, and the
  *        pixel position of the overlay LED relative to the image top-left.
  *
  * To adapt to a different vehicle adjust img_x / img_y only — the
- * checklist and observer wiring are derived automatically from this table.
+ * table and the observer wiring are derived automatically from this table.
  */
 typedef struct {
-    const char   *label;
-    lv_subject_t *subject;
-    int16_t       img_x;   /* overlay LED X on topdown image (px from image left) */
-    int16_t       img_y;   /* overlay LED Y on topdown image (px from image top)  */
+    const char   *label;   /**< Node name shown in the table.                     */
+    lv_subject_t *subject; /**< Generated RX subject; 1 = closed, 0 = open.        */
+    int16_t       img_x;   /**< Overlay LED X on topdown image (px from image left)*/
+    int16_t       img_y;   /**< Overlay LED Y on topdown image (px from image top) */
 } sdc_node_t;
 
-/*
- * Overlay LED positions are placeholders — adjust img_x / img_y to match
- * the actual component positions on the vehicle topdown image.
+/**
+ * @brief The twelve shutdown-circuit nodes.
  *
- * Coordinate origin: top-left corner of the car_topdown image.
+ * The order defines the table layout — index i lands in row i/2, column i%2 —
+ * so reordering entries rearranges the table.
+ *
+ * Overlay LED positions are placeholders: adjust img_x / img_y to match the
+ * actual component positions on the vehicle topdown image.  Coordinate origin
+ * is the top-left corner of that image, because the LEDs are its children.
  */
 static const sdc_node_t k_sdc_nodes[SDC_NODE_COUNT] = {
     /*  label        subject                       img_x  img_y */
@@ -97,18 +119,34 @@ static const sdc_node_t k_sdc_nodes[SDC_NODE_COUNT] = {
 /** @brief SDC status table (2 columns × 6 rows). */
 static lv_obj_t   *s_table;
 
-/** @brief LVGL input group for the right encoder. */
+/*
+ * The three group pointers are never assigned — the screen has no interactive
+ * widgets, so the accessors hand ui.c a NULL and the input devices are
+ * detached while this screen is shown.
+ */
+
+/** @brief Input group for the right encoder. Always NULL. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the left button. */
+/** @brief Input group for the left button pad. Always NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right button. */
+/** @brief Input group for the right button pad. Always NULL. */
 static lv_group_t *s_right_button_group;
 
 
+/**
+ * @brief What each control does on this screen; see @ref ui_hint_input.
+ *
+ * Static storage: ui_hintbar_create() keeps the pointers rather than copying
+ * the strings. Controls left out here are dimmed in the bar.
+ */
+static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
+    [UI_HINT_ENC_LEFT] = "Switch Screen",
+};
+
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
-static void build_checklist(lv_obj_t *scr);
+static void build_table(lv_obj_t *parent);
 static void sdc_led_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
 static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject);
 static void sdc_table_draw_cb(lv_event_t *e);
@@ -116,7 +154,16 @@ static void sdc_table_draw_cb(lv_event_t *e);
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
-/** @brief Observer for overlay LEDs on the car topdown image. */
+/**
+ * @brief Observer for one overlay LED on the car topdown image.
+ *
+ * Subject value 1 → node closed → green; 0 → node open → red. A shutdown
+ * circuit reports the state of its own contact, so a set bit is the healthy
+ * one: current is getting through.
+ *
+ * @param observer  Observer whose target object is the LED.
+ * @param subject   The node's ui_subj_sdc_* subject.
+ */
 static void sdc_led_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *led = lv_observer_get_target_obj(observer);
@@ -128,7 +175,11 @@ static void sdc_led_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
  * @brief Observer that triggers a table redraw when any SDC subject changes.
  *
  * Does not update individual cells — the draw callback reads subject values
- * directly at paint time, so invalidating the table is sufficient.
+ * directly at paint time, so invalidating the table is sufficient.  One
+ * instance is registered per node, all pointing at the same table.
+ *
+ * @param observer  Observer whose target object is the table.
+ * @param subject   Unused; only the fact that something changed matters.
  */
 static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
@@ -137,12 +188,20 @@ static void sdc_invalidate_cb(lv_observer_t *observer, lv_subject_t *subject)
 }
 
 /**
- * @brief Draw callback that colours table cell text based on SDC subject state.
+ * @brief Draw callback that colors table cell text based on SDC subject state.
  *
- * value = 0 → UI_C_DARK (node OK / SDC closed)
- * value = 1 → UI_C_RED  (node fault / SDC open)
+ * value = 1 → UI_C_DARK (node closed, healthy)
+ * value = 0 → UI_C_RED  (node open, circuit interrupted)
  *
- * Cell index = row × 2 + col, matching the k_sdc_nodes[] order.
+ * Runs per draw task, so it filters down to label tasks on LV_PART_ITEMS and
+ * ignores everything else the table draws. The cell coordinates arrive as
+ * base->id1 (row) and base->id2 (column); cell index = row × 2 + col, matching
+ * the k_sdc_nodes[] order.
+ *
+ * Requires LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS on the table — see
+ * build_table().
+ *
+ * @param e  LV_EVENT_DRAW_TASK_ADDED from the table.
  */
 static void sdc_table_draw_cb(lv_event_t *e)
 {
@@ -155,26 +214,25 @@ static void sdc_table_draw_cb(lv_event_t *e)
     uint8_t idx = (uint8_t)(base->id1 * 2u + base->id2);
     if (idx >= SDC_NODE_COUNT) return;
 
-    bool fault = lv_subject_get_int(k_sdc_nodes[idx].subject) != 0;
-    ((lv_draw_label_dsc_t *)lv_draw_task_get_draw_dsc(t))->color = fault ? UI_C_RED : UI_C_DARK;
+    bool open = lv_subject_get_int(k_sdc_nodes[idx].subject) == 0;
+    ((lv_draw_label_dsc_t *)lv_draw_task_get_draw_dsc(t))->color = open ? UI_C_RED : UI_C_DARK;
 }
 
 /**
- * @brief Build the 2×6 SDC status table on the right side of the screen.
+ * @brief Build the 6×2 SDC status table on the right side of the screen.
  *
- * One lv_table replaces the previous 12-label list.  Text colour is set
- * in sdc_table_draw_cb; sdc_invalidate_cb ensures the table repaints
+ * One lv_table replaces the previous 12-label list.  Text color is set
+ * in sdc_table_draw_cb(); sdc_invalidate_cb() ensures the table repaints
  * whenever any subject changes value.
+ *
+ * @param parent  Container to build into.
  */
-static void build_checklist(lv_obj_t *scr)
+static void build_table(lv_obj_t *parent)
 {
-    s_table = lv_table_create(scr);
+    s_table = lv_table_create(parent);
     lv_obj_remove_style_all(s_table);
 
     lv_table_set_column_count(s_table, 2);
-
-    // lv_table_set_cell_value(s_table, 0, 0, "SDC Components");
-    // lv_table_set_cell_ctrl(s_table, 0, 0, LV_TABLE_CELL_CTRL_MERGE_RIGHT);
 
     for (uint8_t i = 0; i < SDC_NODE_COUNT; i++) {
         lv_table_set_cell_value(s_table, i / 2u, i % 2u, k_sdc_nodes[i].label);
@@ -193,7 +251,6 @@ static void build_checklist(lv_obj_t *scr)
     lv_obj_set_style_border_color(s_table, UI_C_DARK,                      LV_PART_MAIN);
 
 
-    lv_obj_align(s_table, LV_ALIGN_RIGHT_MID, -12, 20);
     lv_obj_clear_flag(s_table, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_add_flag(s_table, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
@@ -221,13 +278,20 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
 
     ui_header_create(scr, "SDC", status_subjects);
 
+    /*
+     * Image and table stand side by side in the content area, centered on its
+     * height, with the free width shared evenly around them.
+     */
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+
     /* ── Topdown Image ───────────────────────────────────────────────────── */
 
     LV_IMAGE_DECLARE(car_topdown_b_i4);
 
-    lv_obj_t *img_car_topdown = lv_image_create(scr);
+    lv_obj_t *img_car_topdown = lv_image_create(content);
     lv_image_set_src(img_car_topdown, &car_topdown_b_i4);
-    lv_obj_align(img_car_topdown, LV_ALIGN_CENTER, -85, 24);
 
     /* ── Overlay LEDs on topdown image ───────────────────────────────────── */
     /*
@@ -245,25 +309,19 @@ lv_obj_t *screen_sdc_create(lv_subject_t *status_subjects)
                                     sdc_led_observer_cb, led, NULL);
     }
 
-    /* ── Status table (right side, 2×6) ─────────────────────────────────── */
+    /* ── Status table (right of the image, 2×6) ─────────────────────────── */
 
-    build_checklist(scr);
+    build_table(content);
 
-    /* ── Input group (right encoder) ─────────────────────────────────────── */
+    /* ── Input groups ────────────────────────────────────────────────────── */
 
     /*
-     * Tab order: roller → OK → RTD.
-     *
-     * ui.c assigns this group to the right encoder indev on screen entry:
-     *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group())
-     * and removes it on screen leave:
-     *   lv_indev_set_group(right_encoder_indev, NULL)
+     * Deliberately not created: with nothing to focus, leaving the groups NULL
+     * detaches the input devices, so a stray encoder turn or button press on
+     * this screen does nothing at all.  A screen with something to focus creates
+     * its groups here, as screen_checklist.c does.
      */
-    // s_right_encoder_group = lv_group_create();
-    // lv_group_set_editing(s_right_encoder_group, true);
-
-    // s_right_button_group = lv_group_create();
-    // lv_group_set_editing(s_right_button_group, true);
+    ui_hintbar_create(scr, k_hints);
 
     return scr;
 }

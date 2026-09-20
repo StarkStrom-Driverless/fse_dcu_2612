@@ -1,8 +1,224 @@
+/*
+ * QEMU Cortex-A53 – emulator setup for UI work without hardware
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The application reaches into the devicetree in these places, each through
+ * DEVICE_DT_GET at compile time:
+ *
+ *   chosen zephyr,display      ui.c        Backlight
+ *   chosen zephyr,canbus       can.c       CAN controller
+ *   alias    qdec-input-left   ui.c        Screen carousel (raw device)
+ *   nodelabel lvgl_encoder0    ui.c        Left encoder as an LVGL device (TQG Front)
+ *   alias    qdec-input-right  ui.c        Widget navigation
+ *   alias    keypad-left       ui.c        Left button pad
+ *   alias    keypad-right      ui.c        Right button pad
+ *   alias    keypad-rtd        ui.c        RTD button (PRE_RTD screen only)
+ *   alias    reserve-button    ui.c        Reserve button (raw device, every screen)
+ *   alias    piezo             audio.c     Buzzer
+ *   alias    led-strip         lighting.c  LED strip
+ *
+ * Miss one of them and the build fails, not just the boot. This overlay
+ * therefore provides an emulated stand-in for each. It mirrors what the real
+ * shield carries, not its pinout: which gpio_emul pin is what is an arbitrary
+ * choice and matters only here.
+ *
+ * What the emulator can really do
+ * ───────────────────────────────
+ * Display and CAN work for real: ramfb shows the UI, and the loopback driver
+ * accepts transmitted frames and delivers them back itself, so the CAN thread
+ * runs its full cycle.
+ *
+ * The inputs hang off emulated GPIOs that nobody moves from outside. They
+ * exist so LVGL finds its input devices and the screens get their groups — the
+ * UI cannot be operated in the emulator. Piezo and LED strip write into the
+ * void.
+ *
+ * When the application grows another device, its stand-in belongs here, or the
+ * QEMU build drops out of the build circle again.
+ */
 
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/led/led.h>
+#include <zephyr/dt-bindings/lvgl/lvgl.h>
 
 / {
-    ramfb0: ramfb {
-		width = <480>;
-		height = <320>;
+	chosen {
+		zephyr,canbus = &can_loopback0;
 	};
+
+	/*
+	 * Names and assignment as on the real shield — including the asymmetry
+	 * of the encoders: on the left ui.c attaches to the raw input device
+	 * with INPUT_CALLBACK_DEFINE, while on the right it picks up the LVGL
+	 * device through lvgl_input_get_indev().
+	 */
+	aliases {
+		qdec-input-left  = &qdec_input0;
+		qdec-input-right = &lvgl_encoder1;
+		keypad-left      = &keypad_left;
+		keypad-right     = &keypad_right;
+		keypad-rtd       = &keypad_rtd;
+		reserve-button   = &buttons3;
+		piezo            = &piezo_gpio;
+		led-strip        = &led_strip0;
+	};
+
+	/*
+	 * One emulated GPIO controller carries everything that hangs off pins on
+	 * the real board. All four interrupt kinds are enabled, because gpio-keys
+	 * and gpio-qdec expect edge detection.
+	 */
+	gpio_emul0: gpio_emul {
+		compatible = "zephyr,gpio-emul";
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <32>;
+		rising-edge;
+		falling-edge;
+		high-level;
+		low-level;
+		status = "okay";
+	};
+
+	/*
+	 * CAN: loopback instead of a transceiver. The driver enables itself from
+	 * this node alone (CAN_LOOPBACK defaults to y); CONFIG_CAN is already in
+	 * prj.conf.
+	 */
+	can_loopback0: can_loopback {
+		compatible = "zephyr,can-loopback";
+		status = "okay";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		piezo_gpio: piezo_gpio {
+			gpios = <&gpio_emul0 0 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	/*
+	 * LED strip: TLC59731 instead of APA102.
+	 *
+	 * The APA102 driver needs an SPI bus, which QEMU does not have here.
+	 * TLC59731 is the only LED-strip driver in Zephyr that bit-bangs over a
+	 * single GPIO and is not tied to one SoC family — so it runs on
+	 * gpio_emul.
+	 *
+	 * chain-length deliberately matches the real APA102, so the gear
+	 * animation has the same geometry in the emulator. lighting.c reads the
+	 * value from the devicetree and knows nothing about the driver behind
+	 * it.
+	 */
+	led_strip0: led_strip {
+		compatible = "ti,tlc59731";
+		gpios = <&gpio_emul0 1 GPIO_ACTIVE_HIGH>;
+		chain-length = <28>;
+		color-mapping = <LED_COLOR_ID_BLUE LED_COLOR_ID_GREEN LED_COLOR_ID_RED>;
+		status = "okay";
+	};
+
+	/* ── Inputs ───────────────────────────────────────────────────────── */
+
+	qdec_input0: qdec-encoder0 {
+		compatible = "gpio-qdec";
+		gpios = <&gpio_emul0 2 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpio_emul0 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		steps-per-period = <2>;
+		zephyr,axis = <INPUT_REL_WHEEL>;
+		sample-time-us = <2000>;
+		idle-timeout-ms = <200>;
+		status = "okay";
+	};
+
+	qdec_input1: qdec-encoder1 {
+		compatible = "gpio-qdec";
+		gpios = <&gpio_emul0 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>,
+			<&gpio_emul0 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		steps-per-period = <2>;
+		zephyr,axis = <INPUT_REL_HWHEEL>;
+		sample-time-us = <2000>;
+		idle-timeout-ms = <200>;
+		status = "okay";
+	};
+
+	lvgl_encoder0: lvgl-encoder0 {
+		compatible = "zephyr,lvgl-encoder-input";
+		rotation-input-code = <INPUT_REL_WHEEL>;
+		status = "okay";
+	};
+
+	lvgl_encoder1: lvgl-encoder1 {
+		compatible = "zephyr,lvgl-encoder-input";
+		rotation-input-code = <INPUT_REL_HWHEEL>;
+		status = "okay";
+	};
+
+	buttons0: gpio_keys0 {
+		compatible = "gpio-keys";
+		left_button: button_1 {
+			gpios = <&gpio_emul0 6 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	buttons1: gpio_keys1 {
+		compatible = "gpio-keys";
+		right_button: button_2 {
+			gpios = <&gpio_emul0 7 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	buttons2: gpio_keys2 {
+		compatible = "gpio-keys";
+		rtd_button: button_3 {
+			gpios = <&gpio_emul0 8 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	/*
+	 * Reserve button. As on the real shield it has no keypad indev: ui.c
+	 * reads the gpio-keys device itself, so the alias points at the device
+	 * node, not at an LVGL input.
+	 */
+	buttons3: gpio_keys3 {
+		compatible = "gpio-keys";
+		reserve_button: button_4 {
+			gpios = <&gpio_emul0 9 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			zephyr,code = <INPUT_KEY_ENTER>;
+		};
+	};
+
+	keypad_left: keypad0 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons0>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+
+	keypad_right: keypad1 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons1>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+
+	keypad_rtd: keypad2 {
+		compatible = "zephyr,lvgl-keypad-input";
+		input = <&buttons2>;
+		input-codes = <INPUT_KEY_ENTER>;
+		lvgl-codes = <LV_KEY_ENTER>;
+	};
+};
+
+/*
+ * The board brings ramfb up at 1024x768; the DCU expects the format of the
+ * 3.5-inch display.
+ */
+&ramfb0 {
+	width = <480>;
+	height = <320>;
 };

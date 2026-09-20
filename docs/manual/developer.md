@@ -11,7 +11,7 @@ This part is aimed at developers who build, extend or port the DCU firmware.
 | Controller | STM32F405RG, 168 MHz, 1 MB flash, 128 KB RAM (+64 KB DTCM/CCM) |
 | Board | `fse_pb` (processor board) |
 | Shield | `fse_dcu_2612` (display board) |
-| Display | 3.5" colour display via SPI2 |
+| Display | 3.5" color display via SPI2 |
 | LED strip | APA102 via SPI3 |
 | CAN | CAN3, 1 Mbit/s, TJA1048 transceiver |
 | Inputs | 2 GPIO quadrature encoders, 4 GPIO buttons |
@@ -87,17 +87,6 @@ receive commands.
 | `src/services/settings/` | Persistent settings (NVS) |
 | `src/generated/` | Generated code — **do not edit by hand** |
 
-<!-- Further reading:
-
-| Document | Content |
-|---|---|
-| `docs/architecture.md` | Overall architecture, design decisions |
-| `docs/modules.md` | Module specifications |
-| `docs/event_system.md` | Zbus channels and subscriber model |
-| `docs/thread_model.md` | Threads, priorities, stack sizes |
-| `docs/ui_data_flow.md` | Data flow CAN → UI |
-| `docs/settings_module.md` | Persistence, flash layout, schema generation | -->
-
 ### Threads
 
 | Thread | Priority | Task |
@@ -105,6 +94,7 @@ receive commands.
 | CAN | 3 | Decode RX, send TX, bus status |
 | App | 5 | Process events, issue commands |
 | UI (LVGL) | 8 | `lv_timer_handler()`, input, rendering |
+| Demo | 9 | Emulator only, see @ref manual-developer-demo |
 
 All LVGL calls happen exclusively in the UI thread. Values needed by other
 threads live in `app_state` or in the settings service — both are mutex
@@ -324,6 +314,34 @@ west build -p always -b qemu_cortex_a53
 west build -t run
 ```
 
+The emulator has no way to feed it input, and its CAN controller is a loopback
+that never receives anything from outside, so the screens show only zeros.
+
+#### Demo mode {#manual-developer-demo}
+
+To take screenshots, add the demo overlay:
+
+```sh
+west build -p always -b qemu_cortex_a53 -- -DEXTRA_CONF_FILE=demo.conf
+west build -t run
+```
+
+The firmware then publishes a fixed, plausible CAN snapshot and loads the next
+screen every five seconds — DV MISSION, SDC, EV CHECKLIST, EV DRIVING, DV DRIVING,
+the debug screens and SETTINGS, then back to the START screen. Each stop is
+logged as `Demo: <name>`. `CONFIG_DCU_DEMO_SCREEN_PERIOD_MS` changes the time
+per screen.
+
+The snapshot goes into the same channel the CAN thread publishes on, so header
+icons, bars and colors react as they would to real bus traffic. The CAN driver
+itself and its decoder are not exercised. All values are inside their limits on
+purpose: a screenshot then shows the layout, not a fault. To show the gold or
+red coloring, move a value past its threshold in `s_snapshot` in
+`src/modules/demo/demo.c`.
+
+The option depends on the emulator target, so it cannot be enabled in a
+hardware build.
+
 <!-- ### Resource budget
 
 Flash is tight — keep an eye on it while building:
@@ -355,7 +373,7 @@ gets tight, that is where the leverage is. -->
        signals:
          Neues_Signal:
            app_name: neues_signal
-           ui: { label: "Neues Signal", precision: 1 }
+           ui: { label: "New Signal", short_label: "New", unit: "bar", precision: 1 }
            limits: { critical_low: 5, warning_low: 15, warning_high: 60, critical_high: 75 }
            range: { min: 0, max: 100 }
    ```
@@ -363,19 +381,52 @@ gets tight, that is where the leverage is. -->
    | Key | Effect |
    |---|---|
    | `app_name` | Field name in the snapshot and name of the LVGL subject |
-   | `ui.label` | Caption for the UI |
-   | `ui.precision` | Number of decimal places |
-   | `limits` | Generates threshold defines for warning and critical bounds |
-   | `range` | Generates `UI_<NAME>_RANGE_MIN` / `_MAX`, e.g. for `lv_bar_set_range()` |
+   | `ui.label` | Full caption, as on a debug screen |
+   | `ui.short_label` | Compact caption for tight layouts; falls back to `label` |
+   | `ui.unit` | Unit suffix. Falls back to the unit in the DBC, so give it only where the DBC has none |
+   | `ui.precision` | Decimal places, 0 to 4; above 0 only for a signal with a factor or offset in the DBC |
+   | `limits` | Warning and critical bounds, in physical units; any subset of the four |
+   | `range` | The span a bar shows, in physical units |
    | `persist` | TX only: makes the signal persistent (see below) |
+
+   The generator checks the presentation data and stops with a message when it
+   does not hold together: every limit has to lie inside the `range`, the limits
+   have to be ordered, and a unit taken from the DBC has to be plain ASCII. The
+   first of those catches the typical mistake of a bar that ends before the
+   limit that is supposed to color it.
 
 2. **Run the generator** — `python3 tools/codegen/gen_can.py`
 
-3. **Adapt the UI** — bind the `ui_subj_neues_signal` subject to a widget:
+   Besides the subject `ui_subj_neues_signal` it emits a descriptor
+   `ui_sig_neues_signal` (`struct ui_signal_desc` in `ui_subjects_gen.h`) for
+   every numeric signal that declares a label, a unit, a range or limits. It
+   carries the subject together with the caption, unit, printf format, range and
+   limits, and is the one source for how the value is shown.
+
+3. **Adapt the UI** — bind the subject to a widget, and take everything about
+   its presentation from the descriptor rather than writing it into the screen.
+   A caption, a unit, a number of decimals, a bar range or a limit typed into a
+   screen is a second copy that silently drifts from the YAML:
 
    ```c
-   lv_bar_bind_value(bar_new_signal, &ui_subj_new_signal);
+   const struct ui_signal_desc *d = &ui_sig_neues_signal;
+
+   lv_bar_set_range(bar, (int32_t)d->range_min, (int32_t)d->range_max);
+   lv_bar_bind_value(bar, d->subject);
+
+   lv_label_set_text(title, d->label);
+
+   lv_obj_t *qty = ui_quantity_create(scr, &BarlowCondensed_BoldItalic_32,
+                                      &BarlowCondensed_Italic_20, d->unit);
+   ui_quantity_bind_signal(qty, d);   /* value, format and limit coloring */
    ```
+
+   `ui_quantity_bind_signal()` binds the value with the descriptor's format and,
+   if the signal declares limits, colors it gold past the warning limit and red
+   past the critical one. A signal without limits is left uncolored.
+
+   An `lv_bar` is integral, so the range is cut to whole numbers and a float
+   signal moves the bar in whole steps of its unit.
 
 4. **Build and flash**
 
@@ -393,10 +444,12 @@ If a TX signal is to survive a restart, a `persist` block is all it takes:
 ```
 
 The value range follows from the bit width in the DBC. The generator creates
-the entry in `settings_schema_gen.h`; the settings service handles loading,
-saving and range checking without further action.
+the entry in `settings_schema_gen.h` and adds the signal to the apply-settings
+helper in `can_tx_gen.h`, which the CAN module calls for every frame. Loading,
+saving, range checking and transmitting therefore need no further action.
 
-Details in `docs/settings_module.md`.
+The service, its ownership model and the write-behind are documented in
+`src/services/settings/settings.h`.
 
 ## Adding a new feature
 
@@ -408,6 +461,54 @@ Details in `docs/settings_module.md`.
 3. Register the factory in `k_screen_factories[]` in `ui.c` and, if needed, add
    the screen to `k_carousel[]`
 4. Create the header via `ui_header_create(scr, "TITLE", status_subjects)`
+5. Build the content into the area the frame leaves free (next section)
+
+#### Laying out a screen
+
+Every screen has the same frame — header, page bar, hint bar — and
+`ui_layout.h` says where what is left lies. A screen builds into containers and
+lets them place the widgets; it does not name a coordinate:
+
+```c
+lv_obj_t *content = ui_layout_content_create(scr);       // between the frame
+lv_obj_t *left    = ui_layout_column_create(content, 50); // half of the width
+lv_obj_t *right   = ui_layout_column_create(content, 50);
+// create widgets with `left` or `right` as their parent
+```
+
+Where a size has to be a number — a gap, the height of a bar — it is given in
+*units* with `ui_layout_u()`. A unit is 1/32 of the shorter side of the display,
+10 px on the 480 × 320 panel, so a layout keeps its proportions on another panel
+instead of its pixels. Widths and heights that are a share of the space use
+`lv_pct()`.
+
+The frame is proportional as well: the header and the hint bar are a share of
+the display height (`UI_LAYOUT_HEADER_PCT`, `UI_LAYOUT_HINTBAR_PCT`), the page
+bar one unit. A screen that has to stand something on the bottom edge asks for
+`ui_layout_hintbar_h()` instead of assuming a height.
+
+The fonts are the one thing that does not scale: they are compiled at fixed
+sizes. A layout can give a large number the room it needs, but it cannot make
+the number smaller.
+
+#### Naming in screens
+
+A screen's names say what a thing is and what it does, and they read the same
+in every file:
+
+- **Widgets** are named `<kind>_<role>`: `btn_send`, `lbl_caption`, `slider_left`,
+  `roller`, `table`. The kinds are `btn`, `lbl`, `slider`, `bar`, `roller`,
+  `qty` (a `ui_quantity`), `row`, `col`. A widget that outlives the factory
+  function is a file-scope `s_<kind>_<role>`.
+- **Builders** are `build_<what>()` and take the container they build into
+  (`parent`, or `content` and `column` where the container is meant).
+- **Callbacks** end in `_event_cb` for LVGL events and `_observer_cb` for
+  subjects, and start with the widget or subject they belong to:
+  `btn_send_event_cb`, `toggle_observer_cb`.
+- **Layout sizes** carry their unit in the name: `_U` for layout units, `_PCT`
+  for a share, none for pixels that are tied to a font or an asset.
+- The header title is the screen's name everywhere: the header, the manual and
+  the demo tour use the same string.
 
 Screens are created lazily and released when left. State that has to outlive
 that does not belong in the screen, but in a module-wide subject, in
@@ -418,8 +519,9 @@ that does not belong in the screen, but in a module-wide subject, in
 1. Create a directory under `src/modules/<name>/`
 2. Add the Zbus channel and payload to `events.h` and `event_bus.{c,h}`
 3. Provide `<name>_module_init()` and call it from `main.c` at the right point
-   in the initialisation order
-4. Describe the module in `docs/modules.md`
+   in the initialization order
+4. Document the module in its `<name>.h` file header — that header is what
+   Doxygen publishes
 
 `CMakeLists.txt` does not need touching — `FILE(GLOB_RECURSE app_sources
 src/*.c)` picks up new files automatically.
@@ -512,7 +614,7 @@ Results: website under `docs/_build`, PDF under
 
 The public version is **`2612.<minor>.<patch>`**. The leading number identifies
 the vehicle generation — year 26, twelfth car built — and is what appears on
-the boot screen, in the git tag and on the generated documentation.
+the START screen, in the git tag and on the generated documentation.
 
 Internally that number is split across two files, because it does not fit where
 the toolchain stores it.
@@ -549,12 +651,12 @@ numbers in one place. `CMakeLists.txt` reads it and computes `DCU_VEHICLE_ID`.
 
 ```
 VERSION file   12.1.0        Zephyr, MCUboot image header
-Boot screen    v2612.1.0     via app_version.h + DCU_VEHICLE_ID
+START screen   v2612.1.0     via app_version.h + DCU_VEHICLE_ID
 Git tag        v2612.1.0
 ```
 
 The index appears exactly once, so the two representations cannot drift. The
-boot screen reads `APP_VERSION_MINOR` and `APP_PATCHLEVEL` from the generated
+START screen reads `APP_VERSION_MINOR` and `APP_PATCHLEVEL` from the generated
 `app_version.h` rather than a hard-coded string, so what the display shows is
 always what was built.
 
@@ -562,7 +664,7 @@ always what was built.
 
 | Field | Bump when |
 |---|---|
-| `PATCHLEVEL` | Bug fixes, no behavioural change for the driver |
+| `PATCHLEVEL` | Bug fixes, no behavioral change for the driver |
 | `VERSION_MINOR` | New features — a new screen, a new signal, a new setting |
 | `VERSION_MAJOR` | Only with a new vehicle; `DCU_VEHICLE_YEAR` changes with it |
 
@@ -619,9 +721,9 @@ builds both outputs and uploads them as artifacts, so a reviewer can download
 the PDF and look at the rendered result instead of reading raw Markdown.
 
 Its purpose is to surface a broken documentation build on the pull request
-rather than when a release tag is pushed. In particular it fails on Unicode
-characters that LaTeX cannot typeset, which are easy to introduce and produce
-no warning locally until the PDF build runs.
+rather than when a release tag is pushed — a Unicode character LaTeX cannot
+typeset, for instance, is easy to introduce and stays invisible until the PDF
+build runs.
 
 ## Releasing
 
@@ -643,13 +745,17 @@ increment — you decide the number when you tag. A tag containing a hyphen
    present
 2. Derives `PROJECT_VERSION` from the tag, which Doxygen picks up as
    `PROJECT_NUMBER` — the version on the generated pages matches the release
-3. Builds the HTML website and the PDF manual
-4. Aborts if LaTeX rejected any Unicode characters — box-drawing glyphs
-   (U+2500 to U+257F) and geometric shapes (U+25A0 to U+25FF) have no glyph in
-   the default LaTeX fonts and would otherwise produce a broken PDF
-5. Publishes the HTML to GitHub Pages
-6. Creates the GitHub release with the PDF attached, named
+3. Builds the HTML website and the PDF manual, printing the tail of
+   `refman.log` if LaTeX fails
+4. Publishes the HTML to GitHub Pages
+5. Creates the GitHub release with the PDF attached, named
    `dcu-manual-v1.2.0.pdf`
+
+A LaTeX failure needs no separate guard: `make` propagates a non-zero exit from
+`pdflatex`, so a character with no glyph in the default fonts fails the job on
+its own. Box-drawing glyphs (U+2500 to U+257F) and geometric shapes (U+25A0 to
+U+25FF) are the usual offenders — avoid them in the manual sources and use
+tables instead of ASCII-art trees.
 
 Source archives (zip and tar.gz) are attached by GitHub automatically. They do
 **not** contain submodules — the theme is a build-time dependency of the

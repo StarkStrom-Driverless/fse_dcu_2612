@@ -1,11 +1,18 @@
 /**
- * @file        event_bus.c
+ * @file
  * @brief       Zbus channel definitions for the FSE DCU 2612 event bus
+ *
+ * @ingroup     dcu_event_bus
  *
  * @details     Defines all Zbus channels with their message types and initial
  *              values. Channels are defined with ZBUS_OBSERVERS_EMPTY; each
  *              module registers its own subscriber via ZBUS_CHAN_ADD_OBS in
- *              its own source file.
+ *              its own source file. That keeps the dependency pointing one way:
+ *              this service never has to know which modules exist.
+ *
+ *              The initial value matters — Zbus channels are readable before
+ *              anything is published, so every channel starts on the safe
+ *              interpretation (CAN disconnected, no mission, sound off).
  *
  *              This file contains no business logic. It is the single
  *              translation unit that allocates channel storage.
@@ -13,20 +20,8 @@
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
@@ -98,12 +93,20 @@ ZBUS_CHAN_DEFINE(vehicle_status_chan,
 
 /* ── Downward Channel Definitions: App → Module ──────────────────────────────────────────────── */
 
+ZBUS_CHAN_DEFINE(ui_nav_chan,
+    struct ui_nav_cmd,
+    NULL,
+    NULL,
+    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_MSG_INIT(.screen = SCREEN_NONE)
+);
+
 ZBUS_CHAN_DEFINE(ui_cmd_chan,
     struct ui_cmd,
     NULL,
     NULL,
     ZBUS_OBSERVERS_EMPTY,
-    ZBUS_MSG_INIT(.type = UI_CMD_SET_SCREEN, .data.screen = SCREEN_NONE)
+    ZBUS_MSG_INIT(.type = UI_CMD_UPDATE_DATA)
 );
 
 ZBUS_CHAN_DEFINE(lighting_cmd_chan,

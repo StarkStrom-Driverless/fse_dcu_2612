@@ -1,26 +1,55 @@
 /**
- * @file        screen_debug_tractive_system.h
- * @brief       Debug screen for tractive system
+ * @file
+ * @brief       Debug screen for the tractive system
  *
- * @details     
+ * @ingroup     dcu_ui_screens
+ *
+ * @details     A read-only debug screen: bars bound to generated LVGL subjects,
+ *              no interactive widgets, no events published.
+ *
+ *              Six values in two columns, each as a bar with its numeric
+ *              readout: tractive-system voltage, highest motor temperature and
+ *              inverter temperature on the left; the two accelerator pedal
+ *              position sensors and the brake pedal position on the right.
+ *
+ *              Both APPS channels are shown side by side on purpose — they are
+ *              redundant sensors, and a plausibility fault shows up as the two
+ *              bars drifting apart.
+ *
+ *              ### Screen layout (480 × 320)
+ *
+ *              ```
+ *              ┌──────────────────────────────────────┐
+ *              │ DBG TS                        ▪▪▪▪▪▪ │ ← shared header
+ *              ├──────────────────────────────────────┤
+ *              │ TS Voltage          APPS Left        │
+ *              │ ▓▓▓▓▓▓░░░  488 V    ▓▓▓░░░░   4200   │
+ *              │ Motor Temp          APPS Right       │
+ *              │ ▓▓▓▓░░░░░   52 °C   ▓▓▓░░░░   4198   │
+ *              │ Inverter Temp       Brake Pedal      │
+ *              │ ▓▓▓░░░░░░   38 °C   ░░░░░░░      0   │
+ *              └──────────────────────────────────────┘
+ *              ```
+ *
+ *              Every bar row takes what it shows from its signal descriptor
+ *              (ui_sig_*, generated from dbc/dcu_app.yaml): the caption, the
+ *              unit, the decimals, the bar range and the limits. Nothing of
+ *              that is written into this screen. A readout turns gold past its
+ *              warning limit and red past its critical one, through
+ *              ui_quantity_bind_signal().
+ *              A signal that declares no limits stays uncolored: the
+ *              tractive-system voltage (dead while the system is off) and the
+ *              three pedal positions (commands, not health values).
+ *
+ *              Reachable through the screen carousel only.  All three group
+ *              accessors return NULL, so the right encoder and both button
+ *              pads are detached while this screen is shown.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-24
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-06-24  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef MODULES_UI_SCREENS_SCREEN_DEBUG_TRACTIVE_SYSTEM_H
@@ -34,33 +63,29 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the mission selection screen.
+ * @brief Create the tractive system debug screen.
  *
- * Builds the header, roller, OK button, RTD button, and the LVGL input group.
+ * Builds the header and the value bars, binding each to its generated subject.
  * Must be called after ui_styles_init().
  *
- * @return  Pointer to the top-level screen object.  Never NULL.
+ * @param status_subjects  Device-status subjects for the header widget.
+ * @return                 Pointer to the top-level screen object. Never NULL.
  */
 lv_obj_t *screen_debug_tractive_system_create(lv_subject_t *status_subjects);
 
-/**
- * @brief Return the LVGL input group for the right encoder.
- *
- * Tab order: roller → OK button → RTD button.
- * ui.c assigns this group to the RIGHT encoder input device whenever this
- * screen becomes active, and removes it when navigating away:
- *
- * @code
- *   // on screen enter:
- *   lv_indev_set_group(right_encoder_indev, screen_debug_tractive_system_get_group());
- *   // on screen leave:
- *   lv_indev_set_group(right_encoder_indev, NULL);
- * @endcode
- *
- * @return  Pointer to the lv_group_t.  Valid after screen_debug_tractive_system_create().
+/*
+ * The screen has no interactive widgets, so all three accessors return NULL
+ * and ui.c detaches the corresponding input device while it is shown. They
+ * exist because ui.c calls the same three accessors for every screen.
  */
+
+/** @brief Return the input group for the right encoder. @return Always NULL. */
 lv_group_t *screen_debug_tractive_system_get_right_encoder_group(void);
+
+/** @brief Return the input group for the left button pad. @return Always NULL. */
 lv_group_t *screen_debug_tractive_system_get_left_button_group(void);
+
+/** @brief Return the input group for the right button pad. @return Always NULL. */
 lv_group_t *screen_debug_tractive_system_get_right_button_group(void);
 
 #endif /* MODULES_UI_SCREENS_SCREEN_DEBUG_TRACTIVE_SYSTEM_H */

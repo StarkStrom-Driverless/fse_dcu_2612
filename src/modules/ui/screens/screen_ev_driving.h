@@ -1,71 +1,75 @@
 /**
- * @file        screen_ev_driving.h
+ * @file
  * @brief       EV driving screen factory
  *
- * @details     Provides a factory function and a group accessor for the ev driving screen.
+ * @ingroup     dcu_ui_screens
  *
- *              Screen layout (480 × 320)
- *              ─────────────────────────
+ * @details     The driver's screen while the car is moving under electric
+ *              drive: live temperatures and accumulator voltage, plus the two
+ *              settings that may be changed on the move.
  *
- *                ┌──────────────────────────────────────┐
- *                │  MISSION                 ← gradient header (15 %)
- *                ├──────────────────────────────────────┤
- *                │                                      │
- *                │         ┌─────────────────┐          │
- *                │         │  Acceleration   │          │ ← Roller
- *                │         │▶ Skidpad       ◀│          │   right encoder
- *                │         │  Autocross      │          │
- *                │         └─────────────────┘          │
- *                │                                      │
- *                │    ┌───────────┐  ┌───────────┐      │
- *                │    │    OK     │  │    RTD    │      │
- *                │    └───────────┘  └───────────┘      │
- *                └──────────────────────────────────────┘
+ *              ### Screen layout (480 × 320)
  *
- *              Encoder / button assignment
- *              ────────────────────────────
- *              Left  encoder  →  screen carousel (managed by ui.c, not this screen)
- *              Right encoder  →  assigned to this screen's LVGL group by ui.c
- *                                Tab order:  [Roller] → [OK] → [RTD]
+ *              ```
+ *              ┌──────────────────────────────────────┐
+ *              │ EV DRIVING                    ▪▪▪▪▪▪ │ ← shared header
+ *              ├──────────────────────────────────────┤
+ *              │TQG F                            TQG R│
+ *              │ ▓                                  ▓ │
+ *              │ ▓  HV Accu  Inverter   Motor      ▓ │ ← left/right sliders
+ *              │ ▓   38°C      52°C      61°C      ▓ │   TQG F / TQG R
+ *              │ ▓                                  ▓ │
+ *              │ ▓   HV Accu Voltage        496 V   ▓ │
+ *              │ ▓   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░    ▓ │
+ *              │ ▓   ┌───────────┐   ┌───────────┐  ▓ │
+ *              │ ▓   │ PWR Limit │   │ TQ Vect   │  ▓ │
+ *              │     │ OFF       │   │ ON        │    │ ← green while ON
+ *              │     └───────────┘   └───────────┘    │
+ *              ```
  *
- *              Physical buttons on this screen:
- *                ESC  →  ui.c handles navigation back to boot screen
- *                OK   →  LV_KEY_ENTER → click focused widget (toggle roller
- *                         edit-mode or confirm OK / RTD button)
- *                RTD  →  publishes UI_INPUT_RTD_REQUEST directly (input module)
- *                TS   →  not used on this screen
+ *              Three columns in the content area (ui_layout.h): the two sliders
+ *              take what their width needs, the middle column takes the rest.
+ *              In the middle column the HV bar and the two buttons form a block
+ *              at the foot, a share of the column's width, centered: the bar is
+ *              shorter than the column, and the buttons hang at its two ends so
+ *              their outer edges line up with the ends of the bar. The three
+ *              temperatures take the height above the block and stand on it.
+ *              No widget has a coordinate.
  *
- *              Two distinct user actions
- *              ──────────────────────────
- *              OK  button widget  →  publishes UI_INPUT_MISSION_SELECTED
- *                                    carrying the roller's current selection.
- *                                    App Layer updates mission state and sends
- *                                    CAN_TX_CMD_SEND_MISSION.
+ *              ### Input assignment
  *
- *              RTD button widget  →  publishes UI_INPUT_RTD_REQUEST (no payload).
- *                                    App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                                    with the last-known drive mode.
+ *              | Input         | Drives                                      |
+ *              |---------------|---------------------------------------------|
+ *              | Left encoder  | The left torque-gain slider (TQG F)         |
+ *              | Right encoder | The right torque-gain slider (TQG R)        |
+ *              | Left buttons  | PWR Limit on/off                            |
+ *              | Right buttons | TQ Vect on/off                              |
  *
- *              Rolling the roller does NOT trigger any CAN transmission; only
- *              pressing OK or RTD does.
+ *              This screen is not in the carousel. It is loaded only when the
+ *              MABX reports RTD_State = 1, and the left encoder is claimed for
+ *              TQG F, so there is no input left to navigate away with — the
+ *              driver stays here until the car is powered down.
+ *
+ *              Both buttons are the same widget with a different caption: a
+ *              checkable button showing its title and ON/OFF, green while on,
+ *              mirroring a generated TX subject through an observer — so the
+ *              visual state follows the stored value rather than the press.
+ *
+ *              Neither setting is a boolean in the schema (power limit 0…7,
+ *              torque vectoring 0…3). Here they are reduced to on/off: any
+ *              non-zero value shows ON, switching on stores 1, switching off
+ *              stores 0. A level chosen on SETTINGS is flattened the first
+ *              time the button is pressed.
+ *
+ *              @note The torque-gain sliders are display-only so far: their
+ *              positions are remembered across visits but are not written to
+ *              any setting or CAN signal.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-15
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-06-15  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 #ifndef MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H
@@ -79,33 +83,54 @@
 /* ── Public Function Declarations ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Create the mission selection screen.
+ * @brief Create the EV driving screen.
  *
- * Builds the header, roller, OK button, RTD button, and the LVGL input group.
+ * Builds the header, the two torque-gain sliders, the temperature readouts,
+ * the HV bar, the two setting buttons and the four input groups.
  * Must be called after ui_styles_init().
  *
- * @return  Pointer to the top-level screen object.  Never NULL.
+ * @param status_subjects  Device-status subjects for the header widget.
+ * @return                 Pointer to the top-level screen object. Never NULL.
  */
 lv_obj_t *screen_ev_driving_create(lv_subject_t *status_subjects);
 
 /**
  * @brief Return the LVGL input group for the right encoder.
  *
- * Tab order: roller → OK button → RTD button.
- * ui.c assigns this group to the RIGHT encoder input device whenever this
- * screen becomes active, and removes it when navigating away:
+ * Contains the right torque-gain slider, in edit mode, so a turn changes its
+ * value instead of moving focus.
  *
- * @code
- *   // on screen enter:
- *   lv_indev_set_group(right_encoder_indev, screen_ev_driving_get_group());
- *   // on screen leave:
- *   lv_indev_set_group(right_encoder_indev, NULL);
- * @endcode
- *
- * @return  Pointer to the lv_group_t.  Valid after screen_ev_driving_create().
+ * @return  The group. Valid only after screen_ev_driving_create().
  */
 lv_group_t *screen_ev_driving_get_right_encoder_group(void);
+
+/**
+ * @brief Return the LVGL input group for the left encoder.
+ *
+ * Contains the left torque-gain slider, in edit mode. ui.c routes the left
+ * encoder here for this screen; a non-NULL group is also what tells ui.c to
+ * stop driving the carousel with that encoder.
+ *
+ * @return  The group. Valid only after screen_ev_driving_create().
+ */
+lv_group_t *screen_ev_driving_get_left_encoder_group(void);
+
+/**
+ * @brief Return the LVGL input group for the left button pad.
+ *
+ * Contains the PWR Limit button.
+ *
+ * @return  The group. Valid only after screen_ev_driving_create().
+ */
 lv_group_t *screen_ev_driving_get_left_button_group(void);
+
+/**
+ * @brief Return the LVGL input group for the right button pad.
+ *
+ * Contains the TQ Vect button.
+ *
+ * @return  The group. Valid only after screen_ev_driving_create().
+ */
 lv_group_t *screen_ev_driving_get_right_button_group(void);
 
 #endif /* MODULES_UI_SCREENS_SCREEN_EV_DRIVING_H */

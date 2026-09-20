@@ -1,53 +1,47 @@
 /**
- * @file        screen_mission_select.c
+ * @file
  * @brief       Mission selection screen implementation
+ *
+ * @ingroup     dcu_ui_screens
  *
  * @details     Builds the mission selection screen with:
  *
- *                – Roller  : lists all seven FS disciplines; controlled by the
- *                            right encoder via an lv_group_t.  Rolling does NOT
- *                            publish any Zbus event — the selection is only
- *                            transmitted when OK or RTD is pressed.
+ *                – Roller       : the mission list, scrolled by the right
+ *                                 encoder.  Scrolling publishes nothing; it
+ *                                 only moves the highlight.
  *
- *                – OK button  : confirms the roller's current selection and
- *                               publishes UI_INPUT_MISSION_SELECTED to
- *                               ui_input_chan.  The App Layer then calls
- *                               app_state_set_mission() and sends the mission
- *                               over CAN (CAN_TX_CMD_SEND_MISSION).
+ *                – Label        : "Current Mission: …", driven by an observer
+ *                                 on ui_tx_subj_drive_mode, so it always shows
+ *                                 what was last confirmed rather than what is
+ *                                 highlighted.
  *
- *                – RTD button : requests Ready-to-Drive by publishing
- *                               UI_INPUT_RTD_REQUEST to ui_input_chan.  The
- *                               App Layer sends CAN_TX_CMD_SEND_RTD_REQUEST
- *                               using the last-known drive mode.  Can be
- *                               pressed without having first confirmed a mission
- *                               (MISSION_NONE drive mode = 0 is then used).
+ *                – SEND MISSION : publishes UI_INPUT_MISSION_SELECTED with the
+ *                                 highlighted index and updates the TX subject.
+ *                                 The App Layer writes it to app_state; the CAN
+ *                                 module transmits it on its next cycle.  No
+ *                                 CAN frame is built here.
  *
- *              Right encoder interaction (LVGL group)
- *              ───────────────────────────────────────
- *              Tab order: [Roller] → [OK] → [RTD] (wraps around)
+ *              ### State across visits
+ *              The screen is destroyed on leaving, so the roller position is
+ *              kept in the file-scope subject s_roller_sel and restored when
+ *              the screen is rebuilt.  The confirmed mission lives in the
+ *              generated TX subject, which is only the UI's mirror: app_state
+ *              owns the mission, so both the subject and, on the very first
+ *              visit, the roller are seeded from
+ *              app_state_get_selected_mission() on every build. A mission
+ *              selected before the screen was ever shown therefore appears
+ *              here and on DV DRIVING instead of "None".
  *
- *              Roller focused, NAVIGATE mode  : encoder moves focus to next obj
- *              Roller focused, EDIT mode       : encoder scrolls mission list
- *              Toggle NAVIGATE ↔ EDIT          : physical OK button (LV_KEY_ENTER)
- *              Button focused                  : LV_KEY_ENTER → LV_EVENT_CLICKED
+ *              ### Encoder mode
+ *              The encoder group is created with editing enabled and never
+ *              leaves it, because the roller is the only member: there is
+ *              nothing to navigate between, so a turn should always scroll.
  *
  * @author      Mario Wegmann <mario.wegmann@web.de>
  * @date        Created: 2026-06-02
  *
- * @version     0.1.0
- *
- * @copyright   Copyright (c) 2026 Mario Wegmann
+ * @copyright   Copyright (c) 2026 Mario Wegmann.
  *              SPDX-License-Identifier: Apache-2.0
- *
- * @note        Target RTOS : Zephyr RTOS (https://zephyrproject.org)
- *              UI Library  : LVGL (https://lvgl.io)
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Revision History
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * Version  Date        Author          Description
- * 0.1.0    2026-06-02  Mario Wegmann   Initial creation
- * ─────────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 /* ── Corresponding Header ────────────────────────────────────────────────────────────────────── */
@@ -63,8 +57,11 @@
 /* ── Project Includes ────────────────────────────────────────────────────────────────────────── */
 
 #include "app/app_state.h"
+#include "modules/ui/ui.h"
+#include "modules/ui/ui_layout.h"
 #include "modules/ui/ui_styles.h"
 #include "modules/ui/widgets/ui_header.h"
+#include "modules/ui/widgets/ui_hintbar.h"
 #include "services/event_bus/event_bus.h"
 #include "services/event_bus/events.h"
 #include "generated/ui_tx_subjects_gen.h"
@@ -77,16 +74,11 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
 /* ── Private Macros & Constants ──────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Roller option string.
+ * @brief Roller option string — one mission per line.
  *
- * Index maps directly to enum mission_id (both start at 0):
- *   0 → MISSION_NONE          "---"
- *   1 → MISSION_ACCELERATION
- *   2 → MISSION_SKIDPAD
- *   3 → MISSION_AUTOCROSS
- *   4 → MISSION_ENDURANCE
- *   5 → MISSION_INSPECTION
- *   6 → MISSION_MANUAL_DRIVING
+ * The roller index is published as a mission_id and ends up unchanged in the
+ * DV_Drive_Mode_SETTING CAN signal, so this list is effectively a wire format.
+ *
  */
 #define ROLLER_OPTIONS          \
     "None\n"                    \
@@ -98,7 +90,12 @@ LOG_MODULE_REGISTER(screen_mission_select, CONFIG_LOG_DEFAULT_LEVEL);
     "Autocross\n"               \
     "Manual Driving"            \
 
-/** @brief Mission names indexed by mission_id — mirrors ROLLER_OPTIONS. */
+/**
+ * @brief Mission names for the confirmed-mission label.
+ *
+ * Mirrors ROLLER_OPTIONS line by line and must stay in step with it: the
+ * observer indexes this array with the confirmed roller index.
+ */
 static const char *const k_mission_names[] = {
     "None", "Acceleration", "Skidpad", "Trackdrive",
     "Braketest", "Inspection", "Autocross", "Manual Driving",
@@ -107,74 +104,86 @@ static const char *const k_mission_names[] = {
 /** @brief Number of roller rows visible simultaneously (one above/below the selection). */
 #define ROLLER_VISIBLE_ROWS     3U
 
-/** @brief Width of the roller widget in pixels. */
-#define ROLLER_WIDTH            220
+/** @brief Width of the send button, in layout units (see ui_layout_u()). */
+#define BTN_W_U             10
 
-/** @brief Width of each action button in pixels. */
-#define BTN_WIDTH               100
-
-/** @brief Height of each action button in pixels. */
-#define BTN_HEIGHT              50
-
-/**
- * @brief Half the centre-to-centre distance between the two buttons.
- *
- * Layout: |←BTN_WIDTH→| 10px gap |←BTN_WIDTH→|
- *          centre-to-centre = BTN_WIDTH + 10 = 110 px → half = 55 px
- */
-#define BTN_HALF_SPACING        55
-
-/** @brief Bottom margin for the button row (pixels from screen bottom). */
-#define BTN_BOTTOM_MARGIN       20
+/** @brief Height of the send button, in layout units. */
+#define BTN_H_U             5
 
 
 /* ── Private Variables ───────────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Persistent UI state — survive screen destroy/recreate.
+ * @brief Currently highlighted roller index — survives screen destroy/recreate.
  *
- * Initialized once on first create; never re-initialized so the values
- * carry over across lazy-load cycles.
+ * Initialized once, guarded by s_subjects_init, and never re-initialized: that
+ * is what carries the highlight across the create/delete cycle. Re-running
+ * lv_subject_init_int() would reset it to zero on every visit.
  */
-static lv_subject_t s_roller_sel;  /* currently highlighted roller index */
+static lv_subject_t s_roller_sel;
+
+/** @brief Guard so the subject above is initialized exactly once. */
 static bool         s_subjects_init;
 
 /** @brief Mission roller — user scrolls with the right encoder. */
 static lv_obj_t   *s_roller;
 
-static lv_obj_t   *s_roller_lbl;
+/** @brief "Current Mission: …" label; driven by an observer, not by the roller. */
+static lv_obj_t   *s_lbl_confirmed;
 
-/** @brief OK button — confirms the roller selection (sends mission over CAN). */
-static lv_obj_t   *s_btn_ok;
+/** @brief SEND MISSION button — confirms the highlighted mission. */
+static lv_obj_t   *s_btn_send;
 
-/** @brief RTD button — requests Ready-to-Drive with the last-known drive mode. */
-// static lv_obj_t   *s_btn_esc;
-
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right encoder — holds the roller. */
 static lv_group_t *s_right_encoder_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the left button pad. Never created; stays NULL. */
 static lv_group_t *s_left_button_group;
 
-/** @brief LVGL input group for the right encoder. */
+/** @brief Input group for the right button pad — holds SEND MISSION. */
 static lv_group_t *s_right_button_group;
 
 
+/**
+ * @brief What each control does on this screen; see @ref ui_hint_input.
+ *
+ * Static storage: ui_hintbar_create() keeps the pointers rather than copying
+ * the strings. Controls left out here are dimmed in the bar.
+ */
+static const char *const k_hints[UI_HINT_INPUT_COUNT] = {
+    [UI_HINT_ENC_LEFT]  = "Switch Screen",
+    [UI_HINT_BTN_RIGHT] = "Send Mission",
+    [UI_HINT_ENC_RIGHT] = "Select Mission",
+};
+
 /* ── Private Function Prototypes ─────────────────────────────────────────────────────────────── */
 
-static void build_roller(lv_obj_t *scr);
-static void build_buttons(lv_obj_t *scr);
-static void btn_ok_event_cb(lv_event_t *e);
-// static void btn_esc_event_cb(lv_event_t *e);
+static void build_roller(lv_obj_t *parent);
+static void build_send_button(lv_obj_t *parent);
+static void btn_send_event_cb(lv_event_t *e);
 
 
 /* ── Private Function Implementations ───────────────────────────────────────────────────────── */
 
+/**
+ * @brief Mirror the roller's position into s_roller_sel so it survives a rebuild.
+ *
+ * @param e  LV_EVENT_VALUE_CHANGED from the roller.
+ */
 static void roller_value_changed_cb(lv_event_t *e)
 {
     lv_subject_set_int(&s_roller_sel, (int32_t)lv_roller_get_selected(lv_event_get_target_obj(e)));
 }
 
+/**
+ * @brief Update the "Current Mission" label from the confirmed drive mode.
+ *
+ * Observing the TX subject rather than the roller is what makes the label show
+ * the confirmed mission instead of the highlighted one.
+ *
+ * @param observer  Observer whose target object is the label.
+ * @param subject   ui_tx_subj_drive_mode; holds an index into k_mission_names.
+ */
 static void confirmed_mission_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *lbl = lv_observer_get_target_obj(observer);
@@ -182,15 +191,23 @@ static void confirmed_mission_observer_cb(lv_observer_t *observer, lv_subject_t 
     lv_label_set_text_fmt(lbl, "Current Mission: %s", k_mission_names[idx]);
 }
 
-static void build_roller(lv_obj_t *scr)
+/**
+ * @brief Build the mission roller and the confirmed-mission label.
+ *
+ * The roller is restored to the remembered position, so returning to this
+ * screen looks like it was never left.
+ *
+ * @param scr  Screen object to build into.
+ */
+static void build_roller(lv_obj_t *parent)
 {
-    s_roller = lv_roller_create(scr);
+    s_roller = lv_roller_create(parent);
 
     lv_roller_set_options(s_roller, ROLLER_OPTIONS, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(s_roller, ROLLER_VISIBLE_ROWS);
     lv_roller_set_selected(s_roller, (uint16_t)lv_subject_get_int(&s_roller_sel), LV_ANIM_OFF);
 
-    lv_obj_set_width(s_roller, ROLLER_WIDTH);
+    lv_obj_set_width(s_roller, lv_pct(100));
 
     /* ── Main part: all items ──────────────────────────────────────────── */
     lv_obj_set_style_bg_color(s_roller,     UI_C_WHITE,                     LV_PART_MAIN);
@@ -201,72 +218,59 @@ static void build_roller(lv_obj_t *scr)
     lv_obj_set_style_border_color(s_roller, UI_C_DARK,                      LV_PART_MAIN);
     lv_obj_set_style_radius(s_roller,       0,                              LV_PART_MAIN);
 
-    /* ── Selected part: centre row highlight ───────────────────────────── */
+    /* ── Selected part: center row highlight ───────────────────────────── */
     lv_obj_set_style_bg_color(s_roller,   UI_C_ACCENT,                     LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(s_roller,     LV_OPA_COVER,                    LV_PART_SELECTED);
     lv_obj_set_style_text_font(s_roller,  &BarlowCondensed_BoldItalic_18,  LV_PART_SELECTED);
     lv_obj_set_style_text_color(s_roller, UI_C_DARK,                       LV_PART_SELECTED);
 
-    /* Vertically centred in the content area below the 15 % header. */
-    lv_obj_align(s_roller, LV_ALIGN_CENTER, 0, -30);
     lv_obj_add_event_cb(s_roller, roller_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* ── Confirmed mission label (observer-driven) ──────────────────────── */
 
-    s_roller_lbl = lv_label_create(scr);
-    lv_obj_add_style(s_roller_lbl, &ui_style_label_subtitle, 0);
-    lv_obj_align(s_roller_lbl, LV_ALIGN_CENTER, 0, 35);
+    s_lbl_confirmed = lv_label_create(parent);
+    lv_obj_add_style(s_lbl_confirmed, &ui_style_label_subtitle, 0);
     lv_subject_add_observer_obj(&ui_tx_subj_drive_mode, confirmed_mission_observer_cb,
-                                s_roller_lbl, NULL);
-}
-
-static void build_buttons(lv_obj_t *scr)
-{
-    /* ── OK button ─────────────────────────────────────────────────────── */
-
-    s_btn_ok = lv_button_create(scr);
-    lv_obj_remove_style_all(s_btn_ok);
-    lv_obj_add_style(s_btn_ok, &ui_style_btn_default, 0);
-    lv_obj_add_style(s_btn_ok, &ui_style_btn_checked, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_ok, BTN_WIDTH, BTN_HEIGHT);
-    lv_obj_align(s_btn_ok, LV_ALIGN_BOTTOM_MID, BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
-
-    lv_obj_t *lbl_ok = lv_label_create(s_btn_ok);
-    lv_obj_add_style(lbl_ok, &ui_style_label_subtitle, 0);
-    lv_label_set_text(lbl_ok, "SET MISSION");
-    lv_obj_align(lbl_ok, LV_ALIGN_CENTER, 0, 0);
-
-    lv_obj_add_event_cb(s_btn_ok, btn_ok_event_cb, LV_EVENT_CLICKED, NULL);
-
-    /* ── ESC button ────────────────────────────────────────────────────── */
-
-    // s_btn_esc = lv_button_create(scr);
-    // lv_obj_remove_style_all(s_btn_esc);
-    // lv_obj_add_style(s_btn_esc, &ui_style_btn_default, 0);
-    // lv_obj_add_style(s_btn_esc, &ui_style_btn_checked, LV_STATE_PRESSED);
-    // lv_obj_add_style(s_btn_esc, &ui_style_btn_focused, LV_STATE_FOCUS_KEY);
-    // lv_obj_set_size(s_btn_esc, BTN_WIDTH, BTN_HEIGHT);
-    // lv_obj_align(s_btn_esc, LV_ALIGN_BOTTOM_MID, -BTN_HALF_SPACING, -BTN_BOTTOM_MARGIN);
-
-    // lv_obj_t *lbl_esc = lv_label_create(s_btn_esc);
-    // lv_obj_add_style(lbl_esc, &ui_style_label_subtitle, 0);
-    // lv_label_set_text(lbl_esc, "UNSET MISSION");
-    // lv_obj_align(lbl_esc, LV_ALIGN_CENTER, 0, 0);
-
-    // lv_obj_add_flag(s_btn_esc, LV_OBJ_FLAG_CHECKABLE);
-    // lv_obj_add_event_cb(s_btn_esc, btn_esc_event_cb, LV_EVENT_CLICKED, NULL);
+                                s_lbl_confirmed, NULL);
 }
 
 /**
- * @brief OK button click handler.
+ * @brief Build the SEND MISSION button.
  *
- * Reads the current roller selection and publishes UI_INPUT_MISSION_SELECTED.
- * The App Layer responds by updating the mission state and sending the
- * selected mission over CAN (CAN_TX_CMD_SEND_MISSION).
- *
- * No CAN frame is sent here — this screen only raises the intent.
+ * @param scr  Screen object to build into.
  */
-static void btn_ok_event_cb(lv_event_t *e)
+static void build_send_button(lv_obj_t *parent)
+{
+    /* ── Send button ─────────────────────────────────────────────────────── */
+
+    s_btn_send = lv_button_create(parent);
+    lv_obj_remove_style_all(s_btn_send);
+    lv_obj_add_style(s_btn_send, &ui_style_btn_default, 0);
+    lv_obj_add_style(s_btn_send, &ui_style_btn_checked, LV_STATE_PRESSED);
+    lv_obj_set_size(s_btn_send, ui_layout_u(BTN_W_U), ui_layout_u(BTN_H_U));
+
+    lv_obj_t *lbl_send = lv_label_create(s_btn_send);
+    lv_obj_add_style(lbl_send, &ui_style_label_subtitle, 0);
+    lv_label_set_text(lbl_send, "SEND MISSION");
+    lv_obj_align(lbl_send, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_add_event_cb(s_btn_send, btn_send_event_cb, LV_EVENT_CLICKED, NULL);
+}
+
+/**
+ * @brief SEND MISSION click handler — confirm the highlighted mission.
+ *
+ * Publishes UI_INPUT_MISSION_SELECTED with the roller index. The App Layer
+ * stores it in app_state, from where the CAN module reads it on its next TX
+ * cycle; no CAN frame is built here.
+ *
+ * The TX subject — which drives the "Current Mission" label — is only updated
+ * once the publish succeeded, so a dropped event cannot leave the display
+ * claiming a mission the vehicle was never told about.
+ *
+ * @param e  LV_EVENT_CLICKED from the button. Unused.
+ */
+static void btn_send_event_cb(lv_event_t *e)
 {
     uint16_t idx = lv_roller_get_selected(s_roller);
 
@@ -285,48 +289,28 @@ static void btn_ok_event_cb(lv_event_t *e)
     }
 }
 
-/**
- * @brief ESC button click handler.
- *
- * Publishes UI_INPUT_ESC_REQUEST.  The App Layer responds by sending
- * CAN_TX_CMD_SEND_ESC_REQUEST using the last-known drive mode.
- *
- * Can be pressed without having first confirmed a mission; in that case the
- * CAN module uses drive mode 0 (MISSION_NONE).
- */
-// static void btn_esc_event_cb(lv_event_t *e)
-// {
-//     uint16_t  idx    = lv_roller_get_selected(s_roller);
-//     char buf[32];
-
-//     lv_roller_get_selected_str(s_roller, buf, sizeof(buf));
-
-//     struct ui_input_event evt = {
-//         .type         = UI_INPUT_MISSION_SELECTED,
-//         .data.mission = (enum mission_id)idx,
-//     };
-
-//     int ret = zbus_chan_pub(&ui_input_chan, &evt, K_NO_WAIT);
-//     if (ret != 0) {
-//         LOG_WRN("UI_INPUT_MISSION_SELECTED publish failed (mission=%u): %d",
-//                 (unsigned)idx, ret);
-//     } else {
-//         lv_label_set_text_fmt(s_roller_lbl, "Selected Mission %s", buf);
-//         LOG_DBG("Mission selected: %u", (unsigned)idx);
-//     }
-// }
-
-
 /* ── Public Function Implementations ─────────────────────────────────────────────────────────── */
 
 lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
 {
     /* ── Screen base ─────────────────────────────────────────────────────── */
 
+    /*
+     * The mission is owned by app_state, which the App Layer writes when a
+     * mission is confirmed. The TX subject below is only the UI's mirror of it
+     * and starts at 0, so without this a mission that was selected before this
+     * screen was first built — or by anything other than this screen — shows
+     * as "None" on this screen and on DV DRIVING.
+     */
+    int32_t selected = (int32_t)app_state_get_selected_mission();
+
+    /* First visit: highlight what is selected. Later visits keep the scroll. */
     if (!s_subjects_init) {
-        lv_subject_init_int(&s_roller_sel, 0);
+        lv_subject_init_int(&s_roller_sel, selected);
         s_subjects_init = true;
     }
+
+    lv_subject_set_int(&ui_tx_subj_drive_mode, selected);
 
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_remove_style_all(scr);
@@ -336,26 +320,44 @@ lv_obj_t *screen_mission_select_create(lv_subject_t *status_subjects)
     /* ── Widgets ─────────────────────────────────────────────────────────── */
 
     ui_header_create(scr, "DV MISSION", status_subjects);
-    build_roller(scr);
-    build_buttons(scr);
-
-    /* ── Input group (right encoder) ─────────────────────────────────────── */
 
     /*
-     * Tab order: roller → OK → RTD.
-     *
-     * ui.c assigns this group to the right encoder indev on screen entry:
-     *   lv_indev_set_group(right_encoder_indev, screen_mission_select_get_group())
-     * and removes it on screen leave:
-     *   lv_indev_set_group(right_encoder_indev, NULL)
+     * One column, centered: the roller, under it what was last confirmed, under
+     * that the send button. The three are spread over the height, and the
+     * column keeps an outline's width free above and below for the button.
      */
-    s_right_encoder_group = lv_group_create();
+    lv_obj_t *content = ui_layout_content_create(scr);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
+
+    lv_obj_t *col = ui_layout_column_create(content, 50);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_ver(col, UI_BTN_OUTLINE_W, 0);
+
+    build_roller(col);
+    build_send_button(col);
+
+    /* ── Input groups ────────────────────────────────────────────────────── */
+
+    /*
+     * One member each, so there is nothing to tab between and both groups stay
+     * in edit mode: a turn of the encoder scrolls the roller, a press of the
+     * right pad clicks the button.
+     *
+     * ui.c attaches them to the input devices on screen entry and detaches
+     * them on leaving.  The groups themselves are owned by LVGL and released
+     * with the screen.
+     */
+    s_right_encoder_group = ui_group_create(scr);
     lv_group_add_obj(s_right_encoder_group, s_roller);
     lv_group_set_editing(s_right_encoder_group, true);
 
-    s_right_button_group = lv_group_create();
-    lv_group_add_obj(s_right_button_group, s_btn_ok);
+    s_right_button_group = ui_group_create(scr);
+    lv_group_add_obj(s_right_button_group, s_btn_send);
     lv_group_set_editing(s_right_button_group, true);
+
+    ui_hintbar_create(scr, k_hints);
 
     return scr;
 }
